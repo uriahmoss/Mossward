@@ -155,7 +155,9 @@ curl -X POST http://127.0.0.1:8080/api/scans \
 4. Add scheduling, cancellation, rate limits, and distributed workers.
 5. Add PostgreSQL support when multi-user or distributed deployment requires it.
 6. Add an optional endpoint agent for authenticated local inventory and
-   vulnerability assessment on enrolled Linux and Windows systems.
+   vulnerability assessment on enrolled Linux and Windows systems, including
+   privacy-bounded outbound network telemetry and threat-intelligence
+   correlation.
 7. Add evidence lifecycle, remediation workflow, exceptions, exports, and reporting.
 
 The scanner should remain non-destructive by default. Intrusive checks, if ever introduced, must require an explicit policy, authorization record, and separate execution profile.

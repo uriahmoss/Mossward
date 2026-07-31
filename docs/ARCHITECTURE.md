@@ -70,6 +70,8 @@ collect narrowly defined defensive evidence such as:
 - Local users, security policy summaries, and relevant configuration posture
 - Disk encryption, host firewall, endpoint protection, and update status
 - Package- and platform-specific evidence for higher-confidence CVE matching
+- Outbound network-flow metadata and the local process responsible for each
+  connection
 
 The agent is not a general remote shell. Its security model must include:
 
@@ -83,6 +85,46 @@ The agent is not a general remote shell. Its security model must include:
 - Local and server-side audit logs for jobs, configuration, and updates
 - Bounded collection, redaction, retention, and tenant isolation
 - Offline queue limits and replay protection
+
+### Endpoint network telemetry
+
+The agent may observe outbound network activity so the Mossward server can
+correlate destinations with current threat intelligence. This capability
+should collect metadata by default, not packet payloads:
+
+- Destination IP address, port, transport protocol, and connection outcome
+- First seen, last seen, connection count, and approximate byte totals
+- Executable path, process identity, and verified signer or file hash when
+  available
+- DNS query and response context observed on the endpoint
+- TLS server name when the operating system exposes it without interception
+- Device, user-session, and network-interface context needed for investigation
+
+Mossward can compare this evidence with versioned indicators for malware
+command-and-control systems, botnets, phishing infrastructure, malicious
+domains, suspicious hosting, and other known threats. A match should retain the
+indicator source, confidence, category, feed timestamp, expiration, and exact
+evidence that produced the alert.
+
+Destination reputation alone is not proof of compromise. Shared hosting,
+content-delivery networks, recycled IP addresses, VPNs, and stale indicators
+can create false positives. Prioritization should correlate destination
+reputation with the initiating process, domain, certificate context, frequency,
+and other endpoint or scan findings.
+
+Privacy and safety boundaries:
+
+- No full packet capture or application payload collection by default
+- No TLS interception, certificate injection, or credential collection
+- Local aggregation and deduplication before upload
+- Configurable exclusions for applications, destinations, and sensitive
+  networks
+- Explicit retention limits and role-based access to endpoint telemetry
+- Encryption in transit and at rest, with audit logs for searches and exports
+- Bounded event queues so loss of server connectivity cannot exhaust endpoint
+  storage
+- Clear administrator disclosure and policy controls before telemetry is
+  enabled
 
 Network observations and agent evidence should converge on the same asset
 record while retaining their distinct provenance. Findings should report
