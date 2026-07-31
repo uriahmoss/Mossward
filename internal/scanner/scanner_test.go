@@ -1,0 +1,140 @@
+package scanner
+
+import (
+	"path/filepath"
+	"testing"
+	"time"
+
+	"mossward/internal/config"
+	"mossward/internal/model"
+	"mossward/internal/store"
+)
+
+func testEngine(t *testing.T) *Engine {
+	t.Helper()
+	repository, err := store.NewFileStore(filepath.Join(t.TempDir(), "scans.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	engine, err := New(config.Config{
+		AllowedCIDRs:   []string{"127.0.0.0/8", "::1/128"},
+		AllowedPorts:   map[int]bool{80: true, 443: true},
+		MaxTargets:     10,
+		MaxConcurrent:  2,
+		QueueSize:      2,
+		ConnectTimeout: 50 * time.Millisecond,
+	}, repository)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(engine.Shutdown)
+	return engine
+}
+
+func TestValidateAllowsLoopback(t *testing.T) {
+	engine := testEngine(t)
+	targets, ports, err := engine.Validate(model.CreateScanRequest{Targets: []string{"127.0.0.1"}, Ports: []int{443}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 1 || len(ports) != 1 {
+		t.Fatalf("unexpected targets or ports: %v %v", targets, ports)
+	}
+	if targets[0].Address != "127.0.0.1" {
+		t.Fatalf("expected pinned loopback address, got %q", targets[0].Address)
+	}
+}
+
+func TestValidateRejectsPublicAddress(t *testing.T) {
+	engine := testEngine(t)
+	_, _, err := engine.Validate(model.CreateScanRequest{Targets: []string{"8.8.8.8"}, Ports: []int{443}})
+	if err == nil {
+		t.Fatal("expected public address to be rejected")
+	}
+}
+
+func TestValidateRejectsUnlistedPort(t *testing.T) {
+	engine := testEngine(t)
+	_, _, err := engine.Validate(model.CreateScanRequest{Targets: []string{"127.0.0.1"}, Ports: []int{4444}})
+	if err == nil {
+		t.Fatal("expected unlisted port to be rejected")
+	}
+}
+
+func TestValidateDeduplicatesPorts(t *testing.T) {
+	engine := testEngine(t)
+	_, ports, err := engine.Validate(model.CreateScanRequest{
+		Targets: []string{"127.0.0.1"},
+		Ports:   []int{443, 80, 443},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ports) != 2 || ports[0] != 80 || ports[1] != 443 {
+		t.Fatalf("expected sorted unique ports, got %v", ports)
+	}
+}
+
+func TestValidateExpandsIPv4CIDRWithoutNetworkAndBroadcast(t *testing.T) {
+	engine := testEngine(t)
+	targets, _, err := engine.Validate(model.CreateScanRequest{
+		Targets: []string{"127.0.0.0/30"},
+		Ports:   []int{80},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 || targets[0].Address != "127.0.0.1" || targets[1].Address != "127.0.0.2" {
+		t.Fatalf("unexpected CIDR expansion: %#v", targets)
+	}
+}
+
+func TestValidateExpandsInclusiveAddressRange(t *testing.T) {
+	engine := testEngine(t)
+	targets, _, err := engine.Validate(model.CreateScanRequest{
+		Targets: []string{"127.0.0.3-127.0.0.5"},
+		Ports:   []int{80},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 3 || targets[0].Address != "127.0.0.3" || targets[2].Address != "127.0.0.5" {
+		t.Fatalf("unexpected range expansion: %#v", targets)
+	}
+}
+
+func TestValidateRejectsRangeOutsideAllowlist(t *testing.T) {
+	engine := testEngine(t)
+	_, _, err := engine.Validate(model.CreateScanRequest{
+		Targets: []string{"127.0.0.1-8.8.8.8"},
+		Ports:   []int{80},
+	})
+	if err == nil {
+		t.Fatal("expected mixed-scope range to be rejected")
+	}
+}
+
+func TestValidateRejectsExpansionBeyondLimit(t *testing.T) {
+	engine := testEngine(t)
+	_, _, err := engine.Validate(model.CreateScanRequest{
+		Targets: []string{"127.0.0.0/24"},
+		Ports:   []int{80},
+	})
+	if err == nil {
+		t.Fatal("expected oversized CIDR to be rejected")
+	}
+}
+
+func TestValidateDeduplicatesOverlappingTargets(t *testing.T) {
+	engine := testEngine(t)
+	targets, _, err := engine.Validate(model.CreateScanRequest{
+		Targets: []string{"127.0.0.1", "127.0.0.1-127.0.0.2"},
+		Ports:   []int{80},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 2 {
+		t.Fatalf("expected two unique addresses, got %#v", targets)
+	}
+}

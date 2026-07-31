@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Run an authorized Mossward network scan">
+  <title>Network scan · Mossward</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="/" aria-label="Mossward home">
+      <span class="wordmark-mark" aria-hidden="true">M</span>
+      <span>Mossward</span>
+    </a>
+    <a class="back-link" href="/">← Home</a>
+  </header>
+
+  <main class="scan-shell">
+    <section class="page-heading">
+      <p class="eyebrow">Feature 01</p>
+      <h1>Network scan</h1>
+      <p>Check authorized targets for reachable TCP services. No payloads or exploits are sent.</p>
+    </section>
+
+    <div class="scan-grid">
+      <section class="card">
+        <div class="card-heading">
+          <div><span class="step-label">Configure</span><h2>New scan</h2></div>
+          <span id="policy" class="policy-pill">Loading policy</span>
+        </div>
+        <form id="form">
+          <label for="name">Scan name</label>
+          <input id="name" value="Local network check" maxlength="100">
+          <label for="targets">Targets <span>one per line</span></label>
+          <textarea id="targets" placeholder="127.0.0.1&#10;192.168.1.0/24&#10;192.168.2.10-192.168.2.25" required></textarea>
+          <p class="field-help">Accepts IP addresses, FQDNs, CIDR blocks, and inclusive IP ranges.</p>
+          <label for="ports">Ports <span>comma-separated</span></label>
+          <input id="ports" placeholder="22,80,443">
+          <button id="submit">Start authorized scan <span aria-hidden="true">→</span></button>
+          <div id="error" class="error" role="alert"></div>
+        </form>
+      </section>
+
+      <section class="card results-card">
+        <div class="card-heading">
+          <div><span class="step-label">Activity</span><h2>Recent scans</h2></div>
+          <span class="live-label"><span class="state-dot"></span>Live</span>
+        </div>
+        <div id="scans" class="empty-state">
+          <span class="empty-icon">○</span>
+          <strong>No scans yet</strong>
+          <span>Configure your first authorized scan to see activity here.</span>
+        </div>
+      </section>
+    </div>
+  </main>
+  <script src="/scan.js" defer></script>
+</body>
+</html>

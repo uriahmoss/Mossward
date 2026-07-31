@@ -1,0 +1,6 @@
+/sentinel
+/bin/
+/data/
+.env
+*.tmp
+.DS_Store
