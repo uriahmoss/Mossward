@@ -216,6 +216,55 @@ Administrative boundaries:
   report confidence and limitations rather than claiming guaranteed tamper
   prevention
 
+### Optional endpoint relay
+
+An enrolled endpoint may be explicitly promoted to a relay for agents in a
+segmented or highly restricted network that cannot connect directly to the
+Mossward server. This is an optional transport role, not a general-purpose
+proxy, scanner, remote-access bridge, or trust authority.
+
+The preferred communication path is:
+
+```text
+Segmented endpoint agents -> designated relay -> Mossward server
+```
+
+Endpoint evidence, heartbeats, policies, jobs, acknowledgements, and updates
+should remain signed and encrypted end-to-end between each originating agent
+and the Mossward server. The relay authenticates separately to the server and
+forwards opaque, bounded messages without gaining authority to impersonate
+downstream agents or modify their content.
+
+Relay requirements:
+
+- Explicit promotion, server approval, certificate role, and revocation
+- An allowlist of enrolled downstream agent identities and permitted network
+  interfaces
+- Outbound-only server connectivity from the relay when the network design
+  permits it
+- A dedicated Mossward protocol and server destination allowlist rather than
+  arbitrary TCP, UDP, HTTP, or SOCKS forwarding
+- End-to-end message signatures, sequence numbers, acknowledgements, and replay
+  protection
+- Encrypted, size-bounded store-and-forward queues for temporary server outages
+- Per-agent and aggregate bandwidth, connection, storage, and message limits
+- Health, capacity, backlog, version, certificate, and tamper telemetry
+- Audit records for role changes, downstream enrollment, routing, drops, and
+  delivery outcomes
+- Configurable high availability with deterministic failover to an approved
+  secondary relay or direct server path
+
+The server should visibly distinguish direct and relayed agents, including the
+relay path and last successful end-to-end acknowledgement. A compromised relay
+may delay or drop traffic, but end-to-end authentication should prevent it from
+silently forging endpoint evidence or trusted server policy.
+
+Relay discovery must not be automatic. Administrators select the relay,
+authorized network segment, listening interface, downstream identities, and
+fallback behavior. Removing the role should close the relay listener and
+invalidate relay-specific credentials without unenrolling the endpoint's own
+agent identity.
+
 Network observations and agent evidence should converge on the same asset
 record while retaining their distinct provenance. Findings should report
 whether their confidence comes from unauthenticated network evidence,

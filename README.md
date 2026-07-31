@@ -159,7 +159,9 @@ curl -X POST http://127.0.0.1:8080/api/scans \
    privacy-bounded outbound network telemetry and threat-intelligence
    correlation. Add opt-in endpoint coverage detection that identifies
    agent-eligible devices without a current enrollment, plus agent-integrity
-   and missed-heartbeat alerts for possible tampering.
+   and missed-heartbeat alerts for possible tampering. Optionally allow an
+   explicitly designated endpoint to relay end-to-end protected agent traffic
+   from an isolated network segment.
 7. Add evidence lifecycle, remediation workflow, exceptions, exports, and reporting.
 
 The scanner should remain non-destructive by default. Intrusive checks, if ever introduced, must require an explicit policy, authorization record, and separate execution profile.
