@@ -96,13 +96,14 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scan := model.Scan{
-		ID:        randomID(),
-		Name:      name,
-		Targets:   targets,
-		Ports:     ports,
-		Status:    model.StatusQueued,
-		Findings:  []model.Finding{},
-		CreatedAt: time.Now().UTC(),
+		ID:          randomID(),
+		Name:        name,
+		Targets:     targets,
+		Ports:       ports,
+		Status:      model.StatusQueued,
+		Findings:    []model.Finding{},
+		TotalChecks: len(targets) * len(ports),
+		CreatedAt:   time.Now().UTC(),
 	}
 	if err := a.scanner.Schedule(scan); errors.Is(err, scanner.ErrQueueFull) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())

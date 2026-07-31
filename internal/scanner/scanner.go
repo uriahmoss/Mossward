@@ -246,6 +246,8 @@ func (e *Engine) run(scan model.Scan) {
 	started := time.Now().UTC()
 	scan.Status = model.StatusRunning
 	scan.StartedAt = &started
+	scan.TotalChecks = len(scan.Targets) * len(scan.Ports)
+	scan.DoneChecks = 0
 	if err := e.store.Save(scan); err != nil {
 		e.fail(scan, err.Error())
 		return
@@ -256,7 +258,10 @@ func (e *Engine) run(scan model.Scan) {
 		port   int
 	}
 	jobs := make(chan job)
-	results := make(chan model.Finding)
+	type probeResult struct {
+		finding *model.Finding
+	}
+	results := make(chan probeResult)
 	var workers sync.WaitGroup
 
 	for i := 0; i < e.cfg.MaxConcurrent; i++ {
@@ -271,12 +276,15 @@ func (e *Engine) run(scan model.Scan) {
 					if !ok {
 						return
 					}
-					if finding, ok := e.probe(e.ctx, item.target, item.port); ok {
-						select {
-						case results <- finding:
-						case <-e.ctx.Done():
-							return
-						}
+					finding, reachable := e.probe(e.ctx, item.target, item.port)
+					result := probeResult{}
+					if reachable {
+						result.finding = &finding
+					}
+					select {
+					case results <- result:
+					case <-e.ctx.Done():
+						return
 					}
 				}
 			}
@@ -299,8 +307,15 @@ func (e *Engine) run(scan model.Scan) {
 		close(results)
 	}()
 
-	for finding := range results {
-		scan.Findings = append(scan.Findings, finding)
+	saveInterval := max(1, scan.TotalChecks/100)
+	for result := range results {
+		scan.DoneChecks++
+		if result.finding != nil {
+			scan.Findings = append(scan.Findings, *result.finding)
+		}
+		if scan.DoneChecks%saveInterval == 0 {
+			_ = e.store.Save(scan)
+		}
 	}
 	if e.ctx.Err() != nil {
 		e.fail(scan, "scan canceled during process shutdown")

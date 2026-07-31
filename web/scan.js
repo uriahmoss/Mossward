@@ -21,10 +21,10 @@ async function refresh() {
     const items = await response.json();
     scans.className = items.length ? "" : "empty-state";
     scans.innerHTML = items.length ? items.map((scan) => `
-      <article class="scan-item">
+      <a class="scan-item scan-item-link" href="/scan-detail.html?id=${encodeURIComponent(scan.id)}">
         <div class="scan-row">
           <strong>${escapeHTML(scan.name)}</strong>
-          <span class="status">${escapeHTML(scan.status)}</span>
+          <span class="status">${escapeHTML(scan.status)} →</span>
         </div>
         <div class="scan-meta">
           ${scan.targets.map((target) => escapeHTML(
@@ -36,7 +36,7 @@ async function refresh() {
         ${scan.findings.map((finding) => `
           <div class="finding">${escapeHTML(finding.target)} (${escapeHTML(finding.address)}):${finding.port} — ${escapeHTML(finding.service)}</div>
         `).join("")}
-      </article>
+      </a>
     `).join("") : emptyState;
   } catch {
     scans.className = "empty-state";
@@ -69,7 +69,11 @@ form.addEventListener("submit", async (event) => {
       body: JSON.stringify(body),
     });
     const result = await response.json();
-    if (!response.ok) error.textContent = result.error || "Could not start scan";
+    if (!response.ok) {
+      error.textContent = result.error || "Could not start scan";
+    } else {
+      window.location.href = `/scan-detail.html?id=${encodeURIComponent(result.id)}`;
+    }
   } catch {
     error.textContent = "Mossward could not be reached.";
   } finally {

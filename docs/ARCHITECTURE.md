@@ -8,6 +8,11 @@ work. Approved IP addresses are pinned in the persisted job. A single bounded
 scheduler and worker pool perform TCP connection checks, and the file-backed
 repository persists scans and findings.
 
+Workers emit one result for every attempted target-and-port pair, including
+closed ports. The scheduler periodically persists completed and total check
+counters, allowing the scan detail view to report real progress while bounding
+file writes to roughly one hundred updates per scan.
+
 ```text
 Browser -> API -> scope validation -> bounded scan workers -> authorized targets
                   |                         |
@@ -27,6 +32,8 @@ Browser -> API -> scope validation -> bounded scan workers -> authorized targets
   concurrency across the process.
 - The server listens only on loopback by default.
 - Results may contain sensitive infrastructure metadata and are stored with owner-only permissions.
+- Repository reads and writes defensively copy scan collections so live
+  progress updates cannot share mutable memory with API responses.
 - Startup marks scans interrupted by a previous process exit as failed instead
   of leaving them permanently queued or running.
 

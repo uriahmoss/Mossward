@@ -61,7 +61,7 @@ func NewFileStore(path string) (*FileStore, error) {
 func (s *FileStore) Save(scan model.Scan) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.scans[scan.ID] = scan
+	s.scans[scan.ID] = cloneScan(scan)
 	return s.flush()
 }
 
@@ -72,7 +72,7 @@ func (s *FileStore) Get(id string) (model.Scan, error) {
 	if !ok {
 		return model.Scan{}, ErrNotFound
 	}
-	return scan, nil
+	return cloneScan(scan), nil
 }
 
 func (s *FileStore) List() []model.Scan {
@@ -80,10 +80,25 @@ func (s *FileStore) List() []model.Scan {
 	defer s.mu.RUnlock()
 	scans := make([]model.Scan, 0, len(s.scans))
 	for _, scan := range s.scans {
-		scans = append(scans, scan)
+		scans = append(scans, cloneScan(scan))
 	}
 	sort.Slice(scans, func(i, j int) bool { return scans[i].CreatedAt.After(scans[j].CreatedAt) })
 	return scans
+}
+
+func cloneScan(scan model.Scan) model.Scan {
+	scan.Targets = append([]model.Target(nil), scan.Targets...)
+	scan.Ports = append([]int(nil), scan.Ports...)
+	scan.Findings = append([]model.Finding(nil), scan.Findings...)
+	if scan.StartedAt != nil {
+		started := *scan.StartedAt
+		scan.StartedAt = &started
+	}
+	if scan.CompletedAt != nil {
+		completed := *scan.CompletedAt
+		scan.CompletedAt = &completed
+	}
+	return scan
 }
 
 func (s *FileStore) flush() error {

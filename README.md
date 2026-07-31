@@ -17,6 +17,9 @@ Open <http://127.0.0.1:8080> for the Mossward feature homepage. Choose
 **Network scan** to configure and review scans. Results are stored in
 `data/scans.json`.
 
+Recent scans link to a dedicated detail view with live check progress, approved
+scope, timing, reachable services, evidence, and remediation guidance.
+
 Scan targets may be individual IP addresses, fully qualified domain names,
 CIDR blocks such as `192.168.1.0/24`, or inclusive ranges such as
 `192.168.2.10-192.168.2.25`. IPv4 network and broadcast addresses are omitted

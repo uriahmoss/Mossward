@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Review Mossward scan progress and findings">
+  <title>Scan details · Mossward</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="/" aria-label="Mossward home">
+      <span class="wordmark-mark" aria-hidden="true">M</span>
+      <span>Mossward</span>
+    </a>
+    <a class="back-link" href="/scan.html">← Network scans</a>
+  </header>
+
+  <main class="detail-shell">
+    <div id="detail-loading" class="detail-message">
+      <span class="state-dot"></span>
+      Loading scan details
+    </div>
+    <div id="detail-error" class="detail-message detail-message-error" hidden></div>
+
+    <div id="detail-content" hidden>
+      <section class="detail-heading">
+        <div>
+          <p class="eyebrow">Scan details</p>
+          <h1 id="scan-name">—</h1>
+          <p id="scan-id" class="scan-id"></p>
+        </div>
+        <span id="scan-status" class="status-badge">—</span>
+      </section>
+
+      <section class="progress-panel">
+        <div class="progress-copy">
+          <div>
+            <span class="step-label">Progress</span>
+            <strong id="progress-label">Waiting to begin</strong>
+          </div>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="progress-track" role="progressbar" aria-label="Scan progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <span id="progress-bar"></span>
+        </div>
+      </section>
+
+      <section class="metric-grid" aria-label="Scan summary">
+        <div class="metric-card"><span>Targets</span><strong id="target-count">0</strong></div>
+        <div class="metric-card"><span>Ports</span><strong id="port-count">0</strong></div>
+        <div class="metric-card"><span>Checks complete</span><strong id="check-count">0</strong></div>
+        <div class="metric-card"><span>Reachable services</span><strong id="finding-count">0</strong></div>
+      </section>
+
+      <div id="scan-error-panel" class="scan-error-panel" hidden>
+        <span class="step-label">Scan error</span>
+        <p id="scan-error"></p>
+      </div>
+
+      <section class="detail-grid">
+        <article class="card">
+          <div class="card-heading">
+            <div><span class="step-label">Scope</span><h2>Targets and ports</h2></div>
+          </div>
+          <div id="target-list" class="target-list"></div>
+          <div class="scope-divider"></div>
+          <h3 class="subheading">Requested ports</h3>
+          <div id="port-list" class="chip-list"></div>
+        </article>
+
+        <article class="card">
+          <div class="card-heading">
+            <div><span class="step-label">Timeline</span><h2>Scan activity</h2></div>
+          </div>
+          <dl class="timeline">
+            <div><dt>Created</dt><dd id="created-at">—</dd></div>
+            <div><dt>Started</dt><dd id="started-at">—</dd></div>
+            <div><dt>Completed</dt><dd id="completed-at">—</dd></div>
+            <div><dt>Duration</dt><dd id="duration">—</dd></div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="card findings-panel">
+        <div class="card-heading">
+          <div><span class="step-label">Evidence</span><h2>Reachable services</h2></div>
+          <span id="findings-summary" class="policy-pill">0 observed</span>
+        </div>
+        <div id="finding-list"></div>
+      </section>
+    </div>
+  </main>
+  <script src="/scan-detail.js" defer></script>
+</body>
+</html>
+

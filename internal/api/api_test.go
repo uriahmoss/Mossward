@@ -67,6 +67,13 @@ func TestCreateScanAcceptsAuthorizedTarget(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	completed, err := repository.Get(created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if completed.TotalChecks != 1 || completed.DoneChecks != 1 {
+		t.Fatalf("expected completed progress 1/1, got %d/%d", completed.DoneChecks, completed.TotalChecks)
+	}
 }
 
 func TestCreateScanRejectsPublicTarget(t *testing.T) {
@@ -103,12 +110,58 @@ func TestCreateScanRejectsTrailingJSON(t *testing.T) {
 
 func TestWebRoutesServeHomeAndScanner(t *testing.T) {
 	handler, _ := testHandler(t)
-	for _, path := range []string{"/", "/scan.html", "/styles.css", "/scan.js"} {
+	for _, path := range []string{"/", "/scan.html", "/scan-detail.html", "/styles.css", "/scan.js", "/scan-detail.js"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Errorf("%s: expected %d, got %d", path, http.StatusOK, response.Code)
 		}
+	}
+}
+
+func TestGetScanReturnsProgressFields(t *testing.T) {
+	handler, repository := testHandler(t)
+	body := bytes.NewBufferString(`{"name":"progress","targets":["127.0.0.1"],"ports":[80,443]}`)
+	createRequest := httptest.NewRequest(http.MethodPost, "/api/scans", body)
+	createResponse := httptest.NewRecorder()
+	handler.ServeHTTP(createResponse, createRequest)
+
+	var created struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(createResponse.Body.Bytes(), &created); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(time.Second)
+	for {
+		scan, err := repository.Get(created.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if scan.Status == "completed" {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("scan did not complete")
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	getRequest := httptest.NewRequest(http.MethodGet, "/api/scans/"+created.ID, nil)
+	getResponse := httptest.NewRecorder()
+	handler.ServeHTTP(getResponse, getRequest)
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("expected %d, got %d", http.StatusOK, getResponse.Code)
+	}
+	var result struct {
+		Total int `json:"total_checks"`
+		Done  int `json:"done_checks"`
+	}
+	if err := json.Unmarshal(getResponse.Body.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Total != 2 || result.Done != 2 {
+		t.Fatalf("expected progress 2/2, got %d/%d", result.Done, result.Total)
 	}
 }
