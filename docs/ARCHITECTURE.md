@@ -126,6 +126,46 @@ Privacy and safety boundaries:
 - Clear administrator disclosure and policy controls before telemetry is
   enabled
 
+### Endpoint coverage detection
+
+An optional server policy may detect systems that appear on an authorized
+network but do not have an enrolled Mossward endpoint agent. This is a
+detection and coverage-control feature; it does not install the agent or modify
+the discovered device.
+
+The Mossward server should correlate:
+
+- Assets and addresses observed by authorized network scans
+- Active endpoint-agent identities and their latest check-in
+- Hostnames, IP addresses, hardware addresses, and stable device identifiers
+  when available
+- Passive neighbor-table evidence reported by enrolled endpoints
+- Administrator classifications for agent-eligible computers, infrastructure,
+  printers, mobile devices, and intentionally unmanaged equipment
+
+Coverage results should distinguish:
+
+- Enrolled and recently active
+- Enrolled but stale or offline
+- Discovered and likely agent-eligible, but not enrolled
+- Discovered but classified as agent-ineligible
+- Ambiguous identity requiring administrator review
+
+Active subnet discovery should normally originate from the Mossward server or
+from one explicitly designated discovery sensor per isolated network segment.
+Running duplicate discovery scans from every endpoint would create unnecessary
+traffic, inconsistent evidence, and a larger security boundary.
+
+When coverage detection is enabled, it must remain constrained by:
+
+- Explicitly authorized CIDRs and server-side enablement
+- Per-segment schedules, concurrency limits, and rate limits
+- Device and network exclusions
+- No stealth, exploitation, credential attempts, or automatic agent deployment
+- Clear evidence and confidence for every missing-agent alert
+- Deduplication and aging so transient addresses do not remain permanent gaps
+- Audit logging for policy changes and discovery activity
+
 Network observations and agent evidence should converge on the same asset
 record while retaining their distinct provenance. Findings should report
 whether their confidence comes from unauthenticated network evidence,
