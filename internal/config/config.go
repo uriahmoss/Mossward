@@ -11,7 +11,8 @@ import (
 
 type Config struct {
 	ListenAddress  string
-	DataFile       string
+	DatabaseFile   string
+	LegacyDataFile string
 	AllowedCIDRs   []string
 	AllowedPorts   map[int]bool
 	MaxTargets     int
@@ -22,8 +23,9 @@ type Config struct {
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddress: env("MOSSWARD_LISTEN", "127.0.0.1:8080"),
-		DataFile:      env("MOSSWARD_DATA_FILE", "data/scans.json"),
+		ListenAddress:  env("MOSSWARD_LISTEN", "127.0.0.1:8080"),
+		DatabaseFile:   env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
+		LegacyDataFile: env("MOSSWARD_DATA_FILE", "data/scans.json"),
 		AllowedCIDRs: strings.Split(env("MOSSWARD_ALLOWED_CIDRS",
 			"127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7"), ","),
 		MaxTargets:     256,

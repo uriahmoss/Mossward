@@ -37,7 +37,11 @@ go run ./cmd/mossward
 
 Open <http://127.0.0.1:8080> for the Mossward feature homepage. Choose
 **Network scan** to configure and review scans. Results are stored in
-`data/scans.json`.
+`data/mossward.db`.
+
+When upgrading from a JSON-backed Mossward version, existing
+`data/scans.json` history is imported automatically on first startup and
+preserved as `data/scans.json.imported`.
 
 Recent scans link to a dedicated detail view with live check progress, approved
 scope, timing, reachable services, evidence, and remediation guidance.
@@ -71,8 +75,9 @@ Mossward/
 │   ├── api/            HTTP routes and transport concerns
 │   ├── config/         Configuration parsing
 │   ├── model/          Core domain types
+│   ├── probe/          Safe protocol identification and checks
 │   ├── scanner/        Scope validation and scan execution
-│   └── store/          Persistence implementations
+│   └── store/          SQLite schema, migrations, and queries
 ├── web/                Embedded browser interface
 ├── Dockerfile          Reproducible container build
 ├── Makefile            Development commands
@@ -107,7 +112,8 @@ Environment variables:
 | Variable | Default | Purpose |
 | --- | --- | --- |
 | `MOSSWARD_LISTEN` | `127.0.0.1:8080` | HTTP listen address |
-| `MOSSWARD_DATA_FILE` | `data/scans.json` | Local result store |
+| `MOSSWARD_DATABASE_FILE` | `data/mossward.db` | SQLite database path |
+| `MOSSWARD_DATA_FILE` | `data/scans.json` | Legacy JSON path used only for one-time import |
 | `MOSSWARD_ALLOWED_CIDRS` | Loopback and RFC1918/ULA networks | Networks the scanner may assess |
 | `MOSSWARD_ALLOWED_PORTS` | Common administrative and web ports | Ports users may request |
 | `MOSSWARD_MAX_TARGETS` | `256` | Maximum requested target names per scan |
@@ -143,11 +149,11 @@ curl -X POST http://127.0.0.1:8080/api/scans \
 
 ## Roadmap
 
-1. Replace local JSON storage with PostgreSQL and migrations.
+1. Add CVE feed tables, product normalization, and indexed version matching.
 2. Add authenticated users, roles, audit logs, and per-organization scope policies.
 3. Introduce a signed declarative check format with HTTP/TLS/SSH configuration checks.
 4. Add scheduling, cancellation, rate limits, and distributed workers.
-5. Ingest authoritative vulnerability data and map observed products to advisories.
+5. Add PostgreSQL support when multi-user or distributed deployment requires it.
 6. Add evidence lifecycle, remediation workflow, exceptions, exports, and reporting.
 
 The scanner should remain non-destructive by default. Intrusive checks, if ever introduced, must require an explicit policy, authorization record, and separate execution profile.

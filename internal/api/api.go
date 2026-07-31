@@ -20,11 +20,11 @@ import (
 
 type API struct {
 	cfg     config.Config
-	store   *store.FileStore
+	store   store.Repository
 	scanner *scanner.Engine
 }
 
-func New(cfg config.Config, repository *store.FileStore, engine *scanner.Engine) http.Handler {
+func New(cfg config.Config, repository store.Repository, engine *scanner.Engine) http.Handler {
 	api := &API{cfg: cfg, store: repository, scanner: engine}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", api.health)
@@ -54,7 +54,12 @@ func (a *API) getConfig(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (a *API) listScans(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, a.store.List())
+	scans, err := a.store.List()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load scans")
+		return
+	}
+	writeJSON(w, http.StatusOK, scans)
 }
 
 func (a *API) getScan(w http.ResponseWriter, r *http.Request) {

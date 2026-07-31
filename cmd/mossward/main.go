@@ -23,10 +23,11 @@ func main() {
 		log.Fatal(err)
 	}
 
-	repository, err := store.NewFileStore(cfg.DataFile)
+	repository, err := store.NewSQLiteStore(cfg.DatabaseFile, cfg.LegacyDataFile)
 	if err != nil {
 		log.Fatal(err)
 	}
+	defer repository.Close()
 
 	engine, err := scanner.New(cfg, repository)
 	if err != nil {

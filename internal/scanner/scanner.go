@@ -21,7 +21,7 @@ var ErrQueueFull = errors.New("scan queue is full")
 
 type Engine struct {
 	cfg    config.Config
-	store  *store.FileStore
+	store  store.Repository
 	nets   []*net.IPNet
 	probes *probe.Inspector
 	queue  chan model.Scan
@@ -32,7 +32,7 @@ type Engine struct {
 	closed bool
 }
 
-func New(cfg config.Config, repository *store.FileStore) (*Engine, error) {
+func New(cfg config.Config, repository store.Repository) (*Engine, error) {
 	if cfg.MaxConcurrent < 1 {
 		return nil, errors.New("MaxConcurrent must be at least 1")
 	}

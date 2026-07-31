@@ -28,3 +28,15 @@ func TestLoadRejectsInvalidPositiveInteger(t *testing.T) {
 		t.Fatalf("expected positive integer error, got %v", err)
 	}
 }
+
+func TestLoadUsesConfiguredSQLiteAndLegacyPaths(t *testing.T) {
+	t.Setenv("MOSSWARD_DATABASE_FILE", "data/test.db")
+	t.Setenv("MOSSWARD_DATA_FILE", "data/legacy.json")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseFile != "data/test.db" || cfg.LegacyDataFile != "data/legacy.json" {
+		t.Fatalf("unexpected storage paths: %#v", cfg)
+	}
+}

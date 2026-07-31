@@ -12,10 +12,11 @@ import (
 
 func testEngine(t *testing.T) *Engine {
 	t.Helper()
-	repository, err := store.NewFileStore(filepath.Join(t.TempDir(), "scans.json"))
+	repository, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "mossward.db"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = repository.Close() })
 	engine, err := New(config.Config{
 		AllowedCIDRs:   []string{"127.0.0.0/8", "::1/128"},
 		AllowedPorts:   map[int]bool{80: true, 443: true},

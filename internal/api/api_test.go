@@ -14,7 +14,7 @@ import (
 	"mossward/internal/store"
 )
 
-func testHandler(t *testing.T) (http.Handler, *store.FileStore) {
+func testHandler(t *testing.T) (http.Handler, *store.SQLiteStore) {
 	t.Helper()
 	cfg := config.Config{
 		AllowedCIDRs:   []string{"127.0.0.0/8", "::1/128"},
@@ -24,10 +24,11 @@ func testHandler(t *testing.T) (http.Handler, *store.FileStore) {
 		QueueSize:      2,
 		ConnectTimeout: 20 * time.Millisecond,
 	}
-	repository, err := store.NewFileStore(filepath.Join(t.TempDir(), "scans.json"))
+	repository, err := store.NewSQLiteStore(filepath.Join(t.TempDir(), "mossward.db"), "")
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() { _ = repository.Close() })
 	engine, err := scanner.New(cfg, repository)
 	if err != nil {
 		t.Fatal(err)

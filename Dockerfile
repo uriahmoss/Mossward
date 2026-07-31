@@ -1,7 +1,8 @@
 FROM golang:1.26-alpine AS build
 
 WORKDIR /src
-COPY go.mod ./
+COPY go.mod go.sum ./
+RUN go mod download
 COPY cmd ./cmd
 COPY internal ./internal
 COPY web ./web
@@ -15,7 +16,7 @@ COPY --from=build /out/mossward /usr/local/bin/mossward
 RUN mkdir /app/data && chown mossward:mossward /app/data
 USER mossward
 
-ENV MOSSWARD_DATA_FILE=/app/data/scans.json
+ENV MOSSWARD_DATABASE_FILE=/app/data/mossward.db
 EXPOSE 8080
 
 ENTRYPOINT ["/usr/local/bin/mossward"]
