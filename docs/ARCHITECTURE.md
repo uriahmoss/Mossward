@@ -166,6 +166,56 @@ When coverage detection is enabled, it must remain constrained by:
 - Deduplication and aging so transient addresses do not remain permanent gaps
 - Audit logging for policy changes and discovery activity
 
+### Agent integrity and tamper alerts
+
+The endpoint agent should monitor its own security-relevant state and report
+possible tampering to the Mossward server. This remains a detection capability;
+the agent does not retaliate, remove software, or take autonomous remediation
+actions.
+
+Locally observable integrity events may include:
+
+- Agent service stop, disablement, uninstall, or unexpected termination
+  attempts when the operating system exposes the event
+- Changes to the agent executable, libraries, configuration, permissions, or
+  protected installation paths
+- Failure to validate a signed update, policy, collector, or server command
+- Replacement, deletion, or unexpected use of the device identity and private
+  key
+- Disabled collectors, blocked server communication, or persistent local queue
+  failures
+- Unexpected rollback of the agent version, policy version, or security state
+- Loss of access to required operating-system audit or telemetry facilities
+
+An agent cannot reliably report after it has been terminated, isolated, or
+fully compromised. The control plane must independently evaluate:
+
+- Expected heartbeat interval and last successful check-in
+- Agent version, policy version, and collector-health attestations
+- Monotonic event sequence numbers and replay protection
+- Gaps between network asset observations and agent presence
+- Repeated enrollment, identity changes, or duplicate device identities
+
+Tamper events should be authenticated with the enrolled device identity,
+sequence-numbered, timestamped, acknowledged by the server, and retained in an
+append-only audit history. The server should distinguish an explicit local
+tamper event from an inferred condition such as a missed heartbeat, because
+power loss, network outages, reimaging, and legitimate administration can
+produce similar symptoms.
+
+Administrative boundaries:
+
+- Authorized maintenance windows and uninstall workflows suppress expected
+  alerts without deleting their audit record
+- Server-side policy controls alert thresholds and escalation
+- Local event queues are encrypted, bounded, and resistant to simple deletion
+  where the operating system permits
+- Integrity monitoring uses documented operating-system facilities and signed
+  artifacts, not invasive kernel hooks or adversarial self-defense behavior
+- Administrator-level compromise may defeat local observation; Mossward must
+  report confidence and limitations rather than claiming guaranteed tamper
+  prevention
+
 Network observations and agent evidence should converge on the same asset
 record while retaining their distinct provenance. Findings should report
 whether their confidence comes from unauthenticated network evidence,

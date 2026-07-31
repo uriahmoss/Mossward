@@ -158,7 +158,8 @@ curl -X POST http://127.0.0.1:8080/api/scans \
    vulnerability assessment on enrolled Linux and Windows systems, including
    privacy-bounded outbound network telemetry and threat-intelligence
    correlation. Add opt-in endpoint coverage detection that identifies
-   agent-eligible devices without a current enrollment.
+   agent-eligible devices without a current enrollment, plus agent-integrity
+   and missed-heartbeat alerts for possible tampering.
 7. Add evidence lifecycle, remediation workflow, exceptions, exports, and reporting.
 
 The scanner should remain non-destructive by default. Intrusive checks, if ever introduced, must require an explicit policy, authorization record, and separate execution profile.
