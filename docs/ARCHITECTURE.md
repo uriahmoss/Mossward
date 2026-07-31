@@ -57,3 +57,34 @@ Browser -> API -> scope validation -> bounded scan workers -> authorized targets
 ## Evolution
 
 For multi-user deployment, separate the control plane from scanner workers. The control plane owns authentication, authorization, inventory, scheduling, and findings. Workers receive short-lived, signed jobs limited to an organization and approved scope. PostgreSQL can replace SQLite as the source of truth, and an append-only audit log records policy and scan lifecycle events.
+
+## Future endpoint agent
+
+A hosted Mossward deployment may optionally enroll a small endpoint agent for
+deeper local assessment than network probes can provide. The agent should
+collect narrowly defined defensive evidence such as:
+
+- Operating-system edition, build, and patch level
+- Installed packages, applications, and exact versions
+- Listening services and their owning processes
+- Local users, security policy summaries, and relevant configuration posture
+- Disk encryption, host firewall, endpoint protection, and update status
+- Package- and platform-specific evidence for higher-confidence CVE matching
+
+The agent is not a general remote shell. Its security model must include:
+
+- Explicit administrator enrollment and revocation
+- A unique device identity backed by mutually authenticated TLS
+- Outbound-only connections from endpoints to the control plane
+- Short-lived, signed, schema-validated assessment jobs
+- A fixed allowlist of read-only collectors instead of arbitrary commands
+- Least-privilege execution, with privileged collectors isolated and minimized
+- Signed, rollback-capable agent updates
+- Local and server-side audit logs for jobs, configuration, and updates
+- Bounded collection, redaction, retention, and tenant isolation
+- Offline queue limits and replay protection
+
+Network observations and agent evidence should converge on the same asset
+record while retaining their distinct provenance. Findings should report
+whether their confidence comes from unauthenticated network evidence,
+credentialed remote evidence, or a locally enrolled agent.
