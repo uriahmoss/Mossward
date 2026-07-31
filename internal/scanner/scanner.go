@@ -2,8 +2,6 @@ package scanner
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net"
@@ -15,6 +13,7 @@ import (
 
 	"mossward/internal/config"
 	"mossward/internal/model"
+	"mossward/internal/probe"
 	"mossward/internal/store"
 )
 
@@ -24,6 +23,7 @@ type Engine struct {
 	cfg    config.Config
 	store  *store.FileStore
 	nets   []*net.IPNet
+	probes *probe.Inspector
 	queue  chan model.Scan
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -59,7 +59,7 @@ func New(cfg config.Config, repository *store.FileStore) (*Engine, error) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	engine := &Engine{
-		cfg: cfg, store: repository, nets: networks,
+		cfg: cfg, store: repository, nets: networks, probes: probe.New(cfg.ConnectTimeout),
 		queue: make(chan model.Scan, cfg.QueueSize), ctx: ctx, cancel: cancel,
 	}
 	engine.wg.Add(1)
@@ -259,7 +259,8 @@ func (e *Engine) run(scan model.Scan) {
 	}
 	jobs := make(chan job)
 	type probeResult struct {
-		finding *model.Finding
+		observation *model.ServiceObservation
+		findings    []model.Finding
 	}
 	results := make(chan probeResult)
 	var workers sync.WaitGroup
@@ -276,10 +277,11 @@ func (e *Engine) run(scan model.Scan) {
 					if !ok {
 						return
 					}
-					finding, reachable := e.probe(e.ctx, item.target, item.port)
+					observation, findings, reachable := e.probes.Inspect(e.ctx, item.target, item.port)
 					result := probeResult{}
 					if reachable {
-						result.finding = &finding
+						result.observation = &observation
+						result.findings = findings
 					}
 					select {
 					case results <- result:
@@ -310,8 +312,9 @@ func (e *Engine) run(scan model.Scan) {
 	saveInterval := max(1, scan.TotalChecks/100)
 	for result := range results {
 		scan.DoneChecks++
-		if result.finding != nil {
-			scan.Findings = append(scan.Findings, *result.finding)
+		if result.observation != nil {
+			scan.Observations = append(scan.Observations, *result.observation)
+			scan.Findings = append(scan.Findings, result.findings...)
 		}
 		if scan.DoneChecks%saveInterval == 0 {
 			_ = e.store.Save(scan)
@@ -337,30 +340,6 @@ func (e *Engine) fail(scan model.Scan, message string) {
 	_ = e.store.Save(scan)
 }
 
-func (e *Engine) probe(parent context.Context, target model.Target, port int) (model.Finding, bool) {
-	ctx, cancel := context.WithTimeout(parent, e.cfg.ConnectTimeout)
-	defer cancel()
-	dialer := net.Dialer{}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(target.Address, fmt.Sprint(port)))
-	if err != nil {
-		return model.Finding{}, false
-	}
-	_ = conn.Close()
-	service := serviceName(port)
-	return model.Finding{
-		ID:          id(),
-		Target:      target.Name,
-		Address:     target.Address,
-		Port:        port,
-		Service:     service,
-		Severity:    "info",
-		Title:       fmt.Sprintf("TCP service reachable on port %d", port),
-		Evidence:    "A TCP connection completed successfully to the approved IP address. No payload or exploit was sent.",
-		Remediation: "Confirm the service is required and restricted to intended network sources.",
-		ObservedAt:  time.Now().UTC(),
-	}, true
-}
-
 func (e *Engine) allowed(ip net.IP) bool {
 	for _, network := range e.nets {
 		if network.Contains(ip) {
@@ -378,18 +357,4 @@ func deduplicatePorts(ports []int) []int {
 		}
 	}
 	return result
-}
-
-func serviceName(port int) string {
-	services := map[int]string{22: "ssh", 80: "http", 443: "https", 445: "smb", 3389: "rdp", 5432: "postgresql", 6379: "redis", 8080: "http-alt", 8443: "https-alt"}
-	if name, ok := services[port]; ok {
-		return name
-	}
-	return "unknown"
-}
-
-func id() string {
-	value := make([]byte, 12)
-	_, _ = rand.Read(value)
-	return hex.EncodeToString(value)
 }

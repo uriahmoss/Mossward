@@ -96,14 +96,15 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scan := model.Scan{
-		ID:          randomID(),
-		Name:        name,
-		Targets:     targets,
-		Ports:       ports,
-		Status:      model.StatusQueued,
-		Findings:    []model.Finding{},
-		TotalChecks: len(targets) * len(ports),
-		CreatedAt:   time.Now().UTC(),
+		ID:           randomID(),
+		Name:         name,
+		Targets:      targets,
+		Ports:        ports,
+		Status:       model.StatusQueued,
+		Observations: []model.ServiceObservation{},
+		Findings:     []model.Finding{},
+		TotalChecks:  len(targets) * len(ports),
+		CreatedAt:    time.Now().UTC(),
 	}
 	if err := a.scanner.Schedule(scan); errors.Is(err, scanner.ErrQueueFull) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -118,6 +119,7 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; style-src 'self'; script-src 'self'")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
 		next.ServeHTTP(w, r)

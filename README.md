@@ -1,8 +1,30 @@
 # Mossward
 
-Mossward is an original, defensive vulnerability-management project for assets you own or are explicitly authorized to assess. The first milestone provides safe asset visibility: it connects to a small, configurable allowlist of TCP ports and records which services are reachable.
+Mossward is an original, defensive vulnerability-management project for assets you own or are explicitly authorized to assess. It provides scoped TCP visibility, safe service identification, and initial HTTP, TLS, SSH, and exposure checks.
 
 It does not exploit services, guess credentials, evade monitoring, or scan public addresses by default.
+
+Current service inspection includes:
+
+- HTTP status, page title, and selected non-secret response headers
+- HTTPS and generic TLS certificate and protocol metadata
+- SSH and passive generic banner evidence
+- Product/version identification when explicitly disclosed
+- Confidence levels for service observations
+
+Current non-destructive checks include:
+
+- Cleartext HTTP
+- Missing HTTP security headers
+- Disclosed service versions
+- Expired or soon-to-expire TLS certificates
+- TLS hostname mismatches
+- TLS 1.0 or TLS 1.1 support
+- Reachable SSH, SMB, RDP, PostgreSQL, and Redis services
+
+Mossward sends a bounded HTTP `GET /`, TLS ClientHello, or passive banner read
+only when applicable. It does not follow HTTP redirects, and every connection
+uses the pinned IP address approved during scope validation.
 
 ## Run locally
 

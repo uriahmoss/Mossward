@@ -117,6 +117,9 @@ func TestWebRoutesServeHomeAndScanner(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Errorf("%s: expected %d, got %d", path, http.StatusOK, response.Code)
 		}
+		if response.Header().Get("Referrer-Policy") != "no-referrer" {
+			t.Errorf("%s: missing Referrer-Policy security header", path)
+		}
 	}
 }
 

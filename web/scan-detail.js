@@ -30,6 +30,8 @@ function formatDuration(scan) {
 }
 
 function render(scan) {
+  const observations = scan.observations || [];
+  const findings = scan.findings || [];
   const total = scan.total_checks || (scan.targets.length * scan.ports.length);
   const done = scan.status === "completed" && !scan.done_checks ? total : scan.done_checks;
   const percent = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
@@ -50,9 +52,9 @@ function render(scan) {
   document.querySelector(".progress-track").setAttribute("aria-valuenow", String(percent));
 
   document.querySelector("#target-count").textContent = scan.targets.length;
-  document.querySelector("#port-count").textContent = scan.ports.length;
   document.querySelector("#check-count").textContent = `${done}/${total}`;
-  document.querySelector("#finding-count").textContent = scan.findings.length;
+  document.querySelector("#finding-count").textContent = observations.length;
+  document.querySelector("#issue-count").textContent = findings.length;
 
   document.querySelector("#created-at").textContent = formatDate(scan.created_at);
   document.querySelector("#started-at").textContent = formatDate(scan.started_at);
@@ -73,14 +75,41 @@ function render(scan) {
   scanErrorPanel.hidden = !scan.error;
   document.querySelector("#scan-error").textContent = scan.error || "";
 
-  document.querySelector("#findings-summary").textContent = `${scan.findings.length} observed`;
-  document.querySelector("#finding-list").innerHTML = scan.findings.length
-    ? scan.findings.map((finding) => `
+  document.querySelector("#services-summary").textContent = `${observations.length} observed`;
+  document.querySelector("#service-list").innerHTML = observations.length
+    ? observations.map((service) => `
+      <article class="service-detail">
+        <div class="finding-heading">
+          <div>
+            <span class="confidence">${escapeHTML(service.confidence)} confidence</span>
+            <h3>${escapeHTML(service.product || service.protocol.toUpperCase())}${service.version ? ` ${escapeHTML(service.version)}` : ""}</h3>
+          </div>
+          <span class="service-address">${escapeHTML(service.address)}:${service.port}</span>
+        </div>
+        <dl class="finding-fields">
+          <div><dt>Protocol</dt><dd>${escapeHTML(service.protocol)}</dd></div>
+          <div><dt>Target</dt><dd>${escapeHTML(service.target)}</dd></div>
+          <div><dt>Observed</dt><dd>${escapeHTML(formatDate(service.observed_at))}</dd></div>
+        </dl>
+        <div class="finding-copy"><strong>Evidence</strong><p>${escapeHTML(service.evidence)}</p></div>
+        ${Object.keys(service.metadata || {}).length ? `
+          <div class="metadata-grid">${Object.entries(service.metadata).map(([key, value]) => `
+            <div><span>${escapeHTML(key.replaceAll("_", " "))}</span><strong>${escapeHTML(value || "—")}</strong></div>
+          `).join("")}</div>
+        ` : ""}
+      </article>
+    `).join("")
+    : `<div class="no-findings"><span class="empty-icon">○</span><strong>No reachable services observed</strong><span>This area updates while the scan is running.</span></div>`;
+
+  document.querySelector("#findings-summary").textContent = `${findings.length} findings`;
+  document.querySelector("#finding-list").innerHTML = findings.length
+    ? findings.map((finding) => `
       <article class="finding-detail">
         <div class="finding-heading">
           <div>
-            <span class="severity">${escapeHTML(finding.severity)}</span>
+            <span class="severity" data-severity="${escapeHTML(finding.severity)}">${escapeHTML(finding.severity)}</span>
             <h3>${escapeHTML(finding.title)}</h3>
+            <span class="check-id">${escapeHTML(finding.check_id)}</span>
           </div>
           <span class="service-address">${escapeHTML(finding.address)}:${finding.port}</span>
         </div>
@@ -93,7 +122,7 @@ function render(scan) {
         <div class="finding-copy"><strong>Recommendation</strong><p>${escapeHTML(finding.remediation)}</p></div>
       </article>
     `).join("")
-    : `<div class="no-findings"><span class="empty-icon">✓</span><strong>No reachable services observed yet</strong><span>This area updates while the scan is running.</span></div>`;
+    : `<div class="no-findings"><span class="empty-icon">✓</span><strong>No security findings observed</strong><span>This area updates while the scan is running.</span></div>`;
 }
 
 function showError(message) {

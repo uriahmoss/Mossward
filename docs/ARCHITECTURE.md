@@ -13,6 +13,18 @@ closed ports. The scheduler periodically persists completed and total check
 counters, allowing the scan detail view to report real progress while bounding
 file writes to roughly one hundred updates per scan.
 
+Reachable endpoints pass through a protocol inspector. The inspector separates
+normalized service observations from actionable security findings:
+
+- HTTP requests use a custom transport that connects to the pinned approved IP,
+  preserves the intended Host header, limits response bodies, and never follows
+  redirects.
+- TLS handshakes collect certificate and negotiated-protocol evidence with
+  verification reported as explicit findings.
+- SSH and generic banners are read passively with strict byte and time limits.
+- Declarative check identifiers keep findings stable as presentation and
+  remediation text evolve.
+
 ```text
 Browser -> API -> scope validation -> bounded scan workers -> authorized targets
                   |                         |

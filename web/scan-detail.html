@@ -48,9 +48,9 @@
 
       <section class="metric-grid" aria-label="Scan summary">
         <div class="metric-card"><span>Targets</span><strong id="target-count">0</strong></div>
-        <div class="metric-card"><span>Ports</span><strong id="port-count">0</strong></div>
         <div class="metric-card"><span>Checks complete</span><strong id="check-count">0</strong></div>
         <div class="metric-card"><span>Reachable services</span><strong id="finding-count">0</strong></div>
+        <div class="metric-card"><span>Security findings</span><strong id="issue-count">0</strong></div>
       </section>
 
       <div id="scan-error-panel" class="scan-error-panel" hidden>
@@ -82,10 +82,18 @@
         </article>
       </section>
 
+      <section class="card findings-panel services-panel">
+        <div class="card-heading">
+          <div><span class="step-label">Inventory</span><h2>Service observations</h2></div>
+          <span id="services-summary" class="policy-pill">0 observed</span>
+        </div>
+        <div id="service-list"></div>
+      </section>
+
       <section class="card findings-panel">
         <div class="card-heading">
-          <div><span class="step-label">Evidence</span><h2>Reachable services</h2></div>
-          <span id="findings-summary" class="policy-pill">0 observed</span>
+          <div><span class="step-label">Checks</span><h2>Security findings</h2></div>
+          <span id="findings-summary" class="policy-pill">0 findings</span>
         </div>
         <div id="finding-list"></div>
       </section>
@@ -94,4 +102,3 @@
   <script src="/scan-detail.js" defer></script>
 </body>
 </html>
-

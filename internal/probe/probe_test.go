@@ -1,0 +1,104 @@
+package probe
+
+import (
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"net/http"
+	"strings"
+	"testing"
+	"time"
+
+	"mossward/internal/model"
+)
+
+func TestParseProductVersion(t *testing.T) {
+	product, version := parseProductVersion("nginx/1.25.4")
+	if product != "nginx" || version != "1.25.4" {
+		t.Fatalf("unexpected product/version: %q %q", product, version)
+	}
+}
+
+func TestParseProductVersionFromGenericBanner(t *testing.T) {
+	product, version := parseProductVersion("220 ProFTPD 1.3.8 Server ready")
+	if product != "ProFTPD" || version != "1.3.8" {
+		t.Fatalf("unexpected generic product/version: %q %q", product, version)
+	}
+}
+
+func TestParseSSHBanner(t *testing.T) {
+	product, version := parseSSHBanner("SSH-2.0-OpenSSH_9.6p1")
+	if product != "OpenSSH" || version != "9.6p1" {
+		t.Fatalf("unexpected SSH product/version: %q %q", product, version)
+	}
+}
+
+func TestExtractTitle(t *testing.T) {
+	if title := extractTitle(`<html><title class="site"> Mossward &amp; Test </title></html>`); title != "Mossward & Test" {
+		t.Fatalf("unexpected title: %q", title)
+	}
+	if title := extractTitle(`<html><title missing-close</html>`); title != "" {
+		t.Fatalf("expected malformed title to be ignored, got %q", title)
+	}
+}
+
+func TestHTTPFindingsIncludeCleartextAndMissingHeaders(t *testing.T) {
+	target := model.Target{Name: "app.internal", Address: "127.0.0.1"}
+	findings := httpFindings(target, 80, false, http.Header{})
+	checks := findingIDs(findings)
+	if !checks["http.cleartext"] || !checks["http.missing-security-headers"] {
+		t.Fatalf("expected cleartext and header findings, got %v", checks)
+	}
+}
+
+func TestHTTPFindingsAcceptCompleteSecureHeaders(t *testing.T) {
+	target := model.Target{Name: "app.internal", Address: "127.0.0.1"}
+	headers := http.Header{
+		"Content-Security-Policy":   []string{"default-src 'self'"},
+		"X-Content-Type-Options":    []string{"nosniff"},
+		"Referrer-Policy":           []string{"no-referrer"},
+		"Strict-Transport-Security": []string{"max-age=31536000"},
+	}
+	if findings := httpFindings(target, 443, true, headers); len(findings) != 0 {
+		t.Fatalf("expected no header findings, got %#v", findings)
+	}
+}
+
+func TestEvaluateTLSDetectsExpiredAndHostnameMismatch(t *testing.T) {
+	target := model.Target{Name: "app.internal", Address: "127.0.0.1"}
+	certificate := &x509.Certificate{
+		Subject:   pkix.Name{CommonName: "expired"},
+		Issuer:    pkix.Name{CommonName: "test-ca"},
+		DNSNames:  []string{"different.internal"},
+		NotBefore: time.Now().Add(-48 * time.Hour),
+		NotAfter:  time.Now().Add(-24 * time.Hour),
+	}
+	state := &tls.ConnectionState{
+		Version: tls.VersionTLS13, CipherSuite: tls.TLS_AES_128_GCM_SHA256,
+		PeerCertificates: []*x509.Certificate{certificate},
+	}
+	metadata, findings := evaluateTLS(target, 443, state)
+	if metadata["tls_version"] != "TLS 1.3" {
+		t.Fatalf("unexpected TLS metadata: %v", metadata)
+	}
+	checks := findingIDs(findings)
+	if !checks["tls.certificate-expired"] || !checks["tls.hostname-mismatch"] {
+		t.Fatalf("expected certificate findings, got %v", checks)
+	}
+}
+
+func TestExposedServiceFinding(t *testing.T) {
+	target := model.Target{Name: "db.internal", Address: "127.0.0.1"}
+	findings := exposedServiceFindings(target, 6379, "redis")
+	if len(findings) != 1 || findings[0].Severity != "high" || !strings.Contains(findings[0].CheckID, "redis") {
+		t.Fatalf("unexpected Redis exposure finding: %#v", findings)
+	}
+}
+
+func findingIDs(findings []model.Finding) map[string]bool {
+	result := make(map[string]bool)
+	for _, finding := range findings {
+		result[finding.CheckID] = true
+	}
+	return result
+}

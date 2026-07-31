@@ -30,12 +30,9 @@ async function refresh() {
           ${scan.targets.map((target) => escapeHTML(
             target.name === target.address ? target.name : `${target.name} (${target.address})`,
           )).join(", ")}
-          · ${scan.ports.length} ports · ${scan.findings.length} reachable
+          · ${scan.ports.length} ports · ${(scan.observations || []).length} services · ${(scan.findings || []).length} findings
         </div>
         ${scan.error ? `<div class="error">${escapeHTML(scan.error)}</div>` : ""}
-        ${scan.findings.map((finding) => `
-          <div class="finding">${escapeHTML(finding.target)} (${escapeHTML(finding.address)}):${finding.port} — ${escapeHTML(finding.service)}</div>
-        `).join("")}
       </a>
     `).join("") : emptyState;
   } catch {

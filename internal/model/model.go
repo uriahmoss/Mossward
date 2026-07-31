@@ -17,6 +17,7 @@ const (
 
 type Finding struct {
 	ID          string    `json:"id"`
+	CheckID     string    `json:"check_id"`
 	Target      string    `json:"target"`
 	Address     string    `json:"address"`
 	Port        int       `json:"port"`
@@ -26,6 +27,20 @@ type Finding struct {
 	Evidence    string    `json:"evidence"`
 	Remediation string    `json:"remediation"`
 	ObservedAt  time.Time `json:"observed_at"`
+}
+
+type ServiceObservation struct {
+	ID         string            `json:"id"`
+	Target     string            `json:"target"`
+	Address    string            `json:"address"`
+	Port       int               `json:"port"`
+	Protocol   string            `json:"protocol"`
+	Product    string            `json:"product,omitempty"`
+	Version    string            `json:"version,omitempty"`
+	Confidence string            `json:"confidence"`
+	Evidence   string            `json:"evidence"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+	ObservedAt time.Time         `json:"observed_at"`
 }
 
 type Target struct {
@@ -53,18 +68,19 @@ func (t *Target) UnmarshalJSON(data []byte) error {
 }
 
 type Scan struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Targets     []Target   `json:"targets"`
-	Ports       []int      `json:"ports"`
-	Status      ScanStatus `json:"status"`
-	Error       string     `json:"error,omitempty"`
-	Findings    []Finding  `json:"findings"`
-	TotalChecks int        `json:"total_checks"`
-	DoneChecks  int        `json:"done_checks"`
-	CreatedAt   time.Time  `json:"created_at"`
-	StartedAt   *time.Time `json:"started_at,omitempty"`
-	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	ID           string               `json:"id"`
+	Name         string               `json:"name"`
+	Targets      []Target             `json:"targets"`
+	Ports        []int                `json:"ports"`
+	Status       ScanStatus           `json:"status"`
+	Error        string               `json:"error,omitempty"`
+	Observations []ServiceObservation `json:"observations"`
+	Findings     []Finding            `json:"findings"`
+	TotalChecks  int                  `json:"total_checks"`
+	DoneChecks   int                  `json:"done_checks"`
+	CreatedAt    time.Time            `json:"created_at"`
+	StartedAt    *time.Time           `json:"started_at,omitempty"`
+	CompletedAt  *time.Time           `json:"completed_at,omitempty"`
 }
 
 type CreateScanRequest struct {

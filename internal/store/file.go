@@ -54,6 +54,9 @@ func NewFileStore(path string) (*FileStore, error) {
 		if err := json.Unmarshal(data, &s.scans); err != nil {
 			return nil, err
 		}
+		for id, scan := range s.scans {
+			s.scans[id] = migrateLegacyObservations(scan)
+		}
 	}
 	return s, nil
 }
@@ -90,6 +93,16 @@ func cloneScan(scan model.Scan) model.Scan {
 	scan.Targets = append([]model.Target(nil), scan.Targets...)
 	scan.Ports = append([]int(nil), scan.Ports...)
 	scan.Findings = append([]model.Finding(nil), scan.Findings...)
+	scan.Observations = append([]model.ServiceObservation(nil), scan.Observations...)
+	for index := range scan.Observations {
+		if scan.Observations[index].Metadata != nil {
+			metadata := make(map[string]string, len(scan.Observations[index].Metadata))
+			for key, value := range scan.Observations[index].Metadata {
+				metadata[key] = value
+			}
+			scan.Observations[index].Metadata = metadata
+		}
+	}
 	if scan.StartedAt != nil {
 		started := *scan.StartedAt
 		scan.StartedAt = &started
@@ -98,6 +111,29 @@ func cloneScan(scan model.Scan) model.Scan {
 		completed := *scan.CompletedAt
 		scan.CompletedAt = &completed
 	}
+	return scan
+}
+
+func migrateLegacyObservations(scan model.Scan) model.Scan {
+	if scan.Observations == nil {
+		scan.Observations = []model.ServiceObservation{}
+	}
+	if scan.Findings == nil {
+		scan.Findings = []model.Finding{}
+	}
+	currentFindings := scan.Findings[:0]
+	for _, finding := range scan.Findings {
+		if finding.CheckID == "" && finding.Severity == "info" {
+			scan.Observations = append(scan.Observations, model.ServiceObservation{
+				ID: finding.ID, Target: finding.Target, Address: finding.Address,
+				Port: finding.Port, Protocol: finding.Service, Confidence: "low",
+				Evidence: finding.Evidence, ObservedAt: finding.ObservedAt,
+			})
+			continue
+		}
+		currentFindings = append(currentFindings, finding)
+	}
+	scan.Findings = currentFindings
 	return scan
 }
 
