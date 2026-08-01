@@ -20,6 +20,8 @@ const (
 	enrollmentTokenBytes    = 32
 	enrollmentTokenLifetime = 15 * time.Minute
 	endpointNameLimit       = 200
+	certificateRenewBefore  = 30 * 24 * time.Hour
+	revocationReasonLimit   = 500
 )
 
 type EndpointStore interface {
@@ -30,6 +32,8 @@ type EndpointStore interface {
 	ListEndpoints() ([]model.Endpoint, error)
 	EndpointBySerial(string) (model.Endpoint, error)
 	MarkEndpointSeen(string, time.Time) error
+	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
+	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
 }
 
 type Service struct {
@@ -73,7 +77,58 @@ func (s *Service) EnrollmentTokens() ([]model.AgentEnrollmentToken, error) {
 }
 
 func (s *Service) Endpoints() ([]model.Endpoint, error) {
-	return s.store.ListEndpoints()
+	items, err := s.store.ListEndpoints()
+	if err != nil {
+		return nil, err
+	}
+	for index := range items {
+		items[index].Alerts = endpointAlerts(items[index], s.now())
+	}
+	return items, nil
+}
+
+func endpointAlerts(endpoint model.Endpoint, now time.Time) []model.EndpointAlert {
+	alerts := []model.EndpointAlert{}
+	if endpoint.Status == model.EndpointRevoked {
+		return append(alerts, model.EndpointAlert{Code: "certificate_revoked", Severity: "error", Message: "Endpoint certificate is revoked"})
+	}
+	if !now.Before(endpoint.ExpiresAt) {
+		return append(alerts, model.EndpointAlert{Code: "certificate_expired", Severity: "error", Message: "Endpoint certificate has expired"})
+	}
+	if !now.Before(endpoint.ExpiresAt.Add(-certificateRenewBefore)) {
+		alerts = append(alerts, model.EndpointAlert{Code: "certificate_expiring", Severity: "warning", Message: "Endpoint certificate expires within 30 days"})
+	}
+	return alerts
+}
+
+func (s *Service) Renew(endpoint model.Endpoint, csrPEM, sourceIP string) (EnrollmentResult, error) {
+	now := s.now()
+	if now.Before(endpoint.ExpiresAt.Add(-certificateRenewBefore)) {
+		return EnrollmentResult{}, errors.New("endpoint certificate is not within its renewal window")
+	}
+	serial, certificatePEM, expiresAt, err := s.pki.IssueEndpoint(endpoint.ID, endpoint.Name, []byte(csrPEM), now)
+	if err != nil {
+		return EnrollmentResult{}, err
+	}
+	oldSerial := endpoint.CertificateSerial
+	endpoint.CertificateSerial, endpoint.CertificatePEM, endpoint.ExpiresAt, endpoint.RenewedAt = serial, certificatePEM, expiresAt, &now
+	event := model.AuditEvent{OccurredAt: now, Action: "endpoint.certificate.renewed", Severity: model.AuditInfo,
+		TargetType: "endpoint", TargetID: endpoint.ID, SourceIP: sourceIP, Details: "{}"}
+	if err := s.store.RenewEndpointCertificate(oldSerial, endpoint, event); err != nil {
+		return EnrollmentResult{}, err
+	}
+	return EnrollmentResult{Endpoint: endpoint, CertificatePEM: certificatePEM, CAChainPEM: s.pki.CAChainPEM()}, nil
+}
+
+func (s *Service) Revoke(id, reason, actorID, sourceIP string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > revocationReasonLimit {
+		return errors.New("revocation reason must be between 1 and 500 characters")
+	}
+	now := s.now()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "endpoint.revoked", Severity: model.AuditWarning,
+		TargetType: "endpoint", TargetID: id, SourceIP: sourceIP, Details: "{}"}
+	return s.store.RevokeEndpoint(id, reason, now, event)
 }
 
 func (s *Service) Enroll(token, csrPEM, sourceIP string) (EnrollmentResult, error) {
@@ -112,7 +167,7 @@ func (s *Service) TLSConfig() *tls.Config {
 
 func (s *Service) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || r.URL.Path != "/api/agent/v1/check-in" {
+		if r.Method != http.MethodPost || (r.URL.Path != "/api/agent/v1/check-in" && r.URL.Path != "/api/agent/v1/certificate/renew") {
 			http.NotFound(w, r)
 			return
 		}
@@ -122,6 +177,24 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		now := s.now()
+		if r.URL.Path == "/api/agent/v1/certificate/renew" {
+			var request struct {
+				CSRPEM string `json:"csr_pem"`
+			}
+			if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&request); err != nil {
+				http.Error(w, "invalid renewal request", http.StatusBadRequest)
+				return
+			}
+			result, err := s.Renew(endpoint, request.CSRPEM, r.RemoteAddr)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			_ = json.NewEncoder(w).Encode(result)
+			return
+		}
 		if err := s.store.MarkEndpointSeen(endpoint.ID, now); err != nil {
 			http.Error(w, "endpoint state unavailable", http.StatusServiceUnavailable)
 			return
@@ -142,7 +215,7 @@ func (s *Service) endpointFromConnection(connection *tls.ConnectionState) (model
 	}
 	certificate := connection.PeerCertificates[0]
 	endpoint, err := s.store.EndpointBySerial(certificate.SerialNumber.String())
-	if err != nil || endpoint.Status != model.EndpointActive {
+	if err != nil || endpoint.Status != model.EndpointActive || !s.now().Before(endpoint.ExpiresAt) {
 		return model.Endpoint{}, errors.New("endpoint certificate is not active")
 	}
 	wanted := "spiffe://mossward/endpoint/" + endpoint.ID

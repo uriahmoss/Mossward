@@ -204,6 +204,7 @@ so machine-specific policy does not enter source control.
 - `GET /api/admin/endpoints`
 - `GET /api/admin/agent-enrollment-tokens`
 - `POST /api/admin/agent-enrollment-tokens`
+- `POST /api/admin/endpoints/{id}/revoke`
 - `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`
@@ -212,7 +213,10 @@ so machine-specific policy does not enter source control.
 - `GET /api/intelligence/news`
 - `GET /api/intelligence/status`
 
-The separate mTLS endpoint API currently exposes `POST /api/agent/v1/check-in`.
+The separate mTLS endpoint API exposes `POST /api/agent/v1/check-in` and
+`POST /api/agent/v1/certificate/renew`. Renewal authenticates the current
+endpoint certificate and accepts a newly generated public-key CSR during the
+certificate's final 30 days.
 
 Example:
 

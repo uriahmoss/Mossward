@@ -59,6 +59,20 @@ func (s *memoryEndpointStore) MarkEndpointSeen(id string, seenAt time.Time) erro
 	s.lastSeen = &seenAt
 	return nil
 }
+func (s *memoryEndpointStore) RenewEndpointCertificate(oldSerial string, endpoint model.Endpoint, _ model.AuditEvent) error {
+	if oldSerial != s.endpoint.CertificateSerial {
+		return store.ErrEndpointCertificateChanged
+	}
+	s.endpoint = endpoint
+	return nil
+}
+func (s *memoryEndpointStore) RevokeEndpoint(id, reason string, revokedAt time.Time, _ model.AuditEvent) error {
+	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
+		return store.ErrNotFound
+	}
+	s.endpoint.Status, s.endpoint.RevocationReason, s.endpoint.RevokedAt = model.EndpointRevoked, reason, &revokedAt
+	return nil
+}
 
 func TestEnrollmentAndMTLSIdentity(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
@@ -98,5 +112,31 @@ func TestEnrollmentAndMTLSIdentity(t *testing.T) {
 	hash := sha256.Sum256([]byte(token))
 	if !bytes.Equal(hash[:], repository.token.TokenHash) {
 		t.Fatal("raw enrollment token was not stored as a hash")
+	}
+}
+
+func TestEndpointCertificateRenewalAndRevocation(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	pki, err := LoadOrCreatePKI(t.TempDir(), []string{"agent.mossward.test"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryEndpointStore{endpoint: model.Endpoint{ID: "endpoint-1", Name: "Workstation", Status: model.EndpointActive,
+		CertificateSerial: "old", ExpiresAt: now.Add(29 * 24 * time.Hour)}}
+	service := NewService(repository, pki)
+	service.now = func() time.Time { return now }
+	result, err := service.Renew(repository.endpoint, string(endpointCSR(t)), "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Endpoint.CertificateSerial == "old" || result.Endpoint.RenewedAt == nil {
+		t.Fatalf("certificate was not renewed: %#v", result.Endpoint)
+	}
+	if err := service.Revoke("endpoint-1", "device retired", "admin", "127.0.0.1"); err != nil {
+		t.Fatal(err)
+	}
+	items, err := service.Endpoints()
+	if err != nil || len(items) != 1 || items[0].Status != model.EndpointRevoked || len(items[0].Alerts) != 1 {
+		t.Fatalf("unexpected revoked inventory: %#v %v", items, err)
 	}
 }

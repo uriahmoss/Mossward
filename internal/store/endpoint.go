@@ -86,7 +86,7 @@ func (s *SQLiteStore) ConsumeAgentEnrollmentToken(hash []byte, endpoint model.En
 }
 
 func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at
+	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason
 		FROM endpoints ORDER BY name, enrolled_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
@@ -104,13 +104,59 @@ func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
 }
 
 func (s *SQLiteStore) EndpointBySerial(serial string) (model.Endpoint, error) {
-	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at
+	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason
 		FROM endpoints WHERE certificate_serial=?`, serial)
 	endpoint, err := scanEndpoint(row)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Endpoint{}, ErrNotFound
 	}
 	return endpoint, err
+}
+
+func (s *SQLiteStore) RenewEndpointCertificate(oldSerial string, endpoint model.Endpoint, event model.AuditEvent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin endpoint certificate renewal: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE endpoints SET certificate_serial=?, certificate_pem=?, expires_at=?, renewed_at=?
+		WHERE id=? AND certificate_serial=? AND status='active'`, endpoint.CertificateSerial, endpoint.CertificatePEM,
+		formatTime(endpoint.ExpiresAt), formatTime(*endpoint.RenewedAt), endpoint.ID, oldSerial)
+	if err != nil {
+		return fmt.Errorf("renew endpoint certificate: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrEndpointCertificateChanged
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) RevokeEndpoint(id, reason string, revokedAt time.Time, event model.AuditEvent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin endpoint revocation: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE endpoints SET status='revoked', revoked_at=?, revocation_reason=? WHERE id=? AND status='active'`,
+		formatTime(revokedAt), reason, id)
+	if err != nil {
+		return fmt.Errorf("revoke endpoint: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return ErrNotFound
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) MarkEndpointSeen(id string, seenAt time.Time) error {
@@ -125,13 +171,16 @@ type endpointScanner interface {
 func scanEndpoint(row endpointScanner) (model.Endpoint, error) {
 	var endpoint model.Endpoint
 	var enrolledAt, expiresAt string
-	var lastSeen sql.NullString
-	if err := row.Scan(&endpoint.ID, &endpoint.Name, &endpoint.Status, &endpoint.CertificateSerial, &enrolledAt, &expiresAt, &lastSeen); err != nil {
+	var lastSeen, renewedAt, revokedAt sql.NullString
+	if err := row.Scan(&endpoint.ID, &endpoint.Name, &endpoint.Status, &endpoint.CertificateSerial, &enrolledAt, &expiresAt,
+		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason); err != nil {
 		return model.Endpoint{}, err
 	}
 	endpoint.EnrolledAt, _ = parseTime(enrolledAt)
 	endpoint.ExpiresAt, _ = parseTime(expiresAt)
 	endpoint.LastSeenAt = parseNullableTime(lastSeen)
+	endpoint.RenewedAt = parseNullableTime(renewedAt)
+	endpoint.RevokedAt = parseNullableTime(revokedAt)
 	return endpoint, nil
 }
 

@@ -220,7 +220,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Endpoint-generated private keys and constrained CSR signing
 - [x] Immutable per-endpoint SPIFFE-style certificate identity
 - [x] Per-endpoint mutually authenticated TLS identity and check-in
-- [ ] Endpoint certificate renewal, revocation, inventory, and alerts
+- [x] Endpoint certificate renewal, revocation, inventory, and alerts
 
 ## Roadmap — not yet started
 

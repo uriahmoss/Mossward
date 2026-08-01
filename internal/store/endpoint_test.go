@@ -41,3 +41,30 @@ func TestEndpointEnrollmentTokenIsSingleUse(t *testing.T) {
 		t.Fatalf("unexpected endpoints: %#v %v", endpoints, err)
 	}
 }
+
+func TestEndpointCertificateLifecycle(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	_, err := repository.db.Exec(`INSERT INTO endpoints(id,name,status,certificate_serial,certificate_pem,enrolled_at,expires_at)
+		VALUES('endpoint','Endpoint','active','old','old-cert',?,?)`, formatTime(now), formatTime(now.Add(time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed := now.Add(time.Minute)
+	endpoint := model.Endpoint{ID: "endpoint", Name: "Endpoint", Status: model.EndpointActive, CertificateSerial: "new",
+		CertificatePEM: "new-cert", EnrolledAt: now, ExpiresAt: now.Add(90 * 24 * time.Hour), RenewedAt: &renewed}
+	event := model.AuditEvent{OccurredAt: renewed, Action: "endpoint.certificate.renewed", Severity: model.AuditInfo}
+	if err := repository.RenewEndpointCertificate("old", endpoint, event); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.EndpointBySerial("old"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old serial remains active: %v", err)
+	}
+	if err := repository.RevokeEndpoint("endpoint", "retired", renewed, model.AuditEvent{OccurredAt: renewed, Action: "endpoint.revoked", Severity: model.AuditWarning}); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := repository.EndpointBySerial("new")
+	if err != nil || stored.Status != model.EndpointRevoked || stored.RevokedAt == nil || stored.RevocationReason != "retired" {
+		t.Fatalf("unexpected revoked endpoint: %#v %v", stored, err)
+	}
+}

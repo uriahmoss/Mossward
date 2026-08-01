@@ -12,6 +12,32 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/agent-enrollment-tokens", a.listAgentEnrollmentTokens)
 	mux.HandleFunc("POST /api/admin/agent-enrollment-tokens", a.createAgentEnrollmentToken)
 	mux.HandleFunc("POST /api/agent/enroll", a.enrollAgent)
+	mux.HandleFunc("POST /api/admin/endpoints/{id}/revoke", a.revokeEndpoint)
+}
+
+func (a *API) revokeEndpoint(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	if !a.requireAgentIdentity(w) {
+		return
+	}
+	var request struct {
+		Reason string `json:"reason"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := a.agentIdentity.Revoke(r.PathValue("id"), request.Reason, actor.ID, requestIP(r)); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "active endpoint not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) listEndpoints(w http.ResponseWriter, r *http.Request) {

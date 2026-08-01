@@ -35,3 +35,25 @@ func (s *SQLiteStore) applyEndpointIdentityMigration() error {
 	}
 	return tx.Commit()
 }
+
+func (s *SQLiteStore) applyEndpointLifecycleMigration() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin endpoint lifecycle migration: %w", err)
+	}
+	defer tx.Rollback()
+	statements := []string{
+		`ALTER TABLE endpoints ADD COLUMN renewed_at TEXT`,
+		`ALTER TABLE endpoints ADD COLUMN revoked_at TEXT`,
+		`ALTER TABLE endpoints ADD COLUMN revocation_reason TEXT NOT NULL DEFAULT ''`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return fmt.Errorf("apply endpoint lifecycle migration: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(10, ?)`, formatTime(time.Now().UTC())); err != nil {
+		return fmt.Errorf("record endpoint lifecycle migration: %w", err)
+	}
+	return tx.Commit()
+}

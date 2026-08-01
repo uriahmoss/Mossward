@@ -54,8 +54,17 @@ async function loadEndpointIdentity() {
   if (!endpointsResponse.ok || !tokensResponse.ok) { return; }
   const endpoints = await endpointsResponse.json();
   const tokens = await tokensResponse.json();
-  document.querySelector("#endpoints-list").innerHTML = endpoints.length ? endpoints.map((endpoint) => `<article class="session-row"><div><strong>${escapeHTML(endpoint.name)}</strong><span>${escapeHTML(endpoint.status)} · certificate expires ${new Date(endpoint.expires_at).toLocaleString()}${endpoint.last_seen_at ? ` · last seen ${new Date(endpoint.last_seen_at).toLocaleString()}` : " · never connected"}</span></div></article>`).join("") : "No endpoints enrolled.";
+  document.querySelector("#endpoints-list").innerHTML = endpoints.length ? endpoints.map((endpoint) => `<article class="session-row"><div><strong>${escapeHTML(endpoint.name)}</strong><span>${escapeHTML(endpoint.status)} · certificate expires ${new Date(endpoint.expires_at).toLocaleString()}${endpoint.last_seen_at ? ` · last seen ${new Date(endpoint.last_seen_at).toLocaleString()}` : " · never connected"}${endpoint.alerts?.length ? ` · ${endpoint.alerts.map((alert) => escapeHTML(alert.message)).join("; ")}` : ""}${endpoint.revocation_reason ? ` · ${escapeHTML(endpoint.revocation_reason)}` : ""}</span></div>${endpoint.status === "active" ? `<button class="endpoint-revoke compact-button" data-id="${endpoint.id}">Revoke</button>` : ""}</article>`).join("") : "No endpoints enrolled.";
+  document.querySelectorAll(".endpoint-revoke").forEach((button) => button.addEventListener("click", () => revokeEndpoint(button.dataset.id)));
   document.querySelector("#endpoint-enrollments").innerHTML = tokens.length ? tokens.map((token) => `<article class="session-row"><div><strong>${escapeHTML(token.name)}</strong><span>${token.used_at ? `used ${new Date(token.used_at).toLocaleString()}` : `expires ${new Date(token.expires_at).toLocaleString()}`}</span></div></article>`).join("") : "No active enrollment tokens.";
+}
+
+async function revokeEndpoint(id) {
+  const reason = window.prompt("Reason for revoking this endpoint certificate:");
+  if (!reason) { return; }
+  const response = await secureFetch(`/api/admin/endpoints/${encodeURIComponent(id)}/revoke`, {method: "POST", headers: csrfHeaders, body: JSON.stringify({reason})});
+  if (!response.ok) { const result = await response.json(); usersError.textContent = result.error; return; }
+  await loadEndpointIdentity();
 }
 
 document.querySelector("#endpoint-enrollment-form").addEventListener("submit", async (event) => {
