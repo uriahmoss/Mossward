@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -10,22 +11,30 @@ import (
 )
 
 type Config struct {
-	ListenAddress  string
-	DatabaseFile   string
-	LegacyDataFile string
-	AllowedCIDRs   []string
-	AllowedPorts   map[int]bool
-	MaxTargets     int
-	MaxConcurrent  int
-	QueueSize      int
-	ConnectTimeout time.Duration
+	ListenAddress     string
+	DatabaseFile      string
+	LegacyDataFile    string
+	IdentityKeyFile   string
+	WebAuthnRPID      string
+	WebAuthnOrigins   []string
+	TrustedProxyCIDRs []string
+	AllowedCIDRs      []string
+	AllowedPorts      map[int]bool
+	MaxTargets        int
+	MaxConcurrent     int
+	QueueSize         int
+	ConnectTimeout    time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddress:  env("MOSSWARD_LISTEN", "127.0.0.1:8080"),
-		DatabaseFile:   env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
-		LegacyDataFile: env("MOSSWARD_DATA_FILE", "data/scans.json"),
+		ListenAddress:     env("MOSSWARD_LISTEN", "127.0.0.1:8080"),
+		DatabaseFile:      env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
+		LegacyDataFile:    env("MOSSWARD_DATA_FILE", "data/scans.json"),
+		IdentityKeyFile:   env("MOSSWARD_IDENTITY_KEY_FILE", "data/identity.key"),
+		WebAuthnRPID:      env("MOSSWARD_WEBAUTHN_RP_ID", "localhost"),
+		WebAuthnOrigins:   splitValues(env("MOSSWARD_WEBAUTHN_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080")),
+		TrustedProxyCIDRs: splitValues(env("MOSSWARD_TRUSTED_PROXY_CIDRS", "")),
 		AllowedCIDRs: strings.Split(env("MOSSWARD_ALLOWED_CIDRS",
 			"127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7"), ","),
 		MaxTargets:     256,
@@ -57,7 +66,43 @@ func Load() (Config, error) {
 			return Config{}, fmt.Errorf("invalid CIDR %q in MOSSWARD_ALLOWED_CIDRS: %w", raw, err)
 		}
 	}
+	for _, raw := range cfg.TrustedProxyCIDRs {
+		if _, _, err := net.ParseCIDR(raw); err != nil {
+			return Config{}, fmt.Errorf("invalid CIDR %q in MOSSWARD_TRUSTED_PROXY_CIDRS: %w", raw, err)
+		}
+	}
+	if err := validateWebAuthn(cfg.WebAuthnRPID, cfg.WebAuthnOrigins); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func splitValues(raw string) []string {
+	values := []string{}
+	for _, value := range strings.Split(raw, ",") {
+		if value = strings.TrimSpace(value); value != "" {
+			values = append(values, value)
+		}
+	}
+	return values
+}
+
+func validateWebAuthn(rpID string, origins []string) error {
+	if strings.TrimSpace(rpID) == "" || len(origins) == 0 {
+		return fmt.Errorf("WebAuthn RP ID and origins are required")
+	}
+	for _, origin := range origins {
+		parsed, err := url.Parse(origin)
+		if err != nil || parsed.Hostname() == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") {
+			return fmt.Errorf("invalid WebAuthn origin %q", origin)
+		}
+		hostIP := net.ParseIP(parsed.Hostname())
+		loopback := parsed.Hostname() == "localhost" || (hostIP != nil && hostIP.IsLoopback())
+		if parsed.Scheme != "https" && !loopback {
+			return fmt.Errorf("WebAuthn origin %q must use HTTPS outside localhost", origin)
+		}
+	}
+	return nil
 }
 
 func envPositiveInt(name string, fallback int) (int, error) {

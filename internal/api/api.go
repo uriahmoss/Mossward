@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
+	"net/netip"
 	"sort"
 	"strings"
 	"time"
 
+	identity "mossward/internal/auth"
 	"mossward/internal/config"
 	"mossward/internal/model"
 	"mossward/internal/scanner"
@@ -22,10 +25,17 @@ type API struct {
 	cfg     config.Config
 	store   store.Repository
 	scanner *scanner.Engine
+	auth    *identity.Service
 }
 
-func New(cfg config.Config, repository store.Repository, engine *scanner.Engine) http.Handler {
-	api := &API{cfg: cfg, store: repository, scanner: engine}
+const (
+	maxRequestBodyBytes = 64 << 10
+	maxScanNameLength   = 100
+	defaultNewsLimit    = 6
+)
+
+func New(cfg config.Config, repository store.Repository, engine *scanner.Engine, identityService *identity.Service) http.Handler {
+	api := &API{cfg: cfg, store: repository, scanner: engine, auth: identityService}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", api.health)
 	mux.HandleFunc("GET /api/config", api.getConfig)
@@ -34,19 +44,85 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine)
 	mux.HandleFunc("GET /api/scans/{id}", api.getScan)
 	mux.HandleFunc("GET /api/intelligence/news", api.intelligenceNews)
 	mux.HandleFunc("GET /api/intelligence/status", api.intelligenceStatus)
+	api.registerIdentityRoutes(mux)
 	mux.Handle("/", http.FileServer(http.FS(web.Files)))
-	return securityHeaders(mux)
+	return securityHeaders(api.trustedProxyClientIP(api.identityGate(mux)))
+}
+
+func (a *API) trustedProxyClientIP(next http.Handler) http.Handler {
+	prefixes := make([]netip.Prefix, 0, len(a.cfg.TrustedProxyCIDRs))
+	for _, raw := range a.cfg.TrustedProxyCIDRs {
+		if prefix, err := netip.ParsePrefix(raw); err == nil {
+			prefixes = append(prefixes, prefix)
+		}
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		peer, ok := remoteAddress(r.RemoteAddr)
+		if !ok || !addressInPrefixes(peer, prefixes) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		client, ok := forwardedClient(r.Header.Values("X-Forwarded-For"), prefixes)
+		if !ok {
+			next.ServeHTTP(w, r)
+			return
+		}
+		request := r.Clone(r.Context())
+		request.RemoteAddr = netip.AddrPortFrom(client, 0).String()
+		next.ServeHTTP(w, request)
+	})
+}
+
+func remoteAddress(value string) (netip.Addr, bool) {
+	if addressPort, err := netip.ParseAddrPort(value); err == nil {
+		return addressPort.Addr().Unmap(), true
+	}
+	address, err := netip.ParseAddr(value)
+	return address.Unmap(), err == nil
+}
+
+func forwardedClient(headers []string, trusted []netip.Prefix) (netip.Addr, bool) {
+	values := []string{}
+	for _, header := range headers {
+		values = append(values, strings.Split(header, ",")...)
+	}
+	for index := len(values) - 1; index >= 0; index-- {
+		address, err := netip.ParseAddr(strings.TrimSpace(values[index]))
+		if err != nil {
+			return netip.Addr{}, false
+		}
+		address = address.Unmap()
+		if !addressInPrefixes(address, trusted) {
+			return address, true
+		}
+	}
+	return netip.Addr{}, false
+}
+
+func addressInPrefixes(address netip.Addr, prefixes []netip.Prefix) bool {
+	for _, prefix := range prefixes {
+		if prefix.Contains(address) {
+			return true
+		}
+	}
+	return false
 }
 
 func (a *API) intelligenceNews(w http.ResponseWriter, _ *http.Request) {
-	items, err := a.store.ListCriticalNews(6)
-	if err != nil { writeError(w, http.StatusInternalServerError, "could not load CVE intelligence"); return }
+	items, err := a.store.ListCriticalNews(defaultNewsLimit)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load CVE intelligence")
+		return
+	}
 	writeJSON(w, http.StatusOK, items)
 }
 
 func (a *API) intelligenceStatus(w http.ResponseWriter, _ *http.Request) {
 	status, err := a.store.FeedStatus()
-	if err != nil { writeError(w, http.StatusInternalServerError, "could not load feed status"); return }
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load feed status")
+		return
+	}
 	writeJSON(w, http.StatusOK, status)
 }
 
@@ -90,8 +166,17 @@ func (a *API) getScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
+	user, ok := a.currentUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if user.Role == model.RoleViewer {
+		writeError(w, http.StatusForbidden, "analyst or administrator role required")
+		return
+	}
 	var req model.CreateScanRequest
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 64<<10))
+	decoder := json.NewDecoder(io.LimitReader(r.Body, maxRequestBodyBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&req); err != nil {
 		writeError(w, http.StatusBadRequest, "invalid JSON request")
@@ -101,7 +186,12 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "request must contain exactly one JSON object")
 		return
 	}
-	targets, ports, err := a.scanner.Validate(req)
+	policy, err := a.requestScopePolicy(req.ScopePolicyID)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	targets, ports, err := a.scanner.ValidateWithPolicy(req, policy)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -110,21 +200,29 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 	if name == "" {
 		name = "Untitled scan"
 	}
-	if len(name) > 100 {
+	if len(name) > maxScanNameLength {
 		writeError(w, http.StatusBadRequest, "scan name must be 100 characters or fewer")
 		return
 	}
+	scanID, err := randomID()
+	if err != nil {
+		slog.Error("Could not generate a scan identifier", "error", err)
+		writeError(w, http.StatusInternalServerError, "could not create scan")
+		return
+	}
 	scan := model.Scan{
-		ID:           randomID(),
-		Name:         name,
-		Targets:      targets,
-		Ports:        ports,
-		Status:       model.StatusQueued,
-		Observations: []model.ServiceObservation{},
-		Findings:     []model.Finding{},
-		CVEMatches:   []model.CVEMatch{},
-		TotalChecks:  len(targets) * len(ports),
-		CreatedAt:    time.Now().UTC(),
+		ID:            scanID,
+		Name:          name,
+		Targets:       targets,
+		Ports:         ports,
+		Status:        model.StatusQueued,
+		Observations:  []model.ServiceObservation{},
+		Findings:      []model.Finding{},
+		CVEMatches:    []model.CVEMatch{},
+		TotalChecks:   len(targets) * len(ports),
+		CreatedAt:     time.Now().UTC(),
+		ScopePolicyID: policy.ID,
+		MaxConcurrent: policy.MaxConcurrent,
 	}
 	if err := a.scanner.Schedule(scan); errors.Is(err, scanner.ErrQueueFull) {
 		writeError(w, http.StatusServiceUnavailable, err.Error())
@@ -134,6 +232,24 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusAccepted, scan)
+}
+
+func (a *API) requestScopePolicy(requestedID string) (model.ScopePolicy, error) {
+	if requestedID != "" {
+		policy, err := a.store.ScopePolicy(requestedID)
+		if err != nil || !policy.Enabled {
+			return model.ScopePolicy{}, errors.New("scope policy is unavailable")
+		}
+		return policy, nil
+	}
+	if policy, err := a.store.ScopePolicy("default"); err == nil && policy.Enabled {
+		return policy, nil
+	}
+	policies, err := a.store.ListScopePolicies(true)
+	if err != nil || len(policies) == 0 {
+		return model.ScopePolicy{}, errors.New("no enabled scope policy is available")
+	}
+	return policies[0], nil
 }
 
 func securityHeaders(next http.Handler) http.Handler {
@@ -157,11 +273,15 @@ func writeJSON(w http.ResponseWriter, status int, value any) {
 func writeJSONStatus(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(value)
+	if err := json.NewEncoder(w).Encode(value); err != nil {
+		slog.Warn("Could not finish writing an HTTP response", "error", err)
+	}
 }
 
-func randomID() string {
+func randomID() (string, error) {
 	value := make([]byte, 12)
-	_, _ = rand.Read(value)
-	return hex.EncodeToString(value)
+	if _, err := rand.Read(value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
 }

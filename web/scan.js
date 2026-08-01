@@ -57,12 +57,13 @@ form.addEventListener("submit", async (event) => {
       .map((value) => value.trim())
       .filter(Boolean),
     ports,
+    scope_policy_id: document.querySelector("#scope-policy").value,
   };
 
   try {
     const response = await fetch("/api/scans", {
       method: "POST",
-      headers: {"Content-Type": "application/json"},
+      headers: {"Content-Type": "application/json", "X-Mossward-CSRF": "1"},
       body: JSON.stringify(body),
     });
     const result = await response.json();
@@ -79,10 +80,12 @@ form.addEventListener("submit", async (event) => {
   }
 });
 
-fetch("/api/config")
+fetch("/api/scope-policies")
   .then((response) => response.json())
-  .then((config) => {
-    document.querySelector("#policy").textContent = `${config.allowed_ports.length} allowed ports`;
+  .then((policies) => {
+    const select = document.querySelector("#scope-policy");
+    select.innerHTML = policies.map((policy) => `<option value="${policy.id}">${escapeHTML(policy.name)} · ${policy.allowed_ports.length} ports · ${policy.max_targets} targets</option>`).join("");
+    document.querySelector("#policy").textContent = policies.length ? `${policies.length} authorized ${policies.length === 1 ? "policy" : "policies"}` : "No enabled policy";
   })
   .catch(() => {
     document.querySelector("#policy").textContent = "Policy unavailable";

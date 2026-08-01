@@ -14,7 +14,14 @@ import (
 	"mossward/internal/model"
 )
 
-const DefaultNVDURL = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+const (
+	DefaultNVDURL       = "https://services.nvd.nist.gov/rest/json/cves/2.0"
+	defaultNVDPageSize  = 2000
+	maxNVDPageSize      = 2000
+	defaultHTTPTimeout  = 45 * time.Second
+	maxNVDResponseBytes = 64 << 20
+	nvdSourceName       = "NVD"
+)
 
 type CVEStore interface {
 	UpsertCVEs([]model.CVERecord) error
@@ -32,7 +39,7 @@ type NVDClient struct {
 
 func (client NVDClient) Sync(ctx context.Context, store CVEStore, since, until time.Time) (count int, err error) {
 	started := time.Now().UTC()
-	if err := store.RecordFeedStart("NVD", started); err != nil {
+	if err := store.RecordFeedStart(nvdSourceName, started); err != nil {
 		return 0, err
 	}
 	defer func() {
@@ -40,54 +47,24 @@ func (client NVDClient) Sync(ctx context.Context, store CVEStore, since, until t
 		if err != nil {
 			message = err.Error()
 		}
-		if recordErr := store.RecordFeedResult("NVD", time.Now().UTC(), count, message); err == nil && recordErr != nil {
+		if recordErr := store.RecordFeedResult(nvdSourceName, time.Now().UTC(), count, message); err == nil && recordErr != nil {
 			err = recordErr
 		}
 	}()
 	if client.HTTPClient == nil {
-		client.HTTPClient = &http.Client{Timeout: 45 * time.Second}
+		client.HTTPClient = &http.Client{Timeout: defaultHTTPTimeout}
 	}
 	if client.BaseURL == "" {
 		client.BaseURL = DefaultNVDURL
 	}
-	if client.PageSize < 1 || client.PageSize > 2000 {
-		client.PageSize = 2000
+	if client.PageSize < 1 || client.PageSize > maxNVDPageSize {
+		client.PageSize = defaultNVDPageSize
 	}
 	startIndex := 0
 	for {
-		endpoint, parseErr := url.Parse(client.BaseURL)
-		if parseErr != nil {
-			return count, parseErr
-		}
-		query := endpoint.Query()
-		query.Set("pubStartDate", since.UTC().Format(time.RFC3339))
-		query.Set("pubEndDate", until.UTC().Format(time.RFC3339))
-		query.Set("resultsPerPage", strconv.Itoa(client.PageSize))
-		query.Set("startIndex", strconv.Itoa(startIndex))
-		endpoint.RawQuery = query.Encode()
-		request, requestErr := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
-		if requestErr != nil {
-			return count, requestErr
-		}
-		request.Header.Set("User-Agent", "Mossward-CVE-Sync/1.0")
-		if client.APIKey != "" {
-			request.Header.Set("apiKey", client.APIKey)
-		}
-		response, requestErr := client.HTTPClient.Do(request)
-		if requestErr != nil {
-			return count, fmt.Errorf("request NVD feed: %w", requestErr)
-		}
-		body, readErr := io.ReadAll(io.LimitReader(response.Body, 64<<20))
-		_ = response.Body.Close()
-		if readErr != nil {
-			return count, fmt.Errorf("read NVD feed: %w", readErr)
-		}
-		if response.StatusCode != http.StatusOK {
-			return count, fmt.Errorf("NVD feed returned HTTP %d", response.StatusCode)
-		}
-		records, total, parseErr := ParseNVD(body)
-		if parseErr != nil {
-			return count, parseErr
+		records, total, fetchErr := client.fetchPage(ctx, since, until, startIndex)
+		if fetchErr != nil {
+			return count, fetchErr
 		}
 		if err := store.UpsertCVEs(records); err != nil {
 			return count, err
@@ -106,6 +83,48 @@ func (client NVDClient) Sync(ctx context.Context, store CVEStore, since, until t
 		}
 	}
 	return count, nil
+}
+
+func (client NVDClient) fetchPage(ctx context.Context, since, until time.Time, startIndex int) ([]model.CVERecord, int, error) {
+	endpoint, err := client.pageURL(since, until, startIndex)
+	if err != nil {
+		return nil, 0, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	request.Header.Set("User-Agent", "Mossward-CVE-Sync/1.0")
+	if client.APIKey != "" {
+		request.Header.Set("apiKey", client.APIKey)
+	}
+	response, err := client.HTTPClient.Do(request)
+	if err != nil {
+		return nil, 0, fmt.Errorf("request NVD feed: %w", err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, 0, fmt.Errorf("NVD feed returned HTTP %d", response.StatusCode)
+	}
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxNVDResponseBytes))
+	if err != nil {
+		return nil, 0, fmt.Errorf("read NVD feed: %w", err)
+	}
+	return ParseNVD(body)
+}
+
+func (client NVDClient) pageURL(since, until time.Time, startIndex int) (string, error) {
+	endpoint, err := url.Parse(client.BaseURL)
+	if err != nil {
+		return "", fmt.Errorf("parse NVD URL: %w", err)
+	}
+	query := endpoint.Query()
+	query.Set("pubStartDate", since.UTC().Format(time.RFC3339))
+	query.Set("pubEndDate", until.UTC().Format(time.RFC3339))
+	query.Set("resultsPerPage", strconv.Itoa(client.PageSize))
+	query.Set("startIndex", strconv.Itoa(startIndex))
+	endpoint.RawQuery = query.Encode()
+	return endpoint.String(), nil
 }
 
 type nvdResponse struct {

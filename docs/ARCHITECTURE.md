@@ -71,6 +71,26 @@ in the environment, then fills the feed with recent critical CVEs. A future
 endpoint agent can contribute authenticated software observations to this same
 correlation model without changing the feed contract.
 
+## Local identity boundary
+
+First-time setup is restricted to a loopback source and loopback request host.
+The local Administrator does not exist until a TOTP enrollment code is verified.
+Passwords use Argon2id, MFA and future provider secrets use authenticated
+AES-256-GCM encryption under an owner-only server key, recovery codes are
+stored as hashes, and session cookies contain random tokens whose hashes are
+the only values persisted.
+
+Authenticated state changes require a same-site session cookie and an explicit
+CSRF header. Login throttling uses separate hashed account and source keys,
+progressive temporary blocks, generic client-facing errors, and warning-level
+audit events. Sessions have opaque public management identifiers so users can
+revoke sessions without exposing the stored token hash.
+
+OIDC sign-out invalidates the Mossward server-side session only. It does not
+terminate the user's Entra ID or AD FS browser session, avoiding an unexpected
+sign-out from unrelated corporate applications. Provider-wide single logout is
+reserved for a future explicit administrator policy.
+
 ## Evolution
 
 For multi-user deployment, separate the control plane from scanner workers. The control plane owns authentication, authorization, inventory, scheduling, and findings. Workers receive short-lived, signed jobs limited to an organization and approved scope. PostgreSQL can replace SQLite as the source of truth, and an append-only audit log records policy and scan lifecycle events.

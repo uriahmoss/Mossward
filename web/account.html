@@ -1,0 +1,14 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Account · Mossward</title><link rel="stylesheet" href="/styles.css"></head><body>
+<header class="site-header"><a class="wordmark" href="/"><span class="wordmark-mark">M</span><span>Mossward</span></a><a class="back-link" href="/">← Home</a></header>
+<main class="scan-shell"><section class="page-heading"><p class="eyebrow">Identity</p><h1>Account security</h1><p>Review active sessions and sign out devices you no longer use.</p></section>
+<section class="card"><div class="card-heading"><div><span class="step-label">Sessions</span><h2>Signed-in devices</h2></div><button id="revoke-others" class="compact-button">Sign out other sessions</button></div>
+<div id="session-list"><div class="no-findings">Loading sessions…</div></div><p id="account-error" class="error"></p>
+<button id="logout" class="danger-button"><span>Sign out this session</span><span>→</span></button></section>
+<section class="card"><div class="card-heading"><div><span class="step-label">Passkeys and security keys</span><h2>WebAuthn credentials</h2></div></div>
+<p>Use a security key, Windows Hello, Touch ID, or a synced passkey as a phishing-resistant authentication method.</p>
+<form id="webauthn-form"><label for="credential-name">Credential name</label><input id="credential-name" maxlength="80" placeholder="Work laptop Touch ID" required>
+<label for="mfa-code">Current authenticator or recovery code (when prompted)</label><input id="mfa-code" autocomplete="one-time-code">
+<button type="submit"><span>Add credential</span><span>→</span></button></form>
+<div id="credential-list"><div class="no-findings">Loading credentials…</div></div><p id="credential-error" class="error"></p></section></main>
+<script src="/account.js" defer></script></body></html>

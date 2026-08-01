@@ -13,7 +13,7 @@
       <span class="wordmark-mark" aria-hidden="true">M</span>
       <span>Mossward</span>
     </a>
-    <a class="back-link" href="/">← Home</a>
+    <div class="header-actions"><a class="back-link" href="/account.html">Account</a><a class="back-link" href="/">← Home</a></div>
   </header>
 
   <main class="scan-shell">
@@ -30,6 +30,8 @@
           <span id="policy" class="policy-pill">Loading policy</span>
         </div>
         <form id="form">
+          <label for="scope-policy">Scope policy</label>
+          <select id="scope-policy" required><option value="">Loading authorized policies…</option></select>
           <label for="name">Scan name</label>
           <input id="name" value="Local network check" maxlength="100">
           <label for="targets">Targets <span>one per line</span></label>

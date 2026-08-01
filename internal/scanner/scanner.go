@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/netip"
 	"sort"
@@ -19,6 +20,8 @@ import (
 
 var ErrQueueFull = errors.New("scan queue is full")
 
+const progressSaveDivisor = 100
+
 type Engine struct {
 	cfg    config.Config
 	store  store.Repository
@@ -30,6 +33,16 @@ type Engine struct {
 	wg     sync.WaitGroup
 	state  sync.Mutex
 	closed bool
+}
+
+type scanJob struct {
+	target model.Target
+	port   int
+}
+
+type probeResult struct {
+	observation *model.ServiceObservation
+	findings    []model.Finding
 }
 
 func New(cfg config.Config, repository store.Repository) (*Engine, error) {
@@ -53,6 +66,18 @@ func New(cfg config.Config, repository store.Repository) (*Engine, error) {
 	if len(networks) == 0 {
 		return nil, errors.New("at least one allowed CIDR is required")
 	}
+	ports := make([]int, 0, len(cfg.AllowedPorts))
+	for port := range cfg.AllowedPorts {
+		ports = append(ports, port)
+	}
+	sort.Ints(ports)
+	now := time.Now().UTC()
+	defaultPolicy := model.ScopePolicy{ID: "default", Name: "Default environment policy", AllowedCIDRs: cfg.AllowedCIDRs,
+		AllowedPorts: ports, MaxTargets: cfg.MaxTargets, MaxConcurrent: cfg.MaxConcurrent, Enabled: true,
+		CreatedAt: now, UpdatedAt: now}
+	if err := repository.EnsureDefaultScopePolicy(defaultPolicy); err != nil {
+		return nil, fmt.Errorf("ensure default scope policy: %w", err)
+	}
 	if err := repository.ReconcileInterrupted(); err != nil {
 		return nil, fmt.Errorf("reconcile interrupted scans: %w", err)
 	}
@@ -65,6 +90,56 @@ func New(cfg config.Config, repository store.Repository) (*Engine, error) {
 	engine.wg.Add(1)
 	go engine.schedule()
 	return engine, nil
+}
+
+func (e *Engine) ValidateWithPolicy(req model.CreateScanRequest, policy model.ScopePolicy) ([]model.Target, []int, error) {
+	validator, err := e.policyValidator(policy)
+	if err != nil {
+		return nil, nil, err
+	}
+	return validator.Validate(req)
+}
+
+func (e *Engine) ValidatePolicy(policy model.ScopePolicy) error {
+	_, err := e.policyValidator(policy)
+	return err
+}
+
+func (e *Engine) policyValidator(policy model.ScopePolicy) (*Engine, error) {
+	if !policy.Enabled {
+		return nil, errors.New("scope policy is disabled")
+	}
+	if policy.MaxTargets < 1 || policy.MaxTargets > e.cfg.MaxTargets {
+		return nil, fmt.Errorf("scope-policy target limit must be between 1 and %d", e.cfg.MaxTargets)
+	}
+	if policy.MaxConcurrent < 1 || policy.MaxConcurrent > e.cfg.MaxConcurrent {
+		return nil, fmt.Errorf("scope-policy concurrency must be between 1 and %d", e.cfg.MaxConcurrent)
+	}
+	networks := make([]*net.IPNet, 0, len(policy.AllowedCIDRs))
+	for _, raw := range policy.AllowedCIDRs {
+		_, network, err := net.ParseCIDR(strings.TrimSpace(raw))
+		if err != nil {
+			return nil, fmt.Errorf("invalid scope-policy CIDR %q: %w", raw, err)
+		}
+		networks = append(networks, network)
+	}
+	if len(networks) == 0 {
+		return nil, errors.New("scope policy requires at least one authorized CIDR")
+	}
+	allowedPorts := make(map[int]bool, len(policy.AllowedPorts))
+	for _, port := range policy.AllowedPorts {
+		if port < 1 || port > 65535 {
+			return nil, fmt.Errorf("invalid scope-policy port %d", port)
+		}
+		allowedPorts[port] = true
+	}
+	if len(allowedPorts) == 0 {
+		return nil, errors.New("scope policy requires at least one allowed port")
+	}
+	validatorConfig := e.cfg
+	validatorConfig.MaxTargets = policy.MaxTargets
+	validatorConfig.AllowedPorts = allowedPorts
+	return &Engine{cfg: validatorConfig, nets: networks}, nil
 }
 
 func (e *Engine) Validate(req model.CreateScanRequest) ([]model.Target, []int, error) {
@@ -203,6 +278,7 @@ func (e *Engine) Schedule(scan model.Scan) error {
 	}
 	select {
 	case e.queue <- scan:
+		slog.Info("Scan queued", "scan_id", scan.ID, "targets", len(scan.Targets), "ports", len(scan.Ports))
 		return nil
 	default:
 		e.fail(scan, ErrQueueFull.Error())
@@ -243,6 +319,7 @@ func (e *Engine) schedule() {
 }
 
 func (e *Engine) run(scan model.Scan) {
+	slog.Info("Scan started", "scan_id", scan.ID, "checks", len(scan.Targets)*len(scan.Ports))
 	started := time.Now().UTC()
 	scan.Status = model.StatusRunning
 	scan.StartedAt = &started
@@ -253,73 +330,21 @@ func (e *Engine) run(scan model.Scan) {
 		return
 	}
 
-	type job struct {
-		target model.Target
-		port   int
-	}
-	jobs := make(chan job)
-	type probeResult struct {
-		observation *model.ServiceObservation
-		findings    []model.Finding
-	}
+	jobs := make(chan scanJob)
 	results := make(chan probeResult)
-	var workers sync.WaitGroup
+	e.startWorkers(scan, jobs, results)
+	go e.queueJobs(scan, jobs)
 
-	for i := 0; i < e.cfg.MaxConcurrent; i++ {
-		workers.Add(1)
-		go func() {
-			defer workers.Done()
-			for {
-				select {
-				case <-e.ctx.Done():
-					return
-				case item, ok := <-jobs:
-					if !ok {
-						return
-					}
-					observation, findings, reachable := e.probes.Inspect(e.ctx, item.target, item.port)
-					result := probeResult{}
-					if reachable {
-						result.observation = &observation
-						result.findings = findings
-					}
-					select {
-					case results <- result:
-					case <-e.ctx.Done():
-						return
-					}
-				}
-			}
-		}()
-	}
-	go func() {
-		defer close(jobs)
-		for _, target := range scan.Targets {
-			for _, port := range scan.Ports {
-				select {
-				case jobs <- job{target: target, port: port}:
-				case <-e.ctx.Done():
-					return
-				}
-			}
-		}
-	}()
-	go func() {
-		workers.Wait()
-		close(results)
-	}()
-
-	saveInterval := max(1, scan.TotalChecks/100)
+	saveInterval := max(1, scan.TotalChecks/progressSaveDivisor)
 	for result := range results {
 		scan.DoneChecks++
 		if result.observation != nil {
 			scan.Observations = append(scan.Observations, *result.observation)
 			scan.Findings = append(scan.Findings, result.findings...)
-			matches, err := e.store.MatchObservation(*result.observation)
-			if err == nil { scan.CVEMatches = append(scan.CVEMatches, matches...) }
+			e.addCVEMatches(&scan, *result.observation)
 		}
 		if scan.DoneChecks%saveInterval == 0 {
-			_ = e.store.Save(scan)
+			e.saveProgress(scan)
 		}
 	}
 	if e.ctx.Err() != nil {
@@ -331,15 +356,94 @@ func (e *Engine) run(scan model.Scan) {
 	scan.CompletedAt = &completed
 	if err := e.store.Save(scan); err != nil {
 		e.fail(scan, err.Error())
+		return
+	}
+	slog.Info("Scan completed", "scan_id", scan.ID, "observations", len(scan.Observations), "findings", len(scan.Findings), "cve_matches", len(scan.CVEMatches))
+}
+
+func (e *Engine) startWorkers(scan model.Scan, jobs <-chan scanJob, results chan<- probeResult) {
+	var workers sync.WaitGroup
+	workerCount := scan.MaxConcurrent
+	if workerCount < 1 || workerCount > e.cfg.MaxConcurrent {
+		workerCount = e.cfg.MaxConcurrent
+	}
+	for range workerCount {
+		workers.Add(1)
+		go func() {
+			defer workers.Done()
+			e.processJobs(jobs, results)
+		}()
+	}
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+}
+
+func (e *Engine) processJobs(jobs <-chan scanJob, results chan<- probeResult) {
+	for {
+		select {
+		case <-e.ctx.Done():
+			return
+		case item, ok := <-jobs:
+			if !ok {
+				return
+			}
+			result := e.inspect(item)
+			select {
+			case results <- result:
+			case <-e.ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+func (e *Engine) inspect(item scanJob) probeResult {
+	observation, findings, reachable := e.probes.Inspect(e.ctx, item.target, item.port)
+	if !reachable {
+		return probeResult{}
+	}
+	return probeResult{observation: &observation, findings: findings}
+}
+
+func (e *Engine) queueJobs(scan model.Scan, jobs chan<- scanJob) {
+	defer close(jobs)
+	for _, target := range scan.Targets {
+		for _, port := range scan.Ports {
+			select {
+			case jobs <- scanJob{target: target, port: port}:
+			case <-e.ctx.Done():
+				return
+			}
+		}
+	}
+}
+
+func (e *Engine) addCVEMatches(scan *model.Scan, observation model.ServiceObservation) {
+	matches, err := e.store.MatchObservation(observation)
+	if err != nil {
+		slog.Warn("CVE correlation skipped for an observation", "scan_id", scan.ID, "observation_id", observation.ID, "error", err)
+		return
+	}
+	scan.CVEMatches = append(scan.CVEMatches, matches...)
+}
+
+func (e *Engine) saveProgress(scan model.Scan) {
+	if err := e.store.Save(scan); err != nil {
+		slog.Warn("Could not persist intermediate scan progress", "scan_id", scan.ID, "completed_checks", scan.DoneChecks, "error", err)
 	}
 }
 
 func (e *Engine) fail(scan model.Scan, message string) {
+	slog.Error("Scan failed", "scan_id", scan.ID, "error", message)
 	completed := time.Now().UTC()
 	scan.Status = model.StatusFailed
 	scan.Error = message
 	scan.CompletedAt = &completed
-	_ = e.store.Save(scan)
+	if err := e.store.Save(scan); err != nil {
+		slog.Error("Could not persist failed scan state", "scan_id", scan.ID, "error", err)
+	}
 }
 
 func (e *Engine) allowed(ip net.IP) bool {

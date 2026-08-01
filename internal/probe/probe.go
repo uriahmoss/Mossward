@@ -23,9 +23,16 @@ import (
 )
 
 const (
-	maxBannerBytes = 512
-	maxHTTPBytes   = 64 << 10
+	maxBannerBytes           = 512
+	maxHTTPBytes             = 64 << 10
+	bannerTimeout            = 500 * time.Millisecond
+	certificateExpiryWarning = 30 * 24 * time.Hour
 )
+
+var serviceNames = map[int]string{
+	22: "ssh", 80: "http", 443: "https", 445: "smb", 3389: "rdp",
+	5432: "postgresql", 6379: "redis", 8080: "http", 8443: "https",
+}
 
 var versionPattern = regexp.MustCompile(`(?i)([A-Za-z][A-Za-z0-9._-]*)[/ ]([0-9][0-9A-Za-z._-]*)`)
 
@@ -56,53 +63,71 @@ func (i *Inspector) Inspect(ctx context.Context, target model.Target, port int) 
 
 	switch port {
 	case 80, 8080:
-		if observed, checks, ok := i.inspectHTTP(ctx, target, port, false); ok {
-			observation = observed
-			findings = append(findings, checks...)
-		} else if observed, checks, ok := i.inspectTLS(ctx, target, port); ok {
-			observation = observed
-			findings = append(findings, checks...)
-		}
+		observation, findings = i.inspectProtocols(ctx, target, port, observation, findings, false)
 	case 443, 8443:
-		if observed, checks, ok := i.inspectHTTP(ctx, target, port, true); ok {
-			observation = observed
-			findings = append(findings, checks...)
-		} else if observed, checks, ok := i.inspectTLS(ctx, target, port); ok {
-			observation = observed
-			findings = append(findings, checks...)
-		}
+		observation, findings = i.inspectProtocols(ctx, target, port, observation, findings, true)
 	case 22:
-		if banner := i.readBanner(ctx, target.Address, port); banner != "" {
-			observation.Protocol = "ssh"
-			observation.Confidence = "high"
-			observation.Evidence = banner
-			observation.Product, observation.Version = parseSSHBanner(banner)
-			if observation.Version != "" {
-				findings = append(findings, disclosureFinding(target, port, "ssh", banner))
-			}
-		}
+		observation, findings = i.inspectSSH(ctx, target, port, observation, findings)
 	default:
-		if banner := i.readBanner(ctx, target.Address, port); banner != "" {
-			observation.Evidence = banner
-			observation.Confidence = "medium"
-			if strings.HasPrefix(strings.ToUpper(banner), "SSH-") {
-				observation.Protocol = "ssh"
-				observation.Product, observation.Version = parseSSHBanner(banner)
-			} else {
-				observation.Product, observation.Version = parseProductVersion(banner)
-			}
-			if observation.Version != "" {
-				findings = append(findings, disclosureFinding(target, port, observation.Protocol, banner))
-			}
-		} else if observed, checks, ok := i.inspectTLS(ctx, target, port); ok {
-			observation = observed
-			findings = append(findings, checks...)
-		} else if observed, checks, ok := i.inspectHTTP(ctx, target, port, false); ok {
-			observation = observed
-			findings = append(findings, checks...)
-		}
+		observation, findings = i.inspectUnknown(ctx, target, port, observation, findings)
 	}
 	return observation, findings, true
+}
+
+func (i *Inspector) inspectProtocols(ctx context.Context, target model.Target, port int, fallback model.ServiceObservation, findings []model.Finding, secure bool) (model.ServiceObservation, []model.Finding) {
+	if observation, checks, ok := i.inspectHTTP(ctx, target, port, secure); ok {
+		return observation, append(findings, checks...)
+	}
+	if observation, checks, ok := i.inspectTLS(ctx, target, port); ok {
+		return observation, append(findings, checks...)
+	}
+	return fallback, findings
+}
+
+func (i *Inspector) inspectSSH(ctx context.Context, target model.Target, port int, observation model.ServiceObservation, findings []model.Finding) (model.ServiceObservation, []model.Finding) {
+	banner := i.readBanner(ctx, target.Address, port)
+	if banner == "" {
+		return observation, findings
+	}
+	observation.Protocol = "ssh"
+	observation.Confidence = "high"
+	observation.Evidence = banner
+	observation.Product, observation.Version = parseSSHBanner(banner)
+	return observation, appendDisclosureFinding(findings, observation, target, banner)
+}
+
+func (i *Inspector) inspectUnknown(ctx context.Context, target model.Target, port int, observation model.ServiceObservation, findings []model.Finding) (model.ServiceObservation, []model.Finding) {
+	banner := i.readBanner(ctx, target.Address, port)
+	if banner != "" {
+		observation = observationFromBanner(observation, banner)
+		return observation, appendDisclosureFinding(findings, observation, target, banner)
+	}
+	if detected, checks, ok := i.inspectTLS(ctx, target, port); ok {
+		return detected, append(findings, checks...)
+	}
+	if detected, checks, ok := i.inspectHTTP(ctx, target, port, false); ok {
+		return detected, append(findings, checks...)
+	}
+	return observation, findings
+}
+
+func observationFromBanner(observation model.ServiceObservation, banner string) model.ServiceObservation {
+	observation.Evidence = banner
+	observation.Confidence = "medium"
+	if strings.HasPrefix(strings.ToUpper(banner), "SSH-") {
+		observation.Protocol = "ssh"
+		observation.Product, observation.Version = parseSSHBanner(banner)
+		return observation
+	}
+	observation.Product, observation.Version = parseProductVersion(banner)
+	return observation
+}
+
+func appendDisclosureFinding(findings []model.Finding, observation model.ServiceObservation, target model.Target, banner string) []model.Finding {
+	if observation.Version == "" {
+		return findings
+	}
+	return append(findings, disclosureFinding(target, observation.Port, observation.Protocol, banner))
 }
 
 func (i *Inspector) reachable(ctx context.Context, address string, port int) bool {
@@ -279,7 +304,7 @@ func (i *Inspector) readBanner(ctx context.Context, address string, port int) st
 		return ""
 	}
 	defer conn.Close()
-	_ = conn.SetReadDeadline(time.Now().Add(min(i.timeout, 500*time.Millisecond)))
+	_ = conn.SetReadDeadline(time.Now().Add(min(i.timeout, bannerTimeout)))
 	reader := bufio.NewReader(io.LimitReader(conn, maxBannerBytes))
 	banner, err := reader.ReadString('\n')
 	if banner == "" && err != nil && !errors.Is(err, io.EOF) {
@@ -352,7 +377,7 @@ func evaluateTLS(target model.Target, port int, state *tls.ConnectionState) (map
 			fmt.Sprintf("The leaf certificate expired at %s.", certificate.NotAfter.UTC().Format(time.RFC3339)),
 			"Replace the certificate with a valid certificate and verify automated renewal.",
 		))
-	} else if certificate.NotAfter.Sub(now) <= 30*24*time.Hour {
+	} else if certificate.NotAfter.Sub(now) <= certificateExpiryWarning {
 		findings = append(findings, newFinding(
 			"tls.certificate-expiring", target, port, "tls", "medium",
 			"TLS certificate expires soon",
@@ -485,8 +510,7 @@ func protocolName(secure bool) string {
 }
 
 func serviceName(port int) string {
-	services := map[int]string{22: "ssh", 80: "http", 443: "https", 445: "smb", 3389: "rdp", 5432: "postgresql", 6379: "redis", 8080: "http", 8443: "https"}
-	if name, ok := services[port]; ok {
+	if name, ok := serviceNames[port]; ok {
 		return name
 	}
 	return "tcp"

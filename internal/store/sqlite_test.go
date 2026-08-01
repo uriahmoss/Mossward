@@ -241,3 +241,44 @@ func TestSQLiteStoreDoesNotMatchWithoutVersion(t *testing.T) {
 		t.Fatalf("expected no unversioned matches, got %#v", matches)
 	}
 }
+
+func TestIdentitySchemaMigrationCreatesSecurityTables(t *testing.T) {
+	repository := openTestStore(t)
+	for _, table := range []string{
+		"users", "invitations", "sessions", "login_attempts", "totp_credentials",
+		"recovery_codes", "webauthn_credentials", "authentication_ceremonies",
+		"oidc_providers", "external_identities", "audit_events", "scope_policies",
+	} {
+		var found string
+		err := repository.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&found)
+		if err != nil {
+			t.Errorf("identity table %q was not created: %v", table, err)
+		}
+	}
+	var version int
+	if err := repository.db.QueryRow(`SELECT MAX(version) FROM schema_migrations`).Scan(&version); err != nil {
+		t.Fatal(err)
+	}
+	if version != schemaVersion {
+		t.Fatalf("schema version = %d, want %d", version, schemaVersion)
+	}
+}
+
+func TestScopePolicyRoundTrip(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	policy := model.ScopePolicy{ID: "policy", Name: "Restricted", AllowedCIDRs: []string{"10.0.0.0/8"},
+		AllowedPorts: []int{22, 443}, MaxTargets: 25, MaxConcurrent: 4, Enabled: true, CreatedAt: now, UpdatedAt: now}
+	event := model.AuditEvent{OccurredAt: now, Action: "scope.test", Severity: model.AuditInfo}
+	if err := repository.UpsertScopePolicy(policy, event); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := repository.ScopePolicy(policy.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Name != policy.Name || len(loaded.AllowedCIDRs) != 1 || len(loaded.AllowedPorts) != 2 ||
+		loaded.MaxTargets != 25 || loaded.MaxConcurrent != 4 || !loaded.Enabled {
+		t.Fatalf("scope policy did not round-trip: %#v", loaded)
+	}
+}

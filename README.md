@@ -4,6 +4,14 @@ Mossward is an original, defensive vulnerability-management project for assets y
 
 It does not exploit services, guess credentials, evade monitoring, or scan public addresses by default.
 
+Implementation status and the maintained roadmap are tracked in
+[`docs/FEATURES.md`](docs/FEATURES.md).
+
+Administrators can manage database-backed scan scope policies from the Users
+page. Every scan selects an enabled policy, and Mossward enforces that policy's
+authorized CIDRs, allowed ports, target limit, and concurrency limit before and
+during execution. Environment limits remain server-wide safety caps.
+
 Current service inspection includes:
 
 - HTTP status, page title, and selected non-secret response headers
@@ -45,6 +53,18 @@ go run ./cmd/mossward
 Open <http://127.0.0.1:8080> for the Mossward feature homepage. Choose
 **Network scan** to configure and review scans. Results are stored in
 `data/mossward.db`.
+
+On first launch, Mossward redirects to a localhost-only setup page. The first
+identity is always a local Administrator and setup is not complete until a TOTP
+authenticator code has been verified. Save the displayed single-use recovery
+codes before continuing. Subsequent local sign-ins require the password plus
+an authenticator or unused recovery code.
+
+Repeated login failures are tracked by both normalized account and source
+address. Mossward applies progressively longer temporary blocks without
+permanently locking the account, and records failed attempts without retaining
+submitted credentials. The Account page lists active sessions and supports
+individual revocation, revoking every other session, and logout.
 
 When upgrading from a JSON-backed Mossward version, existing
 `data/scans.json` history is imported automatically on first startup and
@@ -122,8 +142,9 @@ docker run --rm \
   mossward
 ```
 
-Do not publish Mossward on an external interface. Authentication and
-multi-user authorization are not implemented yet.
+Do not publish Mossward directly on an external interface. Local authentication
+is active, but TLS, trusted-proxy configuration, WebAuthn, user administration,
+and federated identity configuration are still being completed.
 
 ## Configuration
 
@@ -134,6 +155,7 @@ Environment variables:
 | `MOSSWARD_LISTEN` | `127.0.0.1:8080` | HTTP listen address |
 | `MOSSWARD_DATABASE_FILE` | `data/mossward.db` | SQLite database path |
 | `MOSSWARD_DATA_FILE` | `data/scans.json` | Legacy JSON path used only for one-time import |
+| `MOSSWARD_IDENTITY_KEY_FILE` | `data/identity.key` | Owner-only AES-256 key used to encrypt identity-provider and MFA secrets |
 | `MOSSWARD_ALLOWED_CIDRS` | Loopback and RFC1918/ULA networks | Networks the scanner may assess |
 | `MOSSWARD_ALLOWED_PORTS` | Common administrative and web ports | Ports users may request |
 | `MOSSWARD_MAX_TARGETS` | `256` | Maximum requested target names per scan |

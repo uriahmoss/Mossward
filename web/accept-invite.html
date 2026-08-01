@@ -1,0 +1,9 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Accept invitation · Mossward</title><link rel="stylesheet" href="/styles.css"></head><body><main class="auth-shell"><section class="card auth-card">
+<p class="eyebrow">Mossward invitation</p><h1>Create your account</h1><form id="invite-accept-form">
+<label for="token">Invitation token</label><input id="token" required><label for="display-name">Display name</label><input id="display-name" autocomplete="name" required>
+<label for="password">Password</label><input id="password" type="password" autocomplete="new-password" required><button type="submit">Continue to MFA</button></form>
+<section id="mfa-enrollment" hidden><h2>Enroll an authenticator</h2><p>Enter this secret in your authenticator app:</p><code id="totp-secret"></code>
+<form id="invite-complete-form"><label for="code">Authenticator code</label><input id="code" autocomplete="one-time-code" required><button type="submit">Create account</button></form></section>
+<section id="recovery" hidden><h2>Save recovery codes</h2><pre id="recovery-codes"></pre><a href="/">Continue to Mossward</a></section><p id="invite-error" class="error"></p>
+</section></main><script src="/accept-invite.js" defer></script></body></html>

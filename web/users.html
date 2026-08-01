@@ -1,0 +1,35 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Users · Mossward</title><link rel="stylesheet" href="/styles.css"></head><body>
+<header class="site-header"><a class="wordmark" href="/"><span class="wordmark-mark">M</span><span>Mossward</span></a><a class="back-link" href="/">← Home</a></header>
+<main class="scan-shell"><section class="page-heading"><p class="eyebrow">Administration</p><h1>Users and invitations</h1><p>Invite people and control their Mossward access.</p></section>
+<section class="card"><h2>Invite a user</h2><form id="invite-form"><label for="invite-email">Email</label><input id="invite-email" type="email" required>
+<label for="invite-role">Role</label><select id="invite-role"><option value="viewer">Viewer</option><option value="analyst">Analyst</option><option value="administrator">Administrator</option></select>
+<label for="invite-kind">Sign-in type</label><select id="invite-kind"><option value="local">Local account</option><option value="sso">SSO account</option></select>
+<label for="admin-mfa">Current MFA code</label><input id="admin-mfa" autocomplete="one-time-code" required><button type="submit">Create invitation</button></form>
+<p id="invite-result"></p><p id="users-error" class="error"></p></section>
+<section class="card"><h2>Current users</h2><div id="users-list">Loading users…</div></section>
+<section class="card"><h2>Pending invitations</h2><div id="invitations-list">Loading invitations…</div></section>
+<section class="card"><h2>OIDC providers</h2><p>Configure Microsoft Entra ID, AD FS, or another standards-compliant OIDC provider. Saving disables the provider until discovery is tested again.</p>
+<form id="oidc-form"><input id="oidc-id" type="hidden"><label for="oidc-name">Name</label><input id="oidc-name" required>
+<label for="oidc-issuer">Issuer URL</label><input id="oidc-issuer" type="url" required><label for="oidc-client-id">Client ID</label><input id="oidc-client-id" required>
+<label for="oidc-secret">Client secret</label><input id="oidc-secret" type="password" required><label for="oidc-redirect">Redirect URL</label><input id="oidc-redirect" type="url" required>
+<label for="oidc-mode">Provisioning</label><select id="oidc-mode"><option value="invite_only">Invite only</option><option value="jit">Entra JIT</option></select>
+<label for="oidc-tenant">Allowed tenant ID</label><input id="oidc-tenant"><label for="oidc-domains">Allowed email domains (comma separated)</label><input id="oidc-domains">
+<label for="oidc-groups">Allowed group IDs (comma separated)</label><input id="oidc-groups"><label for="oidc-role">Default role</label><select id="oidc-role"><option value="viewer">Viewer</option><option value="analyst">Analyst</option><option value="administrator">Administrator</option></select>
+<label for="oidc-mappings">Group role mappings (group=role, comma separated)</label><input id="oidc-mappings" placeholder="security-team=analyst">
+<label><input id="oidc-admin-confirm" type="checkbox"> I understand that this configuration can grant Administrator access</label><button type="submit">Save provider</button></form>
+<div id="oidc-list">Loading providers…</div></section>
+<section class="card"><h2>Authentication policy</h2><form id="policy-form"><label for="session-minutes">Session lifetime (minutes)</label><input id="session-minutes" type="number" min="15" max="10080" required>
+<label for="retention-days">Audit retention (days)</label><input id="retention-days" type="number" min="1" max="3650" required>
+<label><input id="mfa-admin" type="checkbox" checked disabled> Require Administrator MFA</label><label><input id="mfa-analyst" type="checkbox"> Require Analyst MFA</label>
+<label><input id="mfa-viewer" type="checkbox"> Require Viewer MFA</label><button type="submit">Save authentication policy</button></form></section>
+<section class="card"><h2>Scan scope policies</h2><p>Each scan must use an enabled policy. Server-wide maximums still cap target and concurrency values.</p>
+<form id="scope-policy-form"><input id="scope-policy-id" type="hidden"><label for="scope-policy-name">Name</label><input id="scope-policy-name" required>
+<label for="scope-policy-cidrs">Authorized CIDRs (comma separated)</label><input id="scope-policy-cidrs" placeholder="10.0.0.0/8,192.168.0.0/16" required>
+<label for="scope-policy-ports">Allowed ports (comma separated)</label><input id="scope-policy-ports" placeholder="22,80,443" required>
+<label for="scope-policy-targets">Maximum targets</label><input id="scope-policy-targets" type="number" min="1" required>
+<label for="scope-policy-concurrency">Maximum concurrency</label><input id="scope-policy-concurrency" type="number" min="1" required>
+<label><input id="scope-policy-enabled" type="checkbox" checked> Enabled</label><button type="submit">Save scope policy</button></form>
+<div id="scope-policy-list">Loading scope policies…</div></section>
+<section class="card"><h2>Audit events</h2><form id="audit-search"><label for="audit-query">Search</label><input id="audit-query"><label for="audit-severity">Severity</label><select id="audit-severity"><option value="">All</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select><button type="submit">Search</button></form><div id="audit-list">Loading audit events…</div></section></main>
+<script src="/users.js" defer></script></body></html>

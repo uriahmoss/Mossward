@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 2
+const schemaVersion = 8
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -87,6 +87,36 @@ func (s *SQLiteStore) migrate() error {
 	}
 	if current < 2 {
 		if err := s.applyMigrationTwo(); err != nil {
+			return err
+		}
+	}
+	if current < 3 {
+		if err := s.applyIdentityMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 4 {
+		if err := s.applySessionControlsMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 5 {
+		if err := s.applyWebAuthnCredentialMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 6 {
+		if err := s.applyInvitationControlsMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 7 {
+		if err := s.applyOIDCControlsMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 8 {
+		if err := s.applyScopePolicyControlsMigration(); err != nil {
 			return err
 		}
 	}
@@ -250,10 +280,12 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 		return fmt.Errorf("replace scan: %w", err)
 	}
 	if _, err := tx.Exec(`
-		INSERT INTO scans(id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
+		INSERT INTO scans(id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at,
+			scope_policy_id, max_concurrent)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.ID, scan.Name, scan.Status, scan.Error, scan.TotalChecks, scan.DoneChecks,
-		formatTime(scan.CreatedAt), formatOptionalTime(scan.StartedAt), formatOptionalTime(scan.CompletedAt)); err != nil {
+		formatTime(scan.CreatedAt), formatOptionalTime(scan.StartedAt), formatOptionalTime(scan.CompletedAt),
+		scan.ScopePolicyID, scan.MaxConcurrent); err != nil {
 		return fmt.Errorf("insert scan: %w", err)
 	}
 	for index, target := range scan.Targets {
@@ -317,10 +349,11 @@ func (s *SQLiteStore) Get(id string) (model.Scan, error) {
 	var created string
 	var started, completed sql.NullString
 	err := s.db.QueryRow(`
-		SELECT id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at
+		SELECT id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at,
+			scope_policy_id, max_concurrent
 		FROM scans WHERE id = ?
 	`, id).Scan(&scan.ID, &scan.Name, &status, &scan.Error, &scan.TotalChecks, &scan.DoneChecks,
-		&created, &started, &completed)
+		&created, &started, &completed, &scan.ScopePolicyID, &scan.MaxConcurrent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Scan{}, ErrNotFound
 	}

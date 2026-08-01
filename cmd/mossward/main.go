@@ -5,7 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -13,61 +13,102 @@ import (
 	"time"
 
 	"mossward/internal/api"
+	"mossward/internal/auth"
 	"mossward/internal/config"
 	"mossward/internal/intelligence"
 	"mossward/internal/scanner"
 	"mossward/internal/store"
 )
 
+const (
+	serverReadHeaderTimeout = 5 * time.Second
+	serverReadTimeout       = 15 * time.Second
+	serverWriteTimeout      = 30 * time.Second
+	serverIdleTimeout       = 60 * time.Second
+	shutdownTimeout         = 10 * time.Second
+	defaultCVELookbackDays  = 120
+	maxCVELookbackDays      = 120
+	publicNVDPageDelay      = 6 * time.Second
+	keyedNVDPageDelay       = 700 * time.Millisecond
+)
+
 func main() {
+	if err := run(); err != nil {
+		slog.Error("Mossward stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func run() error {
 	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
 
 	repository, err := store.NewSQLiteStore(cfg.DatabaseFile, cfg.LegacyDataFile)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	defer repository.Close()
-	if len(os.Args) > 1 && os.Args[1] == "cve" {
-		if err := runCVECommand(repository, os.Args[2:]); err != nil {
-			log.Fatal(err)
+	defer func() {
+		if closeErr := repository.Close(); closeErr != nil {
+			slog.Warn("Could not close the database cleanly", "error", closeErr)
 		}
-		return
+	}()
+	if len(os.Args) > 1 && os.Args[1] == "cve" {
+		return runCVECommand(repository, os.Args[2:])
+	}
+	secretBox, err := auth.LoadOrCreateSecretBox(cfg.IdentityKeyFile)
+	if err != nil {
+		return err
+	}
+	webauthnManager, err := auth.NewWebAuthnManager(cfg.WebAuthnRPID, cfg.WebAuthnOrigins)
+	if err != nil {
+		return err
+	}
+	identityService, err := auth.NewService(repository, secretBox, webauthnManager)
+	if err != nil {
+		return err
 	}
 
 	engine, err := scanner.New(cfg, repository)
 	if err != nil {
-		log.Fatal(err)
+		return err
 	}
-	handler := api.New(cfg, repository, engine)
+	defer engine.Shutdown()
+	handler := api.New(cfg, repository, engine, identityService)
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
 		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
+		ReadHeaderTimeout: serverReadHeaderTimeout,
+		ReadTimeout:       serverReadTimeout,
+		WriteTimeout:      serverWriteTimeout,
+		IdleTimeout:       serverIdleTimeout,
 	}
 
+	serverErrors := make(chan error, 1)
 	go func() {
-		log.Printf("Mossward listening at http://%s", cfg.ListenAddress)
-		if err := server.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+		slog.Info("Mossward server started", "address", cfg.ListenAddress)
+		if serveErr := server.ListenAndServe(); !errors.Is(serveErr, http.ErrServerClosed) {
+			serverErrors <- serveErr
 		}
 	}()
 
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
-	<-stop
+	select {
+	case received := <-stop:
+		slog.Info("Mossward shutdown requested", "signal", received.String())
+	case serveErr := <-serverErrors:
+		return fmt.Errorf("serve Mossward: %w", serveErr)
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		return fmt.Errorf("shut down HTTP server: %w", err)
 	}
-	engine.Shutdown()
+	slog.Info("Mossward server stopped")
+	return nil
 }
 
 func runCVECommand(repository store.Repository, args []string) error {
@@ -75,17 +116,17 @@ func runCVECommand(repository store.Repository, args []string) error {
 		return errors.New("usage: mossward cve sync [--days 120]")
 	}
 	flags := flag.NewFlagSet("cve sync", flag.ContinueOnError)
-	days := flags.Int("days", 120, "published-date lookback in days (maximum 120)")
+	days := flags.Int("days", defaultCVELookbackDays, "published-date lookback in days (maximum 120)")
 	if err := flags.Parse(args[1:]); err != nil {
 		return err
 	}
-	if *days < 1 || *days > 120 {
+	if *days < 1 || *days > maxCVELookbackDays {
 		return errors.New("--days must be between 1 and 120")
 	}
-	delay := 6 * time.Second
+	delay := publicNVDPageDelay
 	apiKey := os.Getenv("MOSSWARD_NVD_API_KEY")
 	if apiKey != "" {
-		delay = 700 * time.Millisecond
+		delay = keyedNVDPageDelay
 	}
 	client := intelligence.NVDClient{APIKey: apiKey, PageDelay: delay}
 	until := time.Now().UTC()
@@ -93,6 +134,6 @@ func runCVECommand(repository store.Repository, args []string) error {
 	if err != nil {
 		return err
 	}
-	log.Printf("Mossward CVE intelligence updated: %d NVD records processed", count)
+	slog.Info("Mossward CVE intelligence updated", "records_processed", count)
 	return nil
 }

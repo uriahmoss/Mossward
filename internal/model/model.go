@@ -68,20 +68,22 @@ func (t *Target) UnmarshalJSON(data []byte) error {
 }
 
 type Scan struct {
-	ID           string               `json:"id"`
-	Name         string               `json:"name"`
-	Targets      []Target             `json:"targets"`
-	Ports        []int                `json:"ports"`
-	Status       ScanStatus           `json:"status"`
-	Error        string               `json:"error,omitempty"`
-	Observations []ServiceObservation `json:"observations"`
-	Findings     []Finding            `json:"findings"`
-	CVEMatches   []CVEMatch           `json:"cve_matches"`
-	TotalChecks  int                  `json:"total_checks"`
-	DoneChecks   int                  `json:"done_checks"`
-	CreatedAt    time.Time            `json:"created_at"`
-	StartedAt    *time.Time           `json:"started_at,omitempty"`
-	CompletedAt  *time.Time           `json:"completed_at,omitempty"`
+	ID            string               `json:"id"`
+	Name          string               `json:"name"`
+	Targets       []Target             `json:"targets"`
+	Ports         []int                `json:"ports"`
+	Status        ScanStatus           `json:"status"`
+	Error         string               `json:"error,omitempty"`
+	Observations  []ServiceObservation `json:"observations"`
+	Findings      []Finding            `json:"findings"`
+	CVEMatches    []CVEMatch           `json:"cve_matches"`
+	TotalChecks   int                  `json:"total_checks"`
+	DoneChecks    int                  `json:"done_checks"`
+	CreatedAt     time.Time            `json:"created_at"`
+	StartedAt     *time.Time           `json:"started_at,omitempty"`
+	CompletedAt   *time.Time           `json:"completed_at,omitempty"`
+	ScopePolicyID string               `json:"scope_policy_id,omitempty"`
+	MaxConcurrent int                  `json:"max_concurrent,omitempty"`
 }
 
 type CVERecord struct {
@@ -157,7 +159,21 @@ type FeedStatus struct {
 }
 
 type CreateScanRequest struct {
-	Name    string   `json:"name"`
-	Targets []string `json:"targets"`
-	Ports   []int    `json:"ports"`
+	Name          string   `json:"name"`
+	Targets       []string `json:"targets"`
+	Ports         []int    `json:"ports"`
+	ScopePolicyID string   `json:"scope_policy_id"`
+}
+
+type ScopePolicy struct {
+	ID            string    `json:"id"`
+	Name          string    `json:"name"`
+	AllowedCIDRs  []string  `json:"allowed_cidrs"`
+	AllowedPorts  []int     `json:"allowed_ports"`
+	MaxTargets    int       `json:"max_targets"`
+	MaxConcurrent int       `json:"max_concurrent"`
+	Enabled       bool      `json:"enabled"`
+	CreatedBy     string    `json:"created_by,omitempty"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }

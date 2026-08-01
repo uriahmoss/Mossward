@@ -50,6 +50,8 @@ func VersionAffected(observed string, affectedVersion string, startIncluding, st
 
 func CompareVersions(left, right string) int {
 	a, b := versionParts(cleanVersion(left)), versionParts(cleanVersion(right))
+	a = trimTrailingZeroParts(a)
+	b = trimTrailingZeroParts(b)
 	limit := len(a)
 	if len(b) > limit {
 		limit = len(b)
@@ -85,6 +87,17 @@ func CompareVersions(left, right string) int {
 		}
 	}
 	return 0
+}
+
+func trimTrailingZeroParts(parts []versionPart) []versionPart {
+	for len(parts) > 0 {
+		last := parts[len(parts)-1]
+		if !last.numeric || last.number != 0 {
+			break
+		}
+		parts = parts[:len(parts)-1]
+	}
+	return parts
 }
 
 type versionPart struct {

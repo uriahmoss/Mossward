@@ -139,3 +139,30 @@ func TestValidateDeduplicatesOverlappingTargets(t *testing.T) {
 		t.Fatalf("expected two unique addresses, got %#v", targets)
 	}
 }
+
+func TestValidateWithScopePolicyUsesDatabasePolicyLimits(t *testing.T) {
+	engine := testEngine(t)
+	policy := model.ScopePolicy{ID: "restricted", Name: "Restricted", Enabled: true,
+		AllowedCIDRs: []string{"127.0.0.0/30"}, AllowedPorts: []int{443}, MaxTargets: 1, MaxConcurrent: 1}
+	if _, _, err := engine.ValidateWithPolicy(model.CreateScanRequest{Targets: []string{"127.0.0.1"}, Ports: []int{443}}, policy); err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []model.CreateScanRequest{
+		{Targets: []string{"127.0.0.1"}, Ports: []int{80}},
+		{Targets: []string{"127.0.0.1-127.0.0.2"}, Ports: []int{443}},
+		{Targets: []string{"127.0.0.4"}, Ports: []int{443}},
+	} {
+		if _, _, err := engine.ValidateWithPolicy(request, policy); err == nil {
+			t.Fatalf("expected policy rejection for %#v", request)
+		}
+	}
+}
+
+func TestScopePolicyCannotExceedServerSafetyCaps(t *testing.T) {
+	engine := testEngine(t)
+	policy := model.ScopePolicy{Name: "Too broad", Enabled: true, AllowedCIDRs: []string{"0.0.0.0/0"},
+		AllowedPorts: []int{443}, MaxTargets: 11, MaxConcurrent: 3}
+	if err := engine.ValidatePolicy(policy); err == nil {
+		t.Fatal("expected server safety caps to reject policy")
+	}
+}

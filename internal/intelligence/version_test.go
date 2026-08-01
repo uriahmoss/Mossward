@@ -24,3 +24,11 @@ func TestNormalizeProduct(t *testing.T) {
 		t.Fatalf("unexpected mapping: %q %q %v", vendor, product, ok)
 	}
 }
+
+func TestCompareVersionsTreatsTrailingZeroSegmentsAsEqual(t *testing.T) {
+	for _, pair := range [][2]string{{"1", "1.0"}, {"2.4", "2.4.0.0"}, {"v3.0", "3"}} {
+		if result := CompareVersions(pair[0], pair[1]); result != 0 {
+			t.Errorf("CompareVersions(%q, %q) = %d, want 0", pair[0], pair[1], result)
+		}
+	}
+}

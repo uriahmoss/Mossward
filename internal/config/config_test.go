@@ -40,3 +40,18 @@ func TestLoadUsesConfiguredSQLiteAndLegacyPaths(t *testing.T) {
 		t.Fatalf("unexpected storage paths: %#v", cfg)
 	}
 }
+
+func TestLoadRejectsInsecureRemoteWebAuthnOrigin(t *testing.T) {
+	t.Setenv("MOSSWARD_WEBAUTHN_RP_ID", "mossward.example.com")
+	t.Setenv("MOSSWARD_WEBAUTHN_ORIGINS", "http://mossward.example.com")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "must use HTTPS") {
+		t.Fatalf("expected insecure WebAuthn origin error, got %v", err)
+	}
+}
+
+func TestLoadRejectsInvalidTrustedProxyCIDR(t *testing.T) {
+	t.Setenv("MOSSWARD_TRUSTED_PROXY_CIDRS", "not-a-network")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MOSSWARD_TRUSTED_PROXY_CIDRS") {
+		t.Fatalf("expected invalid trusted proxy error, got %v", err)
+	}
+}
