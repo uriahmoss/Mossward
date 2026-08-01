@@ -211,6 +211,7 @@ so machine-specific policy does not enter source control.
 - `POST /api/scans`
 - `GET /api/scans/{id}`
 - `GET /api/assets`
+- `GET /api/assets/{id}`
 - `PATCH /api/assets/{id}`
 - `GET /api/asset-groups`
 - `POST /api/admin/asset-groups`

@@ -22,6 +22,19 @@ func (a *API) listAssets(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, assets)
 }
 
+func (a *API) getAsset(w http.ResponseWriter, r *http.Request) {
+	detail, err := a.store.AssetDetail(r.PathValue("id"), time.Now().UTC())
+	if errors.Is(err, store.ErrAssetNotFound) {
+		writeError(w, http.StatusNotFound, "asset not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not load asset")
+		return
+	}
+	writeJSON(w, http.StatusOK, detail)
+}
+
 func (a *API) updateAsset(w http.ResponseWriter, r *http.Request) {
 	actor, ok := a.currentUser(r)
 	if !ok {

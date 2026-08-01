@@ -23,6 +23,7 @@ type Repository interface {
 	ReconcileInterrupted() error
 	ListAssets() ([]model.Asset, error)
 	UpdateAssetMetadata(string, model.AssetMetadata, model.AuditEvent) error
+	AssetDetail(string, time.Time) (model.AssetDetail, error)
 	UpsertAssetGroup(model.AssetGroup, model.AuditEvent) error
 	ListAssetGroups() ([]model.AssetGroup, error)
 	AssetGroupMemberships(string) ([]string, error)

@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 17
+const schemaVersion = 18
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -210,6 +210,11 @@ func (s *SQLiteStore) migrate() error {
 	}
 	if current < 17 {
 		if err := s.applyNotificationMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 18 {
+		if err := s.applyAssetServiceHistoryMigration(); err != nil {
 			return err
 		}
 	}
@@ -438,6 +443,9 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 		}
 	}
 	if err := upsertScanAssets(tx, scan); err != nil {
+		return err
+	}
+	if err := updateAssetServiceHistory(tx, scan); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {

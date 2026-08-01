@@ -232,7 +232,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Custom asset groups with multi-group membership
 - [x] Explicit Administrator acknowledgement for overlapping memberships
 - [x] Reverse visibility from groups to referencing scan policies
-- [ ] Service and exposure history
+- [x] Service and exposure history
 - [ ] Evidence provenance across scanner and endpoint sources
 - [ ] Asset aging, merge, and retirement behavior
 

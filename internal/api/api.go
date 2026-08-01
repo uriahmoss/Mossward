@@ -67,6 +67,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("POST /api/scans", api.createScan)
 	mux.HandleFunc("GET /api/scans/{id}", api.getScan)
 	mux.HandleFunc("GET /api/assets", api.listAssets)
+	mux.HandleFunc("GET /api/assets/{id}", api.getAsset)
 	mux.HandleFunc("PATCH /api/assets/{id}", api.updateAsset)
 	mux.HandleFunc("GET /api/intelligence/news", api.intelligenceNews)
 	mux.HandleFunc("GET /api/intelligence/status", api.intelligenceStatus)
