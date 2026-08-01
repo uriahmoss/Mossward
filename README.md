@@ -242,6 +242,11 @@ The same constrained provenance model accepts authenticated endpoint evidence
 when endpoint collectors are implemented; Mossward does not currently claim
 that an endpoint collector is available.
 
+Asset lifecycle management marks systems stale after a configurable interval
+(30 days by default), supports audited retirement and restoration, and provides
+an administrator-reviewed merge workflow that preserves identity, group,
+service, and evidence history.
+
 Example:
 
 ```sh

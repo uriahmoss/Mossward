@@ -15,6 +15,7 @@ var ErrFinalAdministrator = errors.New("cannot remove the final active local adm
 var ErrInvalidEnrollmentToken = errors.New("endpoint enrollment token is invalid, expired, or already used")
 var ErrEndpointCertificateChanged = errors.New("endpoint certificate is no longer current")
 var ErrAssetNotFound = errors.New("asset not found")
+var ErrInvalidAssetLifecycle = errors.New("invalid asset lifecycle status")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -23,6 +24,10 @@ type Repository interface {
 	ReconcileInterrupted() error
 	ListAssets() ([]model.Asset, error)
 	UpdateAssetMetadata(string, model.AssetMetadata, model.AuditEvent) error
+	UpdateAssetLifecycle(string, model.AssetLifecycleUpdate, model.AuditEvent) error
+	AssetAgingSettings() (model.AssetAgingSettings, error)
+	UpdateAssetAgingSettings(model.AssetAgingSettings, model.AuditEvent) error
+	MergeAssets(model.AssetMergeRequest, model.AuditEvent) error
 	AssetDetail(string, time.Time) (model.AssetDetail, error)
 	RecordAssetEvidence(model.AssetEvidence) error
 	UpsertAssetGroup(model.AssetGroup, model.AuditEvent) error

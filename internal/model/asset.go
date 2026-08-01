@@ -14,6 +14,42 @@ type Asset struct {
 	Owner          string         `json:"owner"`
 	Environment    string         `json:"environment"`
 	Classification string         `json:"classification"`
+	Lifecycle      AssetLifecycle `json:"lifecycle"`
+}
+
+type AssetLifecycleStatus string
+
+const (
+	AssetActive  AssetLifecycleStatus = "active"
+	AssetStale   AssetLifecycleStatus = "stale"
+	AssetRetired AssetLifecycleStatus = "retired"
+)
+
+type AssetLifecycle struct {
+	Status           AssetLifecycleStatus `json:"status"`
+	RetiredAt        *time.Time           `json:"retired_at,omitempty"`
+	RetiredBy        string               `json:"retired_by,omitempty"`
+	RetirementReason string               `json:"retirement_reason,omitempty"`
+}
+
+type AssetLifecycleUpdate struct {
+	Status AssetLifecycleStatus `json:"status"`
+	Reason string               `json:"reason"`
+}
+
+type AssetAgingSettings struct {
+	StaleAfterDays int `json:"stale_after_days"`
+}
+
+type AssetMergeRequest struct {
+	SurvivorID         string `json:"survivor_id"`
+	MergedID           string `json:"merged_id"`
+	NameFrom           string `json:"name_from"`
+	AddressFrom        string `json:"address_from"`
+	OwnerFrom          string `json:"owner_from"`
+	EnvironmentFrom    string `json:"environment_from"`
+	ClassificationFrom string `json:"classification_from"`
+	LifecycleFrom      string `json:"lifecycle_from"`
 }
 
 type AssetMetadata struct {

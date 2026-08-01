@@ -234,7 +234,9 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Reverse visibility from groups to referencing scan policies
 - [x] Service and exposure history
 - [x] Evidence provenance across scanner and endpoint source types
-- [ ] Asset aging, merge, and retirement behavior
+- [x] Audited manual asset retirement and restoration
+- [x] Configurable asset aging behavior with a 30-day default
+- [x] Administrator-reviewed asset merge behavior with field-level and Apply all choices
 
 ### Scan policies and scheduling
 

@@ -15,6 +15,11 @@ import (
 
 const assetIDBytes = 16
 
+const (
+	minimumAssetStaleDays = 1
+	maximumAssetStaleDays = 3650
+)
+
 func upsertScanAssets(tx *sql.Tx, scan model.Scan) error {
 	if scan.Status != model.StatusCompleted {
 		return nil
@@ -145,7 +150,11 @@ func assetIDForAddress(address string) string {
 }
 
 func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
-	rows, err := s.db.Query(`SELECT id,name,address,first_seen,last_seen,last_scan_id,owner,environment,classification FROM assets ORDER BY last_seen DESC,name`)
+	settings, err := s.AssetAgingSettings()
+	if err != nil {
+		return nil, fmt.Errorf("load asset aging settings: %w", err)
+	}
+	rows, err := s.db.Query(`SELECT id,name,address,first_seen,last_seen,last_scan_id,owner,environment,classification,lifecycle_status,retired_at,retired_by,retirement_reason FROM assets ORDER BY lifecycle_status,last_seen DESC,name`)
 	if err != nil {
 		return nil, fmt.Errorf("list assets: %w", err)
 	}
@@ -153,13 +162,22 @@ func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
 	for rows.Next() {
 		var asset model.Asset
 		var firstSeen, lastSeen string
+		var retiredAt sql.NullString
 		if err := rows.Scan(&asset.ID, &asset.Name, &asset.Address, &firstSeen, &lastSeen, &asset.LastScanID,
-			&asset.Owner, &asset.Environment, &asset.Classification); err != nil {
+			&asset.Owner, &asset.Environment, &asset.Classification, &asset.Lifecycle.Status, &retiredAt,
+			&asset.Lifecycle.RetiredBy, &asset.Lifecycle.RetirementReason); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("read asset: %w", err)
 		}
 		asset.FirstSeen, _ = parseTime(firstSeen)
 		asset.LastSeen, _ = parseTime(lastSeen)
+		if retiredAt.Valid {
+			value, _ := parseTime(retiredAt.String)
+			asset.Lifecycle.RetiredAt = &value
+		}
+		if asset.Lifecycle.Status == model.AssetActive && time.Since(asset.LastSeen) >= time.Duration(settings.StaleAfterDays)*24*time.Hour {
+			asset.Lifecycle.Status = model.AssetStale
+		}
 		assets = append(assets, asset)
 	}
 	if err := rows.Close(); err != nil {
@@ -171,6 +189,61 @@ func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
 		}
 	}
 	return assets, nil
+}
+
+func (s *SQLiteStore) UpdateAssetLifecycle(id string, update model.AssetLifecycleUpdate, event model.AuditEvent) error {
+	if update.Status != model.AssetActive && update.Status != model.AssetRetired {
+		return ErrInvalidAssetLifecycle
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin asset lifecycle update: %w", err)
+	}
+	defer tx.Rollback()
+	var result sql.Result
+	if update.Status == model.AssetRetired {
+		result, err = tx.Exec(`UPDATE assets SET lifecycle_status=?,retired_at=?,retired_by=?,retirement_reason=? WHERE id=?`, update.Status, formatTime(event.OccurredAt), event.ActorID, update.Reason, id)
+	} else {
+		result, err = tx.Exec(`UPDATE assets SET lifecycle_status=?,retired_at=NULL,retired_by='',retirement_reason='' WHERE id=?`, update.Status, id)
+	}
+	if err != nil {
+		return fmt.Errorf("update asset lifecycle: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return ErrAssetNotFound
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) AssetAgingSettings() (model.AssetAgingSettings, error) {
+	var settings model.AssetAgingSettings
+	err := s.db.QueryRow(`SELECT stale_after_days FROM asset_aging_settings WHERE singleton=1`).Scan(&settings.StaleAfterDays)
+	return settings, err
+}
+
+func (s *SQLiteStore) UpdateAssetAgingSettings(settings model.AssetAgingSettings, event model.AuditEvent) error {
+	if settings.StaleAfterDays < minimumAssetStaleDays || settings.StaleAfterDays > maximumAssetStaleDays {
+		return fmt.Errorf("asset stale threshold must be between %d and %d days", minimumAssetStaleDays, maximumAssetStaleDays)
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin asset aging settings update: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE asset_aging_settings SET stale_after_days=? WHERE singleton=1`, settings.StaleAfterDays); err != nil {
+		return fmt.Errorf("update asset aging settings: %w", err)
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) UpdateAssetMetadata(id string, metadata model.AssetMetadata, event model.AuditEvent) error {
