@@ -12,6 +12,7 @@ var ErrIdentityNotFound = errors.New("identity not found")
 var ErrAlreadyInitialized = errors.New("Mossward has already been initialized")
 var ErrCeremonyNotFound = errors.New("authentication ceremony not found")
 var ErrFinalAdministrator = errors.New("cannot remove the final active local administrator")
+var ErrInvalidEnrollmentToken = errors.New("endpoint enrollment token is invalid, expired, or already used")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -66,5 +67,12 @@ type Repository interface {
 	UpsertScopePolicy(model.ScopePolicy, model.AuditEvent) error
 	ScopePolicy(string) (model.ScopePolicy, error)
 	ListScopePolicies(bool) ([]model.ScopePolicy, error)
+	CreateAgentEnrollmentToken(model.AgentEnrollmentToken, model.AuditEvent) error
+	ListAgentEnrollmentTokens(time.Time) ([]model.AgentEnrollmentToken, error)
+	AgentEnrollmentTokenName([]byte, time.Time) (string, error)
+	ConsumeAgentEnrollmentToken([]byte, model.Endpoint, time.Time, model.AuditEvent) error
+	ListEndpoints() ([]model.Endpoint, error)
+	EndpointBySerial(string) (model.Endpoint, error)
+	MarkEndpointSeen(string, time.Time) error
 	Close() error
 }

@@ -179,19 +179,48 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Configurable session duration
 - [x] Trusted reverse-proxy configuration
 
-## Approved and queued
-
 ### Server deployment hardening
 
-- [ ] Direct TLS configuration
-- [ ] Reverse-proxy deployment guidance
-- [ ] Linux systemd service definition and installation guidance
-- [ ] Windows Service installation and lifecycle support
-- [ ] Identity-key backup and restore procedure
-- [ ] Identity-key rotation procedure
-- [ ] SQLite backup and restore workflow
-- [ ] Authentication-aware readiness endpoint
-- [ ] Secure startup validation for hosted deployments
+- [x] Explicit local, direct-TLS, ACME, and reverse-proxy transport modes
+- [x] Direct TLS configuration with TLS 1.2 minimum
+- [x] Certificate validity, hostname, expiration, and private-key permission validation
+- [x] Trusted reverse-proxy HTTPS and client-address handling
+- [x] Hosted request-host validation
+- [x] Secure proxy-aware cookies, HSTS, and sensitive-response cache controls
+- [x] Reverse-proxy deployment guidance
+- [x] Hardened Linux systemd service definition and installation guidance
+- [x] Native Windows Service installation, lifecycle, recovery, and event logging
+- [x] Identity-key backup and restore procedure
+- [x] Versioned identity-key keyring with legacy raw-key compatibility
+- [x] Crash-safe identity-key rotation and transactional ciphertext migration
+- [x] Mandatory pre-rotation backup and retained recovery key
+- [x] Consistent SQLite backup and integrity-checked restore workflow
+- [x] Versioned server backup manifest with per-file SHA-256 checks
+- [x] Optional ACME and endpoint-PKI continuity in server backups
+- [x] Staged restore with recoverable pre-restore copies
+- [x] Authentication-aware readiness endpoint
+- [x] Secure startup validation for hosted deployments
+
+## Approved and queued
+
+### Certificate automation and endpoint identity
+
+- [x] ACME account registration and persistent certificate lifecycle
+- [x] Explicit certificate-authority terms acceptance
+- [x] Exact-host ACME issuance policy
+- [x] ACME HTTP-01 validation
+- [x] ACME TLS-ALPN-01 validation
+- [x] ACME staging and custom standards-compliant directory support
+- [x] Owner-only ACME account and certificate cache
+- [x] Automatic certificate renewal and graceful in-memory replacement
+- [x] Renewal status, expiration warnings, failure visibility, and audit events
+- [x] Mossward private root and online agent-issuing intermediate CA
+- [x] Dedicated TLS 1.3 endpoint API listener and private-PKI server identity
+- [x] Hashed, expiring, single-use endpoint enrollment tokens
+- [x] Endpoint-generated private keys and constrained CSR signing
+- [x] Immutable per-endpoint SPIFFE-style certificate identity
+- [x] Per-endpoint mutually authenticated TLS identity and check-in
+- [ ] Endpoint certificate renewal, revocation, inventory, and alerts
 
 ## Roadmap — not yet started
 

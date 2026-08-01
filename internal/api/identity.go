@@ -461,7 +461,7 @@ func (a *API) logout(w http.ResponseWriter, r *http.Request) {
 		_ = a.auth.Logout(cookie.Value, requestIP(r))
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: "", Path: "/", HttpOnly: true,
-		Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: -1})
+		Secure: requestIsSecure(r), SameSite: http.SameSiteStrictMode, MaxAge: -1})
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -632,7 +632,8 @@ func (a *API) currentUser(r *http.Request) (model.User, bool) {
 }
 
 func identityPublicPath(path string) bool {
-	if path == "/api/health" || path == "/api/auth/status" || path == "/api/auth/login" ||
+	if path == "/api/health" || path == "/api/ready" || path == "/api/auth/status" || path == "/api/auth/login" ||
+		path == "/api/agent/enroll" ||
 		path == "/api/auth/webauthn/login/begin" || path == "/api/auth/webauthn/login/finish" ||
 		path == "/api/invitations/accept/begin" || path == "/api/invitations/accept/complete" ||
 		path == "/api/auth/oidc/providers" || strings.HasPrefix(path, "/api/auth/oidc/") ||
@@ -667,7 +668,7 @@ func (a *API) setSessionCookie(w http.ResponseWriter, r *http.Request, token str
 		maxAge = int((time.Duration(policy.SessionLifetimeMinutes) * time.Minute).Seconds())
 	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Value: token, Path: "/", HttpOnly: true,
-		Secure: r.TLS != nil, SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
+		Secure: requestIsSecure(r), SameSite: http.SameSiteStrictMode, MaxAge: maxAge})
 }
 
 func requestIsLoopback(r *http.Request) bool {

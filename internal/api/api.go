@@ -9,23 +9,28 @@ import (
 	"log/slog"
 	"net/http"
 	"net/netip"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
 
+	"mossward/internal/agentidentity"
 	identity "mossward/internal/auth"
 	"mossward/internal/config"
 	"mossward/internal/model"
 	"mossward/internal/scanner"
 	"mossward/internal/store"
+	"mossward/internal/transport"
 	"mossward/web"
 )
 
 type API struct {
-	cfg     config.Config
-	store   store.Repository
-	scanner *scanner.Engine
-	auth    *identity.Service
+	cfg               config.Config
+	store             store.Repository
+	scanner           *scanner.Engine
+	auth              *identity.Service
+	certificateStatus func() transport.ACMEStatus
+	agentIdentity     *agentidentity.Service
 }
 
 const (
@@ -34,10 +39,23 @@ const (
 	defaultNewsLimit    = 6
 )
 
-func New(cfg config.Config, repository store.Repository, engine *scanner.Engine, identityService *identity.Service) http.Handler {
+type RuntimeOptions struct {
+	CertificateStatus func() transport.ACMEStatus
+	AgentIdentity     *agentidentity.Service
+}
+
+func New(cfg config.Config, repository store.Repository, engine *scanner.Engine, identityService *identity.Service,
+	options ...RuntimeOptions) http.Handler {
 	api := &API{cfg: cfg, store: repository, scanner: engine, auth: identityService}
+	if len(options) > 0 {
+		api.certificateStatus = options[0].CertificateStatus
+		api.agentIdentity = options[0].AgentIdentity
+	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", api.health)
+	mux.HandleFunc("GET /api/ready", api.readiness)
+	mux.HandleFunc("GET /api/admin/certificate-status", api.getCertificateStatus)
+	api.registerAgentIdentityRoutes(mux)
 	mux.HandleFunc("GET /api/config", api.getConfig)
 	mux.HandleFunc("GET /api/scans", api.listScans)
 	mux.HandleFunc("POST /api/scans", api.createScan)
@@ -46,10 +64,21 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("GET /api/intelligence/status", api.intelligenceStatus)
 	api.registerIdentityRoutes(mux)
 	mux.Handle("/", http.FileServer(http.FS(web.Files)))
-	return securityHeaders(api.trustedProxyClientIP(api.identityGate(mux)))
+	return api.trustedProxyRequest(api.transportSecurity(securityHeaders(api.identityGate(mux))))
 }
 
-func (a *API) trustedProxyClientIP(next http.Handler) http.Handler {
+func (a *API) getCertificateStatus(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	if a.certificateStatus == nil {
+		writeJSON(w, http.StatusOK, map[string]string{"mode": string(a.cfg.TransportMode), "state": "not_managed"})
+		return
+	}
+	writeJSON(w, http.StatusOK, a.certificateStatus())
+}
+
+func (a *API) trustedProxyRequest(next http.Handler) http.Handler {
 	prefixes := make([]netip.Prefix, 0, len(a.cfg.TrustedProxyCIDRs))
 	for _, raw := range a.cfg.TrustedProxyCIDRs {
 		if prefix, err := netip.ParsePrefix(raw); err == nil {
@@ -62,14 +91,33 @@ func (a *API) trustedProxyClientIP(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		client, ok := forwardedClient(r.Header.Values("X-Forwarded-For"), prefixes)
-		if !ok {
-			next.ServeHTTP(w, r)
+		request := r.Clone(r.Context())
+		if client, found := forwardedClient(r.Header.Values("X-Forwarded-For"), prefixes); found {
+			request.RemoteAddr = netip.AddrPortFrom(client, 0).String()
+		}
+		if forwardedScheme := strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")); forwardedScheme == "https" {
+			request.URL.Scheme = forwardedScheme
+		}
+		next.ServeHTTP(w, request)
+	})
+}
+
+func (a *API) transportSecurity(next http.Handler) http.Handler {
+	publicHost := ""
+	if origin, err := url.Parse(a.cfg.PublicOrigin); err == nil {
+		publicHost = origin.Host
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if a.cfg.TransportMode == config.TransportProxy && r.URL.Scheme != "https" {
+			writeError(w, http.StatusBadRequest, "HTTPS proxy connection required")
 			return
 		}
-		request := r.Clone(r.Context())
-		request.RemoteAddr = netip.AddrPortFrom(client, 0).String()
-		next.ServeHTTP(w, request)
+		hosted := a.cfg.TransportMode == config.TransportTLS || a.cfg.TransportMode == config.TransportACME || a.cfg.TransportMode == config.TransportProxy
+		if hosted && !strings.EqualFold(r.Host, publicHost) {
+			writeError(w, http.StatusMisdirectedRequest, "unexpected request host")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 
@@ -128,6 +176,28 @@ func (a *API) intelligenceStatus(w http.ResponseWriter, _ *http.Request) {
 
 func (a *API) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (a *API) readiness(w http.ResponseWriter, _ *http.Request) {
+	if !a.scanner.Ready() {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		return
+	}
+	initialized, err := a.auth.Initialized()
+	if err != nil {
+		slog.Error("Readiness check could not query identity state", "error", err)
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "unavailable"})
+		return
+	}
+	if !initialized {
+		status := http.StatusOK
+		if a.cfg.TransportMode == config.TransportTLS || a.cfg.TransportMode == config.TransportACME || a.cfg.TransportMode == config.TransportProxy {
+			status = http.StatusServiceUnavailable
+		}
+		writeJSON(w, status, map[string]string{"status": "setup_required"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
 func (a *API) getConfig(w http.ResponseWriter, _ *http.Request) {
@@ -258,8 +328,23 @@ func securityHeaders(next http.Handler) http.Handler {
 		w.Header().Set("Referrer-Policy", "no-referrer")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 		w.Header().Set("X-Frame-Options", "DENY")
+		if requestIsSecure(r) {
+			w.Header().Set("Strict-Transport-Security", "max-age=15552000")
+		}
+		if sensitivePath(r.URL.Path) {
+			w.Header().Set("Cache-Control", "no-store")
+		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func requestIsSecure(r *http.Request) bool {
+	return r.TLS != nil || r.URL.Scheme == "https"
+}
+
+func sensitivePath(path string) bool {
+	return strings.HasPrefix(path, "/api/auth/") || strings.HasPrefix(path, "/api/admin/") ||
+		path == "/setup.html" || path == "/login.html" || path == "/account.html" || path == "/users.html"
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

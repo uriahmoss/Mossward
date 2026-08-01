@@ -306,6 +306,12 @@ func (e *Engine) Shutdown() {
 	}
 }
 
+func (e *Engine) Ready() bool {
+	e.state.Lock()
+	defer e.state.Unlock()
+	return !e.closed
+}
+
 func (e *Engine) schedule() {
 	defer e.wg.Done()
 	for {

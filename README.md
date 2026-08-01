@@ -6,6 +6,12 @@ It does not exploit services, guess credentials, evade monitoring, or scan publi
 
 Implementation status and the maintained roadmap are tracked in
 [`docs/FEATURES.md`](docs/FEATURES.md).
+Hosted transport configuration and reverse-proxy examples are documented in
+[`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+Linux and Windows Server installation is covered in
+[`docs/SERVICE_INSTALLATION.md`](docs/SERVICE_INSTALLATION.md).
+Server-state protection and disaster recovery are documented in
+[`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
 
 Administrators can manage database-backed scan scope policies from the Users
 page. Every scan selects an enabled policy, and Mossward enforces that policy's
@@ -93,6 +99,19 @@ Synchronize the latest CVE intelligence manually before scanning:
 go run ./cmd/mossward cve sync
 ```
 
+Create and validate a protected server backup:
+
+```sh
+mossward backup create --output /secure/backups/mossward.tar.gz
+mossward backup inspect --input /secure/backups/mossward.tar.gz
+```
+
+Rotate the identity encryption key while the service is stopped:
+
+```sh
+mossward identity-key rotate --backup /secure/backups/pre-rotation.tar.gz --confirm-rotation
+```
+
 The initial implementation imports CVEs published during the last 120 days,
 which is the maximum date window accepted by one NVD API request. Use
 `--days 30` for a smaller refresh. Set `MOSSWARD_NVD_API_KEY` to an NVD API key
@@ -109,9 +128,11 @@ Mossward/
 ├── cmd/mossward/       Application entry point
 ├── config/             Example runtime configuration
 ├── data/               Local scan data (ignored by Git)
+├── deploy/             Linux systemd and Windows Service assets
 ├── docs/               Architecture and design documentation
 ├── internal/
 │   ├── api/            HTTP routes and transport concerns
+│   ├── agentidentity/  Private PKI, enrollment, and endpoint mTLS identity
 │   ├── config/         Configuration parsing
 │   ├── intelligence/   NVD ingestion, normalization, and version comparison
 │   ├── model/          Core domain types
@@ -129,22 +150,11 @@ on scripts elsewhere in the parent repository.
 
 ## Run in a container
 
-The container retains Mossward's loopback-only default. To make it reachable
-from the host, explicitly opt in to the container listener while binding the
-published port to the host's loopback interface:
-
-```sh
-docker build -t mossward .
-docker run --rm \
-  -e MOSSWARD_LISTEN=0.0.0.0:8080 \
-  -p 127.0.0.1:8080:8080 \
-  -v mossward-data:/app/data \
-  mossward
-```
-
-Do not publish Mossward directly on an external interface. Local authentication
-is active, but TLS, trusted-proxy configuration, WebAuthn, user administration,
-and federated identity configuration are still being completed.
+Build the image with `docker build -t mossward .`. A container must use direct
+TLS or reverse-proxy mode because its listener cannot remain host-loopback-only.
+Mount persistent data and any manual TLS material rather than storing it in the
+container layer. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) before publishing
+the service.
 
 ## Configuration
 
@@ -152,7 +162,20 @@ Environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `MOSSWARD_LISTEN` | `127.0.0.1:8080` | HTTP listen address |
+| `MOSSWARD_LISTEN` | `127.0.0.1:8080` | Server listen address |
+| `MOSSWARD_TRANSPORT_MODE` | `local` | `local`, manual `tls`, automatic `acme`, or trusted `proxy` transport |
+| `MOSSWARD_PUBLIC_ORIGIN` | `http://localhost:8080` | Exact externally visible origin and permitted hosted request authority |
+| `MOSSWARD_TLS_CERT_FILE` | Empty | Certificate chain used in direct TLS mode |
+| `MOSSWARD_TLS_KEY_FILE` | Empty | Owner-only private key used in direct TLS mode |
+| `MOSSWARD_ACME_EMAIL` | Empty | ACME account contact, required in ACME mode |
+| `MOSSWARD_ACME_ACCEPT_TOS` | `false` | Explicit acceptance of the configured ACME provider's terms |
+| `MOSSWARD_ACME_CACHE_DIR` | `data/acme` | Owner-only ACME account and certificate cache |
+| `MOSSWARD_ACME_DIRECTORY_URL` | Let's Encrypt production | Standards-compliant ACME directory endpoint |
+| `MOSSWARD_ACME_HTTP_LISTEN` | `:80` | HTTP-01 challenge listener |
+| `MOSSWARD_TRUSTED_PROXY_CIDRS` | Empty | Immediate proxies allowed to supply forwarded client and HTTPS information |
+| `MOSSWARD_AGENT_LISTEN` | Empty | Dedicated TLS 1.3 mTLS endpoint API listener |
+| `MOSSWARD_AGENT_SERVER_NAMES` | Empty | Names permitted on the endpoint API server certificate |
+| `MOSSWARD_AGENT_PKI_DIR` | `data/agent-pki` | Owner-only private endpoint PKI directory |
 | `MOSSWARD_DATABASE_FILE` | `data/mossward.db` | SQLite database path |
 | `MOSSWARD_DATA_FILE` | `data/scans.json` | Legacy JSON path used only for one-time import |
 | `MOSSWARD_IDENTITY_KEY_FILE` | `data/identity.key` | Owner-only AES-256 key used to encrypt identity-provider and MFA secrets |
@@ -176,12 +199,20 @@ so machine-specific policy does not enter source control.
 ## Current API
 
 - `GET /api/health`
+- `GET /api/ready`
+- `GET /api/admin/certificate-status`
+- `GET /api/admin/endpoints`
+- `GET /api/admin/agent-enrollment-tokens`
+- `POST /api/admin/agent-enrollment-tokens`
+- `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`
 - `POST /api/scans`
 - `GET /api/scans/{id}`
 - `GET /api/intelligence/news`
 - `GET /api/intelligence/status`
+
+The separate mTLS endpoint API currently exposes `POST /api/agent/v1/check-in`.
 
 Example:
 

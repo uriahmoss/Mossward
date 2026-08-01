@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -225,9 +226,15 @@ func TestUninitializedApplicationRedirectsToLocalSetup(t *testing.T) {
 		t.Fatal(err)
 	}
 	handler := New(cfg, repository, engine, identityService)
-
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/ready", nil)
 	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "setup_required") {
+		t.Fatalf("expected local setup readiness, got %d: %s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/", nil)
+	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/setup.html" {
 		t.Fatalf("expected setup redirect, got %d %q", response.Code, response.Header().Get("Location"))
@@ -242,6 +249,38 @@ func TestUninitializedApplicationRedirectsToLocalSetup(t *testing.T) {
 	}
 }
 
+func TestTrustedProxyEstablishesSecureRequest(t *testing.T) {
+	cfg := config.Config{TransportMode: config.TransportProxy, PublicOrigin: "https://mossward.example.com", TrustedProxyCIDRs: []string{"10.0.0.0/8"}}
+	api := &API{cfg: cfg}
+	inner := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requestIsSecure(r) {
+			http.SetCookie(w, &http.Cookie{Name: "test", Value: "value", Secure: true})
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+	handler := api.trustedProxyRequest(api.transportSecurity(securityHeaders(inner)))
+
+	request := httptest.NewRequest(http.MethodGet, "http://mossward.example.com/", nil)
+	request.Host = "mossward.example.com"
+	request.RemoteAddr = "10.1.2.3:443"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent || response.Header().Get("Strict-Transport-Security") == "" || !strings.Contains(response.Header().Get("Set-Cookie"), "Secure") {
+		t.Fatalf("trusted HTTPS proxy was not honored: %d %#v", response.Code, response.Header())
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "http://mossward.example.com/", nil)
+	request.Host = "mossward.example.com"
+	request.RemoteAddr = "192.0.2.5:443"
+	request.Header.Set("X-Forwarded-Proto", "https")
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("expected spoofed forwarded scheme rejection, got %d", response.Code)
+	}
+}
+
 func TestIntelligenceEndpointsReturnEmptyLocalFeed(t *testing.T) {
 	handler, _ := testHandler(t)
 	for _, path := range []string{"/api/intelligence/news", "/api/intelligence/status"} {
@@ -251,6 +290,26 @@ func TestIntelligenceEndpointsReturnEmptyLocalFeed(t *testing.T) {
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
 		}
+	}
+}
+
+func TestCertificateStatusReportsUnmanagedMode(t *testing.T) {
+	handler, _ := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/certificate-status", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "not_managed") {
+		t.Fatalf("unexpected certificate status: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestEndpointAdministrationReportsDisabledService(t *testing.T) {
+	handler, _ := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/endpoints", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("expected disabled endpoint identity status, got %d", response.Code)
 	}
 }
 
@@ -275,7 +334,7 @@ func TestWebAuthnRegistrationRequiresAndUsesRecentMFA(t *testing.T) {
 
 func TestForwardedClientIPRequiresTrustedDirectProxy(t *testing.T) {
 	api := &API{cfg: config.Config{TrustedProxyCIDRs: []string{"10.0.0.0/8"}}}
-	handler := api.trustedProxyClientIP(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := api.trustedProxyRequest(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(requestIP(r)))
 	}))
 	for _, test := range []struct {

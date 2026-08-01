@@ -34,6 +34,40 @@ async function loadInvitations() {
   document.querySelector("#invitations-list").innerHTML = invitations.length ? invitations.map((item) => `<article class="session-row"><div><strong>${escapeHTML(item.email)}</strong><span>${escapeHTML(item.identity_kind)} · ${escapeHTML(item.role)} · expires ${new Date(item.expires_at).toLocaleString()}</span></div></article>`).join("") : "No pending invitations.";
 }
 
+async function loadCertificateStatus() {
+  const response = await fetch("/api/admin/certificate-status");
+  if (!response.ok) { return; }
+  const status = await response.json();
+  const expiry = status.expires_at ? ` · expires ${new Date(status.expires_at).toLocaleString()}` : "";
+  const problem = status.last_error ? ` · ${escapeHTML(status.last_error)}` : "";
+  document.querySelector("#certificate-status").innerHTML = `<article class="session-row"><div><strong>${escapeHTML(status.mode || "local")}</strong><span>${escapeHTML(status.hostname || "Server-managed certificate not enabled")} · ${escapeHTML(status.state)}${expiry}${problem}</span></div></article>`;
+}
+
+async function loadEndpointIdentity() {
+  const [endpointsResponse, tokensResponse] = await Promise.all([
+    fetch("/api/admin/endpoints"), fetch("/api/admin/agent-enrollment-tokens")]);
+  if (endpointsResponse.status === 503) {
+    document.querySelector("#endpoints-list").textContent = "Endpoint identity is not enabled on this server.";
+    document.querySelector("#endpoint-enrollments").textContent = "Configure the endpoint mTLS listener to enable enrollment.";
+    return;
+  }
+  if (!endpointsResponse.ok || !tokensResponse.ok) { return; }
+  const endpoints = await endpointsResponse.json();
+  const tokens = await tokensResponse.json();
+  document.querySelector("#endpoints-list").innerHTML = endpoints.length ? endpoints.map((endpoint) => `<article class="session-row"><div><strong>${escapeHTML(endpoint.name)}</strong><span>${escapeHTML(endpoint.status)} · certificate expires ${new Date(endpoint.expires_at).toLocaleString()}${endpoint.last_seen_at ? ` · last seen ${new Date(endpoint.last_seen_at).toLocaleString()}` : " · never connected"}</span></div></article>`).join("") : "No endpoints enrolled.";
+  document.querySelector("#endpoint-enrollments").innerHTML = tokens.length ? tokens.map((token) => `<article class="session-row"><div><strong>${escapeHTML(token.name)}</strong><span>${token.used_at ? `used ${new Date(token.used_at).toLocaleString()}` : `expires ${new Date(token.expires_at).toLocaleString()}`}</span></div></article>`).join("") : "No active enrollment tokens.";
+}
+
+document.querySelector("#endpoint-enrollment-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); usersError.textContent = "";
+  const response = await secureFetch("/api/admin/agent-enrollment-tokens", {method: "POST", headers: csrfHeaders,
+    body: JSON.stringify({name: document.querySelector("#endpoint-name").value})});
+  const result = await response.json();
+  if (!response.ok) { usersError.textContent = result.error; return; }
+  document.querySelector("#endpoint-token-result").textContent = `Copy this one-time token now: ${result.token}`;
+  event.target.reset(); await loadEndpointIdentity();
+});
+
 async function loadOIDCProviders() {
   const response = await fetch("/api/admin/oidc/providers");
   if (!response.ok) { return; }
@@ -162,4 +196,4 @@ document.querySelector("#invite-form").addEventListener("submit", async (event) 
   event.target.reset(); await loadInvitations();
 });
 
-loadUsers(); loadInvitations(); loadOIDCProviders(); loadPolicy(); loadScopePolicies(); loadAuditEvents();
+loadUsers(); loadInvitations(); loadOIDCProviders(); loadPolicy(); loadScopePolicies(); loadAuditEvents(); loadCertificateStatus(); loadEndpointIdentity();

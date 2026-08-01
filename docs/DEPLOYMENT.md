@@ -1,0 +1,158 @@
+# Mossward transport deployment
+
+Mossward has three explicit transport modes. Complete the localhost-only first
+administrator setup before moving an installation into a hosted mode. A hosted
+installation that is not initialized remains live but reports `setup_required`
+and HTTP 503 from `/api/ready`.
+
+## Local mode
+
+Local mode is the default and permits HTTP only on a loopback listener.
+
+```text
+MOSSWARD_TRANSPORT_MODE=local
+MOSSWARD_LISTEN=127.0.0.1:8080
+MOSSWARD_PUBLIC_ORIGIN=http://localhost:8080
+```
+
+## Direct TLS mode
+
+Direct TLS uses an administrator-provided certificate. The certificate must be
+current and cover the public-origin hostname. On Unix systems, the private key
+must not grant group or other permissions.
+
+```text
+MOSSWARD_TRANSPORT_MODE=tls
+MOSSWARD_LISTEN=0.0.0.0:8443
+MOSSWARD_PUBLIC_ORIGIN=https://mossward.example.com:8443
+MOSSWARD_TLS_CERT_FILE=/etc/mossward/tls/fullchain.pem
+MOSSWARD_TLS_KEY_FILE=/etc/mossward/tls/private-key.pem
+MOSSWARD_WEBAUTHN_RP_ID=mossward.example.com
+MOSSWARD_WEBAUTHN_ORIGINS=https://mossward.example.com:8443
+```
+
+Mossward permits TLS 1.2 and TLS 1.3. It refuses expired, not-yet-valid, or
+hostname-mismatched certificates and warns 30 days before expiration.
+
+## Automatic TLS with ACME
+
+ACME mode obtains and renews a certificate for the exact public-origin
+hostname. The hostname must be public DNS, and the administrator must explicitly
+accept the selected certificate authority's terms. Mossward never accepts terms
+implicitly.
+
+```text
+MOSSWARD_TRANSPORT_MODE=acme
+MOSSWARD_LISTEN=:443
+MOSSWARD_PUBLIC_ORIGIN=https://mossward.example.com
+MOSSWARD_WEBAUTHN_RP_ID=mossward.example.com
+MOSSWARD_WEBAUTHN_ORIGINS=https://mossward.example.com
+MOSSWARD_ACME_EMAIL=admin@example.com
+MOSSWARD_ACME_ACCEPT_TOS=true
+MOSSWARD_ACME_CACHE_DIR=data/acme
+MOSSWARD_ACME_HTTP_LISTEN=:80
+```
+
+The default directory is Let's Encrypt production. Test initial routing with
+the staging directory before switching to production:
+
+```text
+MOSSWARD_ACME_DIRECTORY_URL=https://acme-staging-v02.api.letsencrypt.org/directory
+```
+
+HTTP-01 requires inbound TCP 80 to reach `MOSSWARD_ACME_HTTP_LISTEN`.
+TLS-ALPN-01 uses the primary TLS listener, normally TCP 443. Mossward supports
+both challenge types and the ACME server selects an available method. The ACME
+cache contains the account key and certificates; it is created with owner-only
+directory and file permissions and must be included in protected server backups.
+
+The Users administration page reports whether the certificate is pending,
+active, due for renewal, or in error. Mossward logs issuance, renewal, request
+failures, and certificates approaching expiration. Issuance and renewal are
+also appended to the administrative audit stream.
+
+ACME cannot generally issue certificates for IP addresses, localhost, or
+private-only DNS names. In reverse-proxy mode, let the proxy manage ACME instead.
+
+## Reverse-proxy mode
+
+Keep the backend listener private. List only the immediate proxy addresses or
+networks in `MOSSWARD_TRUSTED_PROXY_CIDRS`; never use a broad client network.
+
+```text
+MOSSWARD_TRANSPORT_MODE=proxy
+MOSSWARD_LISTEN=127.0.0.1:8080
+MOSSWARD_PUBLIC_ORIGIN=https://mossward.example.com
+MOSSWARD_TRUSTED_PROXY_CIDRS=127.0.0.1/32,::1/128
+MOSSWARD_WEBAUTHN_RP_ID=mossward.example.com
+MOSSWARD_WEBAUTHN_ORIGINS=https://mossward.example.com
+```
+
+Nginx location configuration:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8080;
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Proto https;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+}
+```
+
+Caddy configuration:
+
+```caddyfile
+mossward.example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+```
+
+Caddy supplies the preserved host, forwarded scheme, and client-address chain.
+Mossward ignores these headers unless the direct peer is trusted. Proxy-mode
+requests without a trusted HTTPS indication are rejected.
+
+## Health checks
+
+- `GET /api/health` is a process liveness check.
+- `GET /api/ready` checks the scanner, database-backed identity state, and
+  initialization state without returning internal error details.
+- `GET /api/admin/certificate-status` reports certificate state to authenticated
+  administrators.
+
+Use readiness, not liveness, to decide whether a load balancer should send
+production traffic to Mossward.
+
+## Endpoint identity and mTLS listener
+
+Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
+set. It uses a dedicated listener so reverse-proxy behavior cannot weaken client
+certificate validation.
+
+```text
+MOSSWARD_AGENT_LISTEN=:9443
+MOSSWARD_AGENT_SERVER_NAMES=mossward.example.com,10.0.0.10
+MOSSWARD_AGENT_PKI_DIR=data/agent-pki
+```
+
+On first activation Mossward creates a ten-year private endpoint root CA, a
+two-year online issuing intermediate CA, and a 90-day server certificate for
+the configured agent server names. The listener requires TLS 1.3 and a valid,
+active Mossward endpoint certificate. Browser sessions, bearer tokens, and
+forwarded client-certificate headers cannot authenticate to it.
+
+Root, intermediate, and server private keys are owner-only files. Include the
+entire PKI directory in protected backups; losing it breaks established agent
+trust after server recovery. A future key-lifecycle slice will cover offline
+root handling and controlled rotation.
+
+An administrator creates a 15-minute, single-use enrollment token from the
+Users page. Only its SHA-256 hash is stored. The endpoint generates its own
+ECDSA P-256/P-384 or RSA-2048-or-stronger key and sends a signed PEM CSR with the
+token to `POST /api/agent/enroll` over the normal server HTTPS connection.
+Mossward ignores requested subject names and SANs, assigning an immutable
+`spiffe://mossward/endpoint/<id>` identity. The response contains the 90-day
+client certificate and CA chain; the endpoint private key never leaves it.
+
+This slice provides enrollment and authenticated `POST /api/agent/v1/check-in`
+transport. Signed Linux and Windows agents, certificate renewal and revocation,
+inventory collection, and relay behavior remain separate roadmap slices.

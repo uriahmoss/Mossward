@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 8
+const schemaVersion = 9
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -62,6 +62,54 @@ func NewSQLiteStore(path, legacyJSONPath string) (*SQLiteStore, error) {
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+func (s *SQLiteStore) BackupSQLite(destination string) error {
+	if _, err := os.Stat(destination); err == nil {
+		return fmt.Errorf("backup destination already exists: %s", destination)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("inspect backup destination: %w", err)
+	}
+	escaped := strings.ReplaceAll(destination, "'", "''")
+	if _, err := s.db.Exec("VACUUM INTO '" + escaped + "'"); err != nil {
+		return fmt.Errorf("create consistent SQLite backup: %w", err)
+	}
+	if err := os.Chmod(destination, 0o600); err != nil {
+		return fmt.Errorf("secure SQLite backup: %w", err)
+	}
+	return nil
+}
+
+func ValidateSQLiteSnapshot(path string) (int, error) {
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return 0, fmt.Errorf("resolve SQLite snapshot path: %w", err)
+	}
+	slashPath := filepath.ToSlash(absolutePath)
+	if filepath.VolumeName(absolutePath) != "" && !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	dsn := (&url.URL{Scheme: "file", Path: slashPath, RawQuery: "mode=ro"}).String()
+	database, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return 0, fmt.Errorf("open SQLite snapshot: %w", err)
+	}
+	defer database.Close()
+	var integrity string
+	if err := database.QueryRow(`PRAGMA integrity_check`).Scan(&integrity); err != nil {
+		return 0, fmt.Errorf("run SQLite integrity check: %w", err)
+	}
+	if integrity != "ok" {
+		return 0, fmt.Errorf("SQLite integrity check failed: %s", integrity)
+	}
+	var version int
+	if err := database.QueryRow(`SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&version); err != nil {
+		return 0, fmt.Errorf("read SQLite snapshot schema: %w", err)
+	}
+	if version > schemaVersion {
+		return 0, fmt.Errorf("SQLite snapshot schema %d is newer than supported version %d", version, schemaVersion)
+	}
+	return version, nil
 }
 
 func (s *SQLiteStore) migrate() error {
@@ -117,6 +165,11 @@ func (s *SQLiteStore) migrate() error {
 	}
 	if current < 8 {
 		if err := s.applyScopePolicyControlsMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 9 {
+		if err := s.applyEndpointIdentityMigration(); err != nil {
 			return err
 		}
 	}

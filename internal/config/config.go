@@ -11,30 +11,53 @@ import (
 )
 
 type Config struct {
-	ListenAddress     string
-	DatabaseFile      string
-	LegacyDataFile    string
-	IdentityKeyFile   string
-	WebAuthnRPID      string
-	WebAuthnOrigins   []string
-	TrustedProxyCIDRs []string
-	AllowedCIDRs      []string
-	AllowedPorts      map[int]bool
-	MaxTargets        int
-	MaxConcurrent     int
-	QueueSize         int
-	ConnectTimeout    time.Duration
+	ListenAddress      string
+	TransportMode      TransportMode
+	PublicOrigin       string
+	TLSCertificateFile string
+	TLSPrivateKeyFile  string
+	ACMEEmail          string
+	ACMECacheDirectory string
+	ACMEDirectoryURL   string
+	ACMEHTTPListen     string
+	ACMEAcceptTerms    bool
+	AgentListen        string
+	AgentPKIDirectory  string
+	AgentServerNames   []string
+	DatabaseFile       string
+	LegacyDataFile     string
+	IdentityKeyFile    string
+	WebAuthnRPID       string
+	WebAuthnOrigins    []string
+	TrustedProxyCIDRs  []string
+	AllowedCIDRs       []string
+	AllowedPorts       map[int]bool
+	MaxTargets         int
+	MaxConcurrent      int
+	QueueSize          int
+	ConnectTimeout     time.Duration
 }
 
 func Load() (Config, error) {
 	cfg := Config{
-		ListenAddress:     env("MOSSWARD_LISTEN", "127.0.0.1:8080"),
-		DatabaseFile:      env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
-		LegacyDataFile:    env("MOSSWARD_DATA_FILE", "data/scans.json"),
-		IdentityKeyFile:   env("MOSSWARD_IDENTITY_KEY_FILE", "data/identity.key"),
-		WebAuthnRPID:      env("MOSSWARD_WEBAUTHN_RP_ID", "localhost"),
-		WebAuthnOrigins:   splitValues(env("MOSSWARD_WEBAUTHN_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080")),
-		TrustedProxyCIDRs: splitValues(env("MOSSWARD_TRUSTED_PROXY_CIDRS", "")),
+		ListenAddress:      env("MOSSWARD_LISTEN", "127.0.0.1:8080"),
+		TransportMode:      TransportMode(env("MOSSWARD_TRANSPORT_MODE", string(TransportLocal))),
+		PublicOrigin:       env("MOSSWARD_PUBLIC_ORIGIN", "http://localhost:8080"),
+		TLSCertificateFile: env("MOSSWARD_TLS_CERT_FILE", ""),
+		TLSPrivateKeyFile:  env("MOSSWARD_TLS_KEY_FILE", ""),
+		ACMEEmail:          env("MOSSWARD_ACME_EMAIL", ""),
+		ACMECacheDirectory: env("MOSSWARD_ACME_CACHE_DIR", "data/acme"),
+		ACMEDirectoryURL:   env("MOSSWARD_ACME_DIRECTORY_URL", "https://acme-v02.api.letsencrypt.org/directory"),
+		ACMEHTTPListen:     env("MOSSWARD_ACME_HTTP_LISTEN", ":80"),
+		AgentListen:        env("MOSSWARD_AGENT_LISTEN", ""),
+		AgentPKIDirectory:  env("MOSSWARD_AGENT_PKI_DIR", "data/agent-pki"),
+		AgentServerNames:   splitValues(env("MOSSWARD_AGENT_SERVER_NAMES", "")),
+		DatabaseFile:       env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
+		LegacyDataFile:     env("MOSSWARD_DATA_FILE", "data/scans.json"),
+		IdentityKeyFile:    env("MOSSWARD_IDENTITY_KEY_FILE", "data/identity.key"),
+		WebAuthnRPID:       env("MOSSWARD_WEBAUTHN_RP_ID", "localhost"),
+		WebAuthnOrigins:    splitValues(env("MOSSWARD_WEBAUTHN_ORIGINS", "http://localhost:8080,http://127.0.0.1:8080")),
+		TrustedProxyCIDRs:  splitValues(env("MOSSWARD_TRUSTED_PROXY_CIDRS", "")),
 		AllowedCIDRs: strings.Split(env("MOSSWARD_ALLOWED_CIDRS",
 			"127.0.0.0/8,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,::1/128,fc00::/7"), ","),
 		MaxTargets:     256,
@@ -43,6 +66,9 @@ func Load() (Config, error) {
 		ConnectTimeout: 800 * time.Millisecond,
 	}
 	var err error
+	if cfg.ACMEAcceptTerms, err = envBool("MOSSWARD_ACME_ACCEPT_TOS", false); err != nil {
+		return Config{}, err
+	}
 	if cfg.MaxTargets, err = envPositiveInt("MOSSWARD_MAX_TARGETS", cfg.MaxTargets); err != nil {
 		return Config{}, err
 	}
@@ -72,6 +98,12 @@ func Load() (Config, error) {
 		}
 	}
 	if err := validateWebAuthn(cfg.WebAuthnRPID, cfg.WebAuthnOrigins); err != nil {
+		return Config{}, err
+	}
+	if err := validateTransport(cfg); err != nil {
+		return Config{}, err
+	}
+	if err := validateAgentListener(cfg); err != nil {
 		return Config{}, err
 	}
 	return cfg, nil
@@ -110,6 +142,15 @@ func envPositiveInt(name string, fallback int) (int, error) {
 	value, err := strconv.Atoi(raw)
 	if err != nil || value < 1 {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
+	}
+	return value, nil
+}
+
+func envBool(name string, fallback bool) (bool, error) {
+	raw := env(name, strconv.FormatBool(fallback))
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return false, fmt.Errorf("%s must be true or false", name)
 	}
 	return value, nil
 }

@@ -55,3 +55,61 @@ func TestLoadRejectsInvalidTrustedProxyCIDR(t *testing.T) {
 		t.Fatalf("expected invalid trusted proxy error, got %v", err)
 	}
 }
+
+func TestLoadValidatesTransportModes(t *testing.T) {
+	tests := []struct {
+		name    string
+		values  map[string]string
+		wantErr string
+	}{
+		{name: "local rejects public listener", values: map[string]string{"MOSSWARD_LISTEN": "0.0.0.0:8080"}, wantErr: "loopback"},
+		{name: "TLS requires certificate files", values: map[string]string{
+			"MOSSWARD_TRANSPORT_MODE": "tls", "MOSSWARD_PUBLIC_ORIGIN": "https://mossward.example.com",
+			"MOSSWARD_WEBAUTHN_RP_ID": "mossward.example.com", "MOSSWARD_WEBAUTHN_ORIGINS": "https://mossward.example.com",
+		}, wantErr: "requires MOSSWARD_TLS_CERT_FILE"},
+		{name: "proxy requires trusted proxy", values: map[string]string{
+			"MOSSWARD_TRANSPORT_MODE": "proxy", "MOSSWARD_PUBLIC_ORIGIN": "https://mossward.example.com",
+			"MOSSWARD_WEBAUTHN_RP_ID": "mossward.example.com", "MOSSWARD_WEBAUTHN_ORIGINS": "https://mossward.example.com",
+		}, wantErr: "requires MOSSWARD_TRUSTED_PROXY_CIDRS"},
+		{name: "proxy accepts secure configuration", values: map[string]string{
+			"MOSSWARD_TRANSPORT_MODE": "proxy", "MOSSWARD_PUBLIC_ORIGIN": "https://mossward.example.com",
+			"MOSSWARD_WEBAUTHN_RP_ID": "example.com", "MOSSWARD_WEBAUTHN_ORIGINS": "https://mossward.example.com",
+			"MOSSWARD_TRUSTED_PROXY_CIDRS": "10.0.0.10/32",
+		}},
+		{name: "ACME requires terms acceptance", values: map[string]string{
+			"MOSSWARD_TRANSPORT_MODE": "acme", "MOSSWARD_PUBLIC_ORIGIN": "https://mossward.example.com",
+			"MOSSWARD_WEBAUTHN_RP_ID": "mossward.example.com", "MOSSWARD_WEBAUTHN_ORIGINS": "https://mossward.example.com",
+			"MOSSWARD_ACME_EMAIL": "admin@example.com",
+		}, wantErr: "MOSSWARD_ACME_ACCEPT_TOS=true"},
+		{name: "ACME accepts public host configuration", values: map[string]string{
+			"MOSSWARD_TRANSPORT_MODE": "acme", "MOSSWARD_PUBLIC_ORIGIN": "https://mossward.example.com",
+			"MOSSWARD_WEBAUTHN_RP_ID": "example.com", "MOSSWARD_WEBAUTHN_ORIGINS": "https://mossward.example.com",
+			"MOSSWARD_ACME_EMAIL": "admin@example.com", "MOSSWARD_ACME_ACCEPT_TOS": "true",
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			for name, value := range test.values {
+				t.Setenv(name, value)
+			}
+			_, err := Load()
+			if test.wantErr == "" && err != nil {
+				t.Fatal(err)
+			}
+			if test.wantErr != "" && (err == nil || !strings.Contains(err.Error(), test.wantErr)) {
+				t.Fatalf("expected error containing %q, got %v", test.wantErr, err)
+			}
+		})
+	}
+}
+
+func TestLoadValidatesAgentListener(t *testing.T) {
+	t.Setenv("MOSSWARD_AGENT_LISTEN", ":9443")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MOSSWARD_AGENT_SERVER_NAMES") {
+		t.Fatalf("expected missing agent names error, got %v", err)
+	}
+	t.Setenv("MOSSWARD_AGENT_SERVER_NAMES", "agent.mossward.test,10.0.0.5")
+	if _, err := Load(); err != nil {
+		t.Fatalf("expected valid agent listener, got %v", err)
+	}
+}
