@@ -32,8 +32,22 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine)
 	mux.HandleFunc("GET /api/scans", api.listScans)
 	mux.HandleFunc("POST /api/scans", api.createScan)
 	mux.HandleFunc("GET /api/scans/{id}", api.getScan)
+	mux.HandleFunc("GET /api/intelligence/news", api.intelligenceNews)
+	mux.HandleFunc("GET /api/intelligence/status", api.intelligenceStatus)
 	mux.Handle("/", http.FileServer(http.FS(web.Files)))
 	return securityHeaders(mux)
+}
+
+func (a *API) intelligenceNews(w http.ResponseWriter, _ *http.Request) {
+	items, err := a.store.ListCriticalNews(6)
+	if err != nil { writeError(w, http.StatusInternalServerError, "could not load CVE intelligence"); return }
+	writeJSON(w, http.StatusOK, items)
+}
+
+func (a *API) intelligenceStatus(w http.ResponseWriter, _ *http.Request) {
+	status, err := a.store.FeedStatus()
+	if err != nil { writeError(w, http.StatusInternalServerError, "could not load feed status"); return }
+	writeJSON(w, http.StatusOK, status)
 }
 
 func (a *API) health(w http.ResponseWriter, _ *http.Request) {
@@ -108,6 +122,7 @@ func (a *API) createScan(w http.ResponseWriter, r *http.Request) {
 		Status:       model.StatusQueued,
 		Observations: []model.ServiceObservation{},
 		Findings:     []model.Finding{},
+		CVEMatches:   []model.CVEMatch{},
 		TotalChecks:  len(targets) * len(ports),
 		CreatedAt:    time.Now().UTC(),
 	}

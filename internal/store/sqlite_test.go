@@ -188,3 +188,56 @@ func TestSQLiteStoreReturnsNotFound(t *testing.T) {
 		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestSQLiteStoreMatchesVersionedObservationAndPrioritizesNews(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	record := model.CVERecord{ID: "CVE-2026-4242", Description: "Critical nginx issue", PublishedAt: now,
+		ModifiedAt: now, CVSSScore: 9.8, Severity: "critical", KnownExploited: true,
+		SourceURL: "https://nvd.nist.gov/vuln/detail/CVE-2026-4242", Products: []model.AffectedProduct{{
+			CPE23: "cpe:2.3:a:nginx:nginx:*:*:*:*:*:*:*:*", Vendor: "nginx", Product: "nginx",
+			VersionEndExcluding: "1.25.4", Vulnerable: true,
+		}}}
+	if err := repository.UpsertCVEs([]model.CVERecord{record}); err != nil {
+		t.Fatal(err)
+	}
+	observation := model.ServiceObservation{ID: "obs", Target: "web", Address: "127.0.0.1", Port: 443,
+		Product: "nginx", Version: "1.25.3", ObservedAt: now}
+	matches, err := repository.MatchObservation(observation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 1 || matches[0].CVEID != record.ID {
+		t.Fatalf("unexpected matches: %#v", matches)
+	}
+	scan := model.Scan{ID: "matched-scan", Status: model.StatusCompleted, CreatedAt: now,
+		Observations: []model.ServiceObservation{observation}, CVEMatches: matches}
+	if err := repository.Save(scan); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := repository.Get(scan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.CVEMatches) != 1 || loaded.CVEMatches[0].KnownExploited != true {
+		t.Fatalf("CVE match did not round-trip: %#v", loaded.CVEMatches)
+	}
+	news, err := repository.ListCriticalNews(6)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(news) != 1 || news[0].Relevance != "matched" {
+		t.Fatalf("unexpected news relevance: %#v", news)
+	}
+}
+
+func TestSQLiteStoreDoesNotMatchWithoutVersion(t *testing.T) {
+	repository := openTestStore(t)
+	matches, err := repository.MatchObservation(model.ServiceObservation{Product: "nginx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("expected no unversioned matches, got %#v", matches)
+	}
+}

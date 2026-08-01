@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -13,6 +14,7 @@ import (
 
 	"mossward/internal/api"
 	"mossward/internal/config"
+	"mossward/internal/intelligence"
 	"mossward/internal/scanner"
 	"mossward/internal/store"
 )
@@ -28,6 +30,12 @@ func main() {
 		log.Fatal(err)
 	}
 	defer repository.Close()
+	if len(os.Args) > 1 && os.Args[1] == "cve" {
+		if err := runCVECommand(repository, os.Args[2:]); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 
 	engine, err := scanner.New(cfg, repository)
 	if err != nil {
@@ -60,4 +68,31 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 	}
 	engine.Shutdown()
+}
+
+func runCVECommand(repository store.Repository, args []string) error {
+	if len(args) == 0 || args[0] != "sync" {
+		return errors.New("usage: mossward cve sync [--days 120]")
+	}
+	flags := flag.NewFlagSet("cve sync", flag.ContinueOnError)
+	days := flags.Int("days", 120, "published-date lookback in days (maximum 120)")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *days < 1 || *days > 120 {
+		return errors.New("--days must be between 1 and 120")
+	}
+	delay := 6 * time.Second
+	apiKey := os.Getenv("MOSSWARD_NVD_API_KEY")
+	if apiKey != "" {
+		delay = 700 * time.Millisecond
+	}
+	client := intelligence.NVDClient{APIKey: apiKey, PageDelay: delay}
+	until := time.Now().UTC()
+	count, err := client.Sync(context.Background(), repository, until.AddDate(0, 0, -*days), until)
+	if err != nil {
+		return err
+	}
+	log.Printf("Mossward CVE intelligence updated: %d NVD records processed", count)
+	return nil
 }

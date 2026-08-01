@@ -25,7 +25,7 @@
       <div>
         <p class="eyebrow">Authorized asset visibility</p>
         <h1>Know what is exposed before it becomes a problem.</h1>
-        <p class="hero-copy">Mossward brings asset discovery, scoped network scanning, findings, and remediation workflows into one focused security workspace.</p>
+        <p class="hero-copy">Mossward brings asset discovery, scoped network scanning, findings, and vulnerability intelligence into one focused security workspace.</p>
       </div>
       <div class="scope-note">
         <span class="scope-icon" aria-hidden="true">✓</span>
@@ -100,5 +100,16 @@
       </div>
     </section>
   </main>
+  <section class="intelligence-shell" aria-labelledby="cve-news-title">
+    <div class="section-heading intelligence-heading">
+      <div><p class="eyebrow">Vulnerability intelligence</p><h2 id="cve-news-title">Critical CVE watch</h2></div>
+      <span id="feed-status" class="version-pill">Checking local feed</span>
+    </div>
+    <p class="intelligence-intro">Environment matches are shown first when scans have identified an affected product and version. Otherwise, Mossward shows recent critical NVD records.</p>
+    <div id="cve-news" class="cve-news-grid" aria-live="polite">
+      <div class="cve-news-empty">Loading local vulnerability intelligence…</div>
+    </div>
+  </section>
+  <script src="/home.js" defer></script>
 </body>
 </html>

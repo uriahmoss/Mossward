@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 1
+const schemaVersion = 2
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -84,6 +84,67 @@ func (s *SQLiteStore) migrate() error {
 		if err := s.applyMigrationOne(); err != nil {
 			return err
 		}
+	}
+	if current < 2 {
+		if err := s.applyMigrationTwo(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) applyMigrationTwo() error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin CVE schema migration: %w", err)
+	}
+	defer tx.Rollback()
+	statements := []string{
+		`CREATE TABLE cves (
+			id TEXT PRIMARY KEY, description TEXT NOT NULL, published_at TEXT NOT NULL,
+			modified_at TEXT NOT NULL, cvss_score REAL NOT NULL DEFAULT 0,
+			cvss_vector TEXT NOT NULL DEFAULT '', severity TEXT NOT NULL,
+			known_exploited INTEGER NOT NULL DEFAULT 0, source_url TEXT NOT NULL
+		)`,
+		`CREATE INDEX cves_news_idx ON cves(severity, known_exploited, published_at DESC)`,
+		`CREATE TABLE cve_products (
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE, ordinal INTEGER NOT NULL,
+			cpe23 TEXT NOT NULL, part TEXT NOT NULL, vendor TEXT NOT NULL, product TEXT NOT NULL,
+			version TEXT NOT NULL DEFAULT '', version_start_including TEXT NOT NULL DEFAULT '',
+			version_start_excluding TEXT NOT NULL DEFAULT '', version_end_including TEXT NOT NULL DEFAULT '',
+			version_end_excluding TEXT NOT NULL DEFAULT '', vulnerable INTEGER NOT NULL,
+			PRIMARY KEY(cve_id, ordinal)
+		)`,
+		`CREATE INDEX cve_products_lookup_idx ON cve_products(vendor, product, vulnerable)`,
+		`CREATE TABLE cve_references (
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE, ordinal INTEGER NOT NULL,
+			url TEXT NOT NULL, source TEXT NOT NULL DEFAULT '', PRIMARY KEY(cve_id, ordinal)
+		)`,
+		`CREATE TABLE cve_matches (
+			scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+			observation_id TEXT NOT NULL REFERENCES service_observations(id) ON DELETE CASCADE,
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE,
+			ordinal INTEGER NOT NULL, target TEXT NOT NULL, address TEXT NOT NULL, port INTEGER NOT NULL,
+			product TEXT NOT NULL, version TEXT NOT NULL, confidence TEXT NOT NULL,
+			evidence TEXT NOT NULL, matched_at TEXT NOT NULL,
+			PRIMARY KEY(scan_id, observation_id, cve_id)
+		)`,
+		`CREATE INDEX cve_matches_cve_idx ON cve_matches(cve_id)`,
+		`CREATE TABLE feed_sync_status (
+			source TEXT PRIMARY KEY, status TEXT NOT NULL, last_started TEXT,
+			last_success TEXT, records INTEGER NOT NULL DEFAULT 0, error TEXT NOT NULL DEFAULT ''
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return fmt.Errorf("apply schema migration 2: %w", err)
+		}
+	}
+	if _, err := tx.Exec(`INSERT INTO schema_migrations(version, applied_at) VALUES(2, ?)`, formatTime(time.Now().UTC())); err != nil {
+		return fmt.Errorf("record schema migration 2: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit schema migration 2: %w", err)
 	}
 	return nil
 }
@@ -235,6 +296,15 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 			return fmt.Errorf("insert finding: %w", err)
 		}
 	}
+	for index, match := range scan.CVEMatches {
+		if _, err := tx.Exec(`
+			INSERT INTO cve_matches(scan_id, observation_id, cve_id, ordinal, target, address, port, product, version, confidence, evidence, matched_at)
+			VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`, scan.ID, match.ObservationID, match.CVEID, index, match.Target, match.Address, match.Port,
+			match.Product, match.Version, match.Confidence, match.Evidence, formatTime(match.MatchedAt)); err != nil {
+			return fmt.Errorf("insert CVE match: %w", err)
+		}
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit scan save: %w", err)
 	}
@@ -277,6 +347,9 @@ func (s *SQLiteStore) Get(id string) (model.Scan, error) {
 		return model.Scan{}, err
 	}
 	if err := s.loadFindings(&scan); err != nil {
+		return model.Scan{}, err
+	}
+	if err := s.loadCVEMatches(&scan); err != nil {
 		return model.Scan{}, err
 	}
 	return scan, nil

@@ -21,6 +21,13 @@ Current non-destructive checks include:
 - TLS hostname mismatches
 - TLS 1.0 or TLS 1.1 support
 - Reachable SSH, SMB, RDP, PostgreSQL, and Redis services
+- Version-qualified CVE correlation against a locally synchronized NVD dataset
+
+The homepage includes a critical-CVE watch feed. CVEs matched to product and
+version evidence from completed scans are prioritized and labeled as environment
+matches. When Mossward has no qualified local matches, the panel falls back to
+recent critical records. CISA Known Exploited Vulnerability status is retained
+when NVD supplies it.
 
 Mossward sends a bounded HTTP `GET /`, TLS ClientHello, or passive banner read
 only when applicable. It does not follow HTTP redirects, and every connection
@@ -60,6 +67,18 @@ make verify
 make build
 ```
 
+Synchronize the latest CVE intelligence manually before scanning:
+
+```sh
+go run ./cmd/mossward cve sync
+```
+
+The initial implementation imports CVEs published during the last 120 days,
+which is the maximum date window accepted by one NVD API request. Use
+`--days 30` for a smaller refresh. Set `MOSSWARD_NVD_API_KEY` to an NVD API key
+to use the authenticated request cadence. Feed failures do not prevent network
+scans, and the homepage always displays the last successful refresh state.
+
 `make build` writes the executable to `bin/mossward`. All generated files stay
 inside this project directory.
 
@@ -74,6 +93,7 @@ Mossward/
 ├── internal/
 │   ├── api/            HTTP routes and transport concerns
 │   ├── config/         Configuration parsing
+│   ├── intelligence/   NVD ingestion, normalization, and version comparison
 │   ├── model/          Core domain types
 │   ├── probe/          Safe protocol identification and checks
 │   ├── scanner/        Scope validation and scan execution
@@ -138,6 +158,8 @@ so machine-specific policy does not enter source control.
 - `GET /api/scans`
 - `POST /api/scans`
 - `GET /api/scans/{id}`
+- `GET /api/intelligence/news`
+- `GET /api/intelligence/status`
 
 Example:
 
@@ -149,12 +171,11 @@ curl -X POST http://127.0.0.1:8080/api/scans \
 
 ## Roadmap
 
-1. Add CVE feed tables, product normalization, and indexed version matching.
-2. Add authenticated users, roles, audit logs, and per-organization scope policies.
-3. Introduce a signed declarative check format with HTTP/TLS/SSH configuration checks.
-4. Add scheduling, cancellation, rate limits, and distributed workers.
-5. Add PostgreSQL support when multi-user or distributed deployment requires it.
-6. Add an optional endpoint agent for authenticated local inventory and
+1. Add authenticated users, roles, audit logs, and per-organization scope policies.
+2. Introduce a signed declarative check format with HTTP/TLS/SSH configuration checks.
+3. Add scheduling, cancellation, rate limits, and distributed workers.
+4. Add PostgreSQL support when multi-user or distributed deployment requires it.
+5. Add an optional endpoint agent for authenticated local inventory and
    vulnerability assessment on enrolled Linux and Windows systems, including
    privacy-bounded outbound network telemetry and threat-intelligence
    correlation. Add opt-in endpoint coverage detection that identifies
@@ -162,6 +183,8 @@ curl -X POST http://127.0.0.1:8080/api/scans \
    and missed-heartbeat alerts for possible tampering. Optionally allow an
    explicitly designated endpoint to relay end-to-end protected agent traffic
    from an isolated network segment.
+6. Extend CVE ingestion with incremental modified-date synchronization, broader
+   product mappings, vendor-advisory enrichment, and endpoint inventory evidence.
 7. Add evidence lifecycle, remediation workflow, exceptions, exports, and reporting.
 
 The scanner should remain non-destructive by default. Intrusive checks, if ever introduced, must require an explicit policy, authorization record, and separate execution profile.

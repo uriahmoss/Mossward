@@ -111,7 +111,7 @@ func TestCreateScanRejectsTrailingJSON(t *testing.T) {
 
 func TestWebRoutesServeHomeAndScanner(t *testing.T) {
 	handler, _ := testHandler(t)
-	for _, path := range []string{"/", "/scan.html", "/scan-detail.html", "/styles.css", "/scan.js", "/scan-detail.js"} {
+	for _, path := range []string{"/", "/scan.html", "/scan-detail.html", "/styles.css", "/home.js", "/scan.js", "/scan-detail.js"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
@@ -120,6 +120,18 @@ func TestWebRoutesServeHomeAndScanner(t *testing.T) {
 		}
 		if response.Header().Get("Referrer-Policy") != "no-referrer" {
 			t.Errorf("%s: missing Referrer-Policy security header", path)
+		}
+	}
+}
+
+func TestIntelligenceEndpointsReturnEmptyLocalFeed(t *testing.T) {
+	handler, _ := testHandler(t)
+	for _, path := range []string{"/api/intelligence/news", "/api/intelligence/status"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusOK {
+			t.Fatalf("%s returned %d: %s", path, response.Code, response.Body.String())
 		}
 	}
 }

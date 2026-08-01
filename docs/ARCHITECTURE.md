@@ -48,11 +48,28 @@ Browser -> API -> scope validation -> bounded scan workers -> authorized targets
   busy timeout, and one application connection to serialize local writes.
 - Indexed product/version observations and check/severity findings provide the
   query foundation for CVE correlation and reporting.
+- Schema version 2 normalizes NVD CVEs, affected CPE product/version ranges,
+  advisory references, feed freshness, and point-in-time matches tied to scan
+  observations.
 - Schema versions are recorded transactionally so future releases can migrate
   existing databases safely.
 - Legacy JSON scan history is imported once and archived recoverably.
 - Startup marks scans interrupted by a previous process exit as failed instead
   of leaving them permanently queued or running.
+
+## Vulnerability intelligence
+
+`mossward cve sync` imports a recent published-date window from NVD into the
+local SQLite database. It retains CVSS data, affected CPE ranges, advisory
+references, and NVD's CISA Known Exploited Vulnerability fields. Synchronization
+is an explicit operator action and a feed failure does not stop network scans.
+
+Product aliases are narrow and deterministic. Correlation requires both a
+mapped product and a disclosed version; unknown or unversioned services do not
+produce CVE matches. The homepage prioritizes qualified matches already seen
+in the environment, then fills the feed with recent critical CVEs. A future
+endpoint agent can contribute authenticated software observations to this same
+correlation model without changing the feed contract.
 
 ## Evolution
 

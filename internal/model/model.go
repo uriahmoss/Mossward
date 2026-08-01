@@ -76,11 +76,84 @@ type Scan struct {
 	Error        string               `json:"error,omitempty"`
 	Observations []ServiceObservation `json:"observations"`
 	Findings     []Finding            `json:"findings"`
+	CVEMatches   []CVEMatch           `json:"cve_matches"`
 	TotalChecks  int                  `json:"total_checks"`
 	DoneChecks   int                  `json:"done_checks"`
 	CreatedAt    time.Time            `json:"created_at"`
 	StartedAt    *time.Time           `json:"started_at,omitempty"`
 	CompletedAt  *time.Time           `json:"completed_at,omitempty"`
+}
+
+type CVERecord struct {
+	ID             string            `json:"id"`
+	Description    string            `json:"description"`
+	PublishedAt    time.Time         `json:"published_at"`
+	ModifiedAt     time.Time         `json:"modified_at"`
+	CVSSScore      float64           `json:"cvss_score"`
+	CVSSVector     string            `json:"cvss_vector,omitempty"`
+	Severity       string            `json:"severity"`
+	KnownExploited bool              `json:"known_exploited"`
+	SourceURL      string            `json:"source_url"`
+	Products       []AffectedProduct `json:"products"`
+	References     []CVEReference    `json:"references"`
+}
+
+type AffectedProduct struct {
+	CPE23                 string `json:"cpe23"`
+	Part                  string `json:"part"`
+	Vendor                string `json:"vendor"`
+	Product               string `json:"product"`
+	Version               string `json:"version,omitempty"`
+	VersionStartIncluding string `json:"version_start_including,omitempty"`
+	VersionStartExcluding string `json:"version_start_excluding,omitempty"`
+	VersionEndIncluding   string `json:"version_end_including,omitempty"`
+	VersionEndExcluding   string `json:"version_end_excluding,omitempty"`
+	Vulnerable            bool   `json:"vulnerable"`
+}
+
+type CVEReference struct {
+	URL    string `json:"url"`
+	Source string `json:"source,omitempty"`
+}
+
+type CVEMatch struct {
+	CVEID          string    `json:"cve_id"`
+	ObservationID  string    `json:"observation_id"`
+	Target         string    `json:"target"`
+	Address        string    `json:"address"`
+	Port           int       `json:"port"`
+	Product        string    `json:"product"`
+	Version        string    `json:"version"`
+	Severity       string    `json:"severity"`
+	CVSSScore      float64   `json:"cvss_score"`
+	Description    string    `json:"description"`
+	Confidence     string    `json:"confidence"`
+	Evidence       string    `json:"evidence"`
+	KnownExploited bool      `json:"known_exploited"`
+	SourceURL      string    `json:"source_url"`
+	MatchedAt      time.Time `json:"matched_at"`
+}
+
+type CVENewsItem struct {
+	ID             string    `json:"id"`
+	Description    string    `json:"description"`
+	PublishedAt    time.Time `json:"published_at"`
+	CVSSScore      float64   `json:"cvss_score"`
+	Severity       string    `json:"severity"`
+	KnownExploited bool      `json:"known_exploited"`
+	SourceURL      string    `json:"source_url"`
+	Relevance      string    `json:"relevance"`
+	Evidence       string    `json:"evidence,omitempty"`
+}
+
+type FeedStatus struct {
+	Source       string     `json:"source"`
+	Status       string     `json:"status"`
+	LastStarted  *time.Time `json:"last_started,omitempty"`
+	LastSuccess  *time.Time `json:"last_success,omitempty"`
+	Records      int        `json:"records"`
+	Error        string     `json:"error,omitempty"`
+	DatabaseCVEs int        `json:"database_cves"`
 }
 
 type CreateScanRequest struct {

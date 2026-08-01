@@ -32,6 +32,7 @@ function formatDuration(scan) {
 function render(scan) {
   const observations = scan.observations || [];
   const findings = scan.findings || [];
+  const cveMatches = scan.cve_matches || [];
   const total = scan.total_checks || (scan.targets.length * scan.ports.length);
   const done = scan.status === "completed" && !scan.done_checks ? total : scan.done_checks;
   const percent = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
@@ -102,6 +103,30 @@ function render(scan) {
     : `<div class="no-findings"><span class="empty-icon">○</span><strong>No reachable services observed</strong><span>This area updates while the scan is running.</span></div>`;
 
   document.querySelector("#findings-summary").textContent = `${findings.length} findings`;
+
+  document.querySelector("#cve-summary").textContent = `${cveMatches.length} matches`;
+  document.querySelector("#cve-list").innerHTML = cveMatches.length
+    ? cveMatches.map((match) => `
+      <article class="finding-detail">
+        <div class="finding-heading">
+          <div>
+            <span class="severity" data-severity="${escapeHTML(match.severity)}">${escapeHTML(match.severity)} · CVSS ${match.cvss_score.toFixed(1)}</span>
+            <h3>${escapeHTML(match.cve_id)}</h3>
+            <span class="check-id">${match.known_exploited ? "CISA known exploited · " : ""}${escapeHTML(match.confidence)} confidence</span>
+          </div>
+          <span class="service-address">${escapeHTML(match.address)}:${match.port}</span>
+        </div>
+        <dl class="finding-fields">
+          <div><dt>Product</dt><dd>${escapeHTML(match.product)} ${escapeHTML(match.version)}</dd></div>
+          <div><dt>Target</dt><dd>${escapeHTML(match.target)}</dd></div>
+          <div><dt>Matched</dt><dd>${escapeHTML(formatDate(match.matched_at))}</dd></div>
+        </dl>
+        <div class="finding-copy"><strong>Match evidence</strong><p>${escapeHTML(match.evidence)}</p></div>
+        <div class="finding-copy"><strong>Description</strong><p>${escapeHTML(match.description)}</p></div>
+        <a class="intel-link" href="${escapeHTML(match.source_url)}" target="_blank" rel="noopener noreferrer">View authoritative NVD record ↗</a>
+      </article>
+    `).join("")
+    : `<div class="no-findings"><span class="empty-icon">○</span><strong>No version-qualified CVE matches</strong><span>Mossward only reports a match when both product and version evidence are available.</span></div>`;
   document.querySelector("#finding-list").innerHTML = findings.length
     ? findings.map((finding) => `
       <article class="finding-detail">

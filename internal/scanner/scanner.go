@@ -315,6 +315,8 @@ func (e *Engine) run(scan model.Scan) {
 		if result.observation != nil {
 			scan.Observations = append(scan.Observations, *result.observation)
 			scan.Findings = append(scan.Findings, result.findings...)
+			matches, err := e.store.MatchObservation(*result.observation)
+			if err == nil { scan.CVEMatches = append(scan.CVEMatches, matches...) }
 		}
 		if scan.DoneChecks%saveInterval == 0 {
 			_ = e.store.Save(scan)
