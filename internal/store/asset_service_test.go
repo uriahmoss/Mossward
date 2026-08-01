@@ -25,8 +25,17 @@ func TestAssetServiceHistoryTracksObservedAndNotObserved(t *testing.T) {
 		t.Fatalf("missing service history: %#v %v", detail, err)
 	}
 	service := detail.Services[0]
-	if service.State != "observed" || service.ObservationCount != 1 || len(service.Events) != 1 || len(service.Events[0].FindingIDs) != 1 || len(service.Events[0].CVEIDs) != 1 {
+	if service.State != "observed" || service.ObservationCount != 1 || len(service.Events) != 1 || len(service.Events[0].FindingIDs) != 1 || len(service.Events[0].CVEIDs) != 1 || service.Events[0].Provenance.SourceType != model.EvidenceSourceScanner {
 		t.Fatalf("unexpected first service state: %#v", service)
+	}
+	endpointEvidence := model.AssetEvidence{ID: "endpoint:evidence-one", AssetID: assets[0].ID, Address: "192.0.2.70", Summary: "Operating-system inventory collected",
+		EvidenceProvenance: model.EvidenceProvenance{SourceType: model.EvidenceSourceEndpoint, SourceID: "endpoint-1", RecordType: "os_inventory", RecordID: "evidence-one", CollectedAt: now}}
+	if err := repository.RecordAssetEvidence(endpointEvidence); err != nil {
+		t.Fatal(err)
+	}
+	detail, err = repository.AssetDetail(assets[0].ID, now)
+	if err != nil || len(detail.Evidence) != 2 {
+		t.Fatalf("scanner and endpoint provenance were not retained: %#v %v", detail.Evidence, err)
 	}
 	second := serviceHistoryScan("scan-two", "", now.Add(time.Hour), false)
 	if err := repository.Save(second); err != nil {
@@ -58,6 +67,24 @@ func TestAssetServiceBecomesStaleByAge(t *testing.T) {
 	detail, err := repository.AssetDetail(assets[0].ID, now.Add(31*24*time.Hour))
 	if err != nil || detail.Services[0].State != "stale" {
 		t.Fatalf("old observation was not marked stale: %#v %v", detail, err)
+	}
+}
+
+func TestRecordAssetEvidenceRejectsInvalidProvenance(t *testing.T) {
+	repository := openTestStore(t)
+	evidence := model.AssetEvidence{
+		ID:      "evidence-one",
+		AssetID: "asset-one",
+		EvidenceProvenance: model.EvidenceProvenance{
+			SourceType:  "unknown",
+			SourceID:    "collector-one",
+			RecordType:  "inventory",
+			RecordID:    "record-one",
+			CollectedAt: time.Now().UTC(),
+		},
+	}
+	if err := repository.RecordAssetEvidence(evidence); err == nil {
+		t.Fatal("invalid evidence source was accepted")
 	}
 }
 

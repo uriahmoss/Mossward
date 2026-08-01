@@ -21,6 +21,16 @@ async function loadAsset() {
   document.querySelector("#service-list").innerHTML = asset.services.length
     ? asset.services.map(renderService).join("")
     : "No reachable services have been recorded for this asset.";
+  document.querySelector("#evidence-list").innerHTML = asset.evidence.length
+    ? asset.evidence.map(renderEvidence).join("") : "No provenance records are available.";
+}
+
+function renderEvidence(evidence) {
+  const source = `${evidence.source_type} · ${evidence.source_id}`;
+  const sourceLink = evidence.scan_id
+    ? `<a class="compact-button" href="/scan-detail.html?id=${encodeURIComponent(evidence.scan_id)}">Source scan</a>` : "";
+  return `<div class="session-row"><div><strong>${escapeHTML(evidence.summary)}</strong>
+    <span>${escapeHTML(source)} · ${escapeHTML(evidence.record_type)} · ${new Date(evidence.collected_at).toLocaleString()}</span></div>${sourceLink}</div>`;
 }
 
 function renderService(service) {

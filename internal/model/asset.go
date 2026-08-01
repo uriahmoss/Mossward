@@ -31,7 +31,32 @@ type AssetAddress struct {
 
 type AssetDetail struct {
 	Asset
-	Services []AssetService `json:"services"`
+	Services []AssetService  `json:"services"`
+	Evidence []AssetEvidence `json:"evidence"`
+}
+
+type EvidenceSourceType string
+
+const (
+	EvidenceSourceScanner  EvidenceSourceType = "scanner"
+	EvidenceSourceEndpoint EvidenceSourceType = "endpoint"
+)
+
+type EvidenceProvenance struct {
+	SourceType  EvidenceSourceType `json:"source_type"`
+	SourceID    string             `json:"source_id"`
+	RecordType  string             `json:"record_type"`
+	RecordID    string             `json:"record_id"`
+	CollectedAt time.Time          `json:"collected_at"`
+}
+
+type AssetEvidence struct {
+	ID      string `json:"id"`
+	AssetID string `json:"asset_id"`
+	ScanID  string `json:"scan_id,omitempty"`
+	Address string `json:"address,omitempty"`
+	Summary string `json:"summary"`
+	EvidenceProvenance
 }
 
 type AssetServiceState string
@@ -58,12 +83,13 @@ type AssetService struct {
 	Events           []AssetServiceEvent `json:"events"`
 }
 type AssetServiceEvent struct {
-	ObservationID string    `json:"observation_id"`
-	ScanID        string    `json:"scan_id"`
-	Product       string    `json:"product,omitempty"`
-	Version       string    `json:"version,omitempty"`
-	Confidence    string    `json:"confidence"`
-	ObservedAt    time.Time `json:"observed_at"`
-	FindingIDs    []string  `json:"finding_ids"`
-	CVEIDs        []string  `json:"cve_ids"`
+	ObservationID string             `json:"observation_id"`
+	ScanID        string             `json:"scan_id"`
+	Product       string             `json:"product,omitempty"`
+	Version       string             `json:"version,omitempty"`
+	Confidence    string             `json:"confidence"`
+	ObservedAt    time.Time          `json:"observed_at"`
+	FindingIDs    []string           `json:"finding_ids"`
+	CVEIDs        []string           `json:"cve_ids"`
+	Provenance    EvidenceProvenance `json:"provenance"`
 }

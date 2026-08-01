@@ -236,6 +236,12 @@ checks, persists completed address-and-port checkpoints, and resumes remaining
 work in the next window. Missed occurrences default to being skipped. SMTP
 long-running alerts measure cumulative active scan time and exclude paused time.
 
+Durable asset evidence records retain the source type, source identity,
+originating record, collection time, address, and source scan when applicable.
+The same constrained provenance model accepts authenticated endpoint evidence
+when endpoint collectors are implemented; Mossward does not currently claim
+that an endpoint collector is available.
+
 Example:
 
 ```sh

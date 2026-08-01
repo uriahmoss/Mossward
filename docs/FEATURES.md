@@ -233,7 +233,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Explicit Administrator acknowledgement for overlapping memberships
 - [x] Reverse visibility from groups to referencing scan policies
 - [x] Service and exposure history
-- [ ] Evidence provenance across scanner and endpoint sources
+- [x] Evidence provenance across scanner and endpoint source types
 - [ ] Asset aging, merge, and retirement behavior
 
 ### Scan policies and scheduling
