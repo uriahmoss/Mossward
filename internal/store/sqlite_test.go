@@ -85,6 +85,26 @@ func TestSQLiteStoreReconcileInterrupted(t *testing.T) {
 	}
 }
 
+func TestSQLiteStoreReconcilePausesScheduledScan(t *testing.T) {
+	repository := openTestStore(t)
+	started := time.Now().UTC().Add(-2 * time.Minute)
+	scan := model.Scan{ID: "scheduled-scan", Name: "scheduled", Status: model.StatusRunning,
+		CreatedAt: started, StartedAt: &started, ScanPolicyID: "policy"}
+	if err := repository.Save(scan); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.ReconcileInterrupted(); err != nil {
+		t.Fatal(err)
+	}
+	reconciled, err := repository.Get(scan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reconciled.Status != model.StatusPaused || reconciled.CompletedAt != nil || reconciled.StartedAt != nil || reconciled.ActiveSeconds < 100 {
+		t.Fatalf("scheduled scan was not resumably reconciled: %#v", reconciled)
+	}
+}
+
 func TestSQLiteDatabaseUsesOwnerOnlyPermissions(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "mossward.db")
@@ -249,6 +269,11 @@ func TestIdentitySchemaMigrationCreatesSecurityTables(t *testing.T) {
 		"recovery_codes", "webauthn_credentials", "authentication_ceremonies",
 		"oidc_providers", "external_identities", "audit_events", "scope_policies",
 		"agent_enrollment_tokens", "endpoints",
+		"assets",
+		"asset_addresses", "asset_names",
+		"asset_groups", "asset_group_members", "reusable_scan_policies", "reusable_scan_policy_groups",
+		"scan_checkpoints",
+		"smtp_settings", "smtp_recipients", "scan_long_alerts",
 	} {
 		var found string
 		err := repository.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&found)

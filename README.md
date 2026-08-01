@@ -210,6 +210,16 @@ so machine-specific policy does not enter source control.
 - `GET /api/scans`
 - `POST /api/scans`
 - `GET /api/scans/{id}`
+- `GET /api/assets`
+- `PATCH /api/assets/{id}`
+- `GET /api/asset-groups`
+- `POST /api/admin/asset-groups`
+- `POST /api/admin/asset-groups/{id}/members/{asset}`
+- `GET /api/scan-policies`
+- `POST /api/admin/scan-policies`
+- `POST /api/scan-policies/{id}/run`
+- `GET /api/admin/smtp`
+- `PUT /api/admin/smtp`
 - `GET /api/intelligence/news`
 - `GET /api/intelligence/status`
 
@@ -217,6 +227,13 @@ The separate mTLS endpoint API exposes `POST /api/agent/v1/check-in` and
 `POST /api/agent/v1/certificate/renew`. Renewal authenticates the current
 endpoint certificate and accepts a newly generated public-key CSR during the
 certificate's final 30 days.
+
+Reusable scan policies support manual, one-time, daily, weekly, and standard
+five-field cron schedules. Each policy selects an IANA timezone and may define
+a maintenance window. At the window boundary Mossward stops dispatching new
+checks, persists completed address-and-port checkpoints, and resumes remaining
+work in the next window. Missed occurrences default to being skipped. SMTP
+long-running alerts measure cumulative active scan time and exclude paused time.
 
 Example:
 

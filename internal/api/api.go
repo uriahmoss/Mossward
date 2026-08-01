@@ -18,6 +18,7 @@ import (
 	identity "mossward/internal/auth"
 	"mossward/internal/config"
 	"mossward/internal/model"
+	"mossward/internal/notification"
 	"mossward/internal/scanner"
 	"mossward/internal/store"
 	"mossward/internal/transport"
@@ -31,6 +32,7 @@ type API struct {
 	auth              *identity.Service
 	certificateStatus func() transport.ACMEStatus
 	agentIdentity     *agentidentity.Service
+	notifications     *notification.Service
 }
 
 const (
@@ -42,6 +44,7 @@ const (
 type RuntimeOptions struct {
 	CertificateStatus func() transport.ACMEStatus
 	AgentIdentity     *agentidentity.Service
+	Notifications     *notification.Service
 }
 
 func New(cfg config.Config, repository store.Repository, engine *scanner.Engine, identityService *identity.Service,
@@ -50,16 +53,21 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	if len(options) > 0 {
 		api.certificateStatus = options[0].CertificateStatus
 		api.agentIdentity = options[0].AgentIdentity
+		api.notifications = options[0].Notifications
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", api.health)
 	mux.HandleFunc("GET /api/ready", api.readiness)
 	mux.HandleFunc("GET /api/admin/certificate-status", api.getCertificateStatus)
 	api.registerAgentIdentityRoutes(mux)
+	api.registerAssetGroupRoutes(mux)
+	api.registerNotificationRoutes(mux)
 	mux.HandleFunc("GET /api/config", api.getConfig)
 	mux.HandleFunc("GET /api/scans", api.listScans)
 	mux.HandleFunc("POST /api/scans", api.createScan)
 	mux.HandleFunc("GET /api/scans/{id}", api.getScan)
+	mux.HandleFunc("GET /api/assets", api.listAssets)
+	mux.HandleFunc("PATCH /api/assets/{id}", api.updateAsset)
 	mux.HandleFunc("GET /api/intelligence/news", api.intelligenceNews)
 	mux.HandleFunc("GET /api/intelligence/status", api.intelligenceStatus)
 	api.registerIdentityRoutes(mux)

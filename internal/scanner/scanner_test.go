@@ -76,6 +76,21 @@ func TestValidateDeduplicatesPorts(t *testing.T) {
 	}
 }
 
+func TestScheduledInterruptionPausesForResume(t *testing.T) {
+	engine := testEngine(t)
+	started := time.Now().UTC().Add(-time.Minute)
+	scan := model.Scan{ID: "scheduled-interruption", Name: "Nightly", Status: model.StatusRunning,
+		CreatedAt: started, StartedAt: &started, ScanPolicyID: "policy", Targets: []model.Target{}, Ports: []int{443}}
+	engine.interrupt(scan, "server shutdown")
+	stored, err := engine.store.Get(scan.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stored.Status != model.StatusPaused || stored.CompletedAt != nil || stored.ActiveSeconds < 59 {
+		t.Fatalf("scheduled scan was not resumably paused: %#v", stored)
+	}
+}
+
 func TestValidateExpandsIPv4CIDRWithoutNetworkAndBroadcast(t *testing.T) {
 	engine := testEngine(t)
 	targets, _, err := engine.Validate(model.CreateScanRequest{

@@ -19,7 +19,9 @@ import (
 	"mossward/internal/config"
 	"mossward/internal/intelligence"
 	"mossward/internal/model"
+	"mossward/internal/notification"
 	"mossward/internal/scanner"
+	"mossward/internal/scheduling"
 	"mossward/internal/serverbackup"
 	"mossward/internal/store"
 	"mossward/internal/transport"
@@ -95,6 +97,10 @@ func run(stop <-chan string) error {
 		return err
 	}
 	defer engine.Shutdown()
+	notificationService := notification.New(repository, secretBox)
+	scheduleRunner := scheduling.NewRunner(repository, engine, notificationService)
+	scheduleRunner.Start()
+	defer scheduleRunner.Close()
 	acmeManager, err := newACMEManager(cfg, repository)
 	if err != nil {
 		return err
@@ -111,6 +117,7 @@ func run(stop <-chan string) error {
 		return err
 	}
 	options.AgentIdentity = agentIdentity
+	options.Notifications = notificationService
 	handler := api.New(cfg, repository, engine, identityService, options)
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,

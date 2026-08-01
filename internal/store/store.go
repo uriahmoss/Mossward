@@ -14,12 +14,28 @@ var ErrCeremonyNotFound = errors.New("authentication ceremony not found")
 var ErrFinalAdministrator = errors.New("cannot remove the final active local administrator")
 var ErrInvalidEnrollmentToken = errors.New("endpoint enrollment token is invalid, expired, or already used")
 var ErrEndpointCertificateChanged = errors.New("endpoint certificate is no longer current")
+var ErrAssetNotFound = errors.New("asset not found")
 
 type Repository interface {
 	Save(model.Scan) error
 	Get(string) (model.Scan, error)
 	List() ([]model.Scan, error)
 	ReconcileInterrupted() error
+	ListAssets() ([]model.Asset, error)
+	UpdateAssetMetadata(string, model.AssetMetadata, model.AuditEvent) error
+	UpsertAssetGroup(model.AssetGroup, model.AuditEvent) error
+	ListAssetGroups() ([]model.AssetGroup, error)
+	AssetGroupMemberships(string) ([]string, error)
+	AddAssetGroupMember(string, string, string, time.Time, model.AuditEvent) error
+	RemoveAssetGroupMember(string, string, model.AuditEvent) error
+	UpsertReusableScanPolicy(model.ReusableScanPolicy, model.AuditEvent) error
+	ReusableScanPolicy(string) (model.ReusableScanPolicy, error)
+	ListReusableScanPolicies(bool) ([]model.ReusableScanPolicy, error)
+	ReusableScanPolicyTargets(string) ([]model.Target, error)
+	UpdateReusablePolicySchedule(string, *time.Time, *time.Time, model.AuditEvent) error
+	SMTPSettings() (model.SMTPSettings, error)
+	SaveSMTPSettings(model.SMTPSettings, model.AuditEvent) error
+	MarkScanLongAlertSent(string) error
 	UpsertCVEs([]model.CVERecord) error
 	MatchObservation(model.ServiceObservation) ([]model.CVEMatch, error)
 	ListCriticalNews(int) ([]model.CVENewsItem, error)

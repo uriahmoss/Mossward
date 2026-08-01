@@ -41,6 +41,7 @@ type scanJob struct {
 }
 
 type probeResult struct {
+	job         scanJob
 	observation *model.ServiceObservation
 	findings    []model.Finding
 }
@@ -281,7 +282,7 @@ func (e *Engine) Schedule(scan model.Scan) error {
 		slog.Info("Scan queued", "scan_id", scan.ID, "targets", len(scan.Targets), "ports", len(scan.Ports))
 		return nil
 	default:
-		e.fail(scan, ErrQueueFull.Error())
+		e.interrupt(scan, ErrQueueFull.Error())
 		return ErrQueueFull
 	}
 }
@@ -299,7 +300,7 @@ func (e *Engine) Shutdown() {
 	for {
 		select {
 		case scan := <-e.queue:
-			e.fail(scan, "scan canceled during process shutdown")
+			e.interrupt(scan, "scan canceled during process shutdown")
 		default:
 			return
 		}
@@ -330,7 +331,7 @@ func (e *Engine) run(scan model.Scan) {
 	scan.Status = model.StatusRunning
 	scan.StartedAt = &started
 	scan.TotalChecks = len(scan.Targets) * len(scan.Ports)
-	scan.DoneChecks = 0
+	scan.DoneChecks = len(scan.Checkpoints)
 	if err := e.store.Save(scan); err != nil {
 		e.fail(scan, err.Error())
 		return
@@ -338,12 +339,14 @@ func (e *Engine) run(scan model.Scan) {
 
 	jobs := make(chan scanJob)
 	results := make(chan probeResult)
+	queueClosed := make(chan bool, 1)
 	e.startWorkers(scan, jobs, results)
-	go e.queueJobs(scan, jobs)
+	go func() { queueClosed <- e.queueJobs(scan, jobs) }()
 
 	saveInterval := max(1, scan.TotalChecks/progressSaveDivisor)
 	for result := range results {
 		scan.DoneChecks++
+		scan.Checkpoints = append(scan.Checkpoints, model.ScanCheckpoint{Address: result.job.target.Address, Port: result.job.port, CompletedAt: time.Now().UTC()})
 		if result.observation != nil {
 			scan.Observations = append(scan.Observations, *result.observation)
 			scan.Findings = append(scan.Findings, result.findings...)
@@ -353,11 +356,24 @@ func (e *Engine) run(scan model.Scan) {
 			e.saveProgress(scan)
 		}
 	}
+	closedByWindow := <-queueClosed
 	if e.ctx.Err() != nil {
-		e.fail(scan, "scan canceled during process shutdown")
+		e.interrupt(scan, "scan canceled during process shutdown")
 		return
 	}
 	completed := time.Now().UTC()
+	scan.ActiveSeconds += max(0, int64(completed.Sub(started).Seconds()))
+	if closedByWindow && scan.DoneChecks < scan.TotalChecks {
+		scan.Status = model.StatusPaused
+		scan.Error = "scan paused at the end of its maintenance window"
+		scan.StartedAt = nil
+		if err := e.store.Save(scan); err != nil {
+			e.fail(scan, err.Error())
+			return
+		}
+		slog.Info("Scheduled scan paused", "scan_id", scan.ID, "completed_checks", scan.DoneChecks)
+		return
+	}
 	scan.Status = model.StatusCompleted
 	scan.CompletedAt = &completed
 	if err := e.store.Save(scan); err != nil {
@@ -408,22 +424,42 @@ func (e *Engine) processJobs(jobs <-chan scanJob, results chan<- probeResult) {
 func (e *Engine) inspect(item scanJob) probeResult {
 	observation, findings, reachable := e.probes.Inspect(e.ctx, item.target, item.port)
 	if !reachable {
-		return probeResult{}
+		return probeResult{job: item}
 	}
-	return probeResult{observation: &observation, findings: findings}
+	return probeResult{job: item, observation: &observation, findings: findings}
 }
 
-func (e *Engine) queueJobs(scan model.Scan, jobs chan<- scanJob) {
+func (e *Engine) queueJobs(scan model.Scan, jobs chan<- scanJob) bool {
 	defer close(jobs)
+	completed := map[string]bool{}
+	for _, item := range scan.Checkpoints {
+		completed[fmt.Sprintf("%s:%d", item.Address, item.Port)] = true
+	}
+	var window <-chan time.Time
+	if scan.WindowEnd != nil {
+		duration := time.Until(*scan.WindowEnd)
+		if duration <= 0 {
+			return true
+		}
+		timer := time.NewTimer(duration)
+		defer timer.Stop()
+		window = timer.C
+	}
 	for _, target := range scan.Targets {
 		for _, port := range scan.Ports {
+			if completed[fmt.Sprintf("%s:%d", target.Address, port)] {
+				continue
+			}
 			select {
 			case jobs <- scanJob{target: target, port: port}:
 			case <-e.ctx.Done():
-				return
+				return false
+			case <-window:
+				return true
 			}
 		}
 	}
+	return false
 }
 
 func (e *Engine) addCVEMatches(scan *model.Scan, observation model.ServiceObservation) {
@@ -450,6 +486,26 @@ func (e *Engine) fail(scan model.Scan, message string) {
 	if err := e.store.Save(scan); err != nil {
 		slog.Error("Could not persist failed scan state", "scan_id", scan.ID, "error", err)
 	}
+}
+
+func (e *Engine) interrupt(scan model.Scan, message string) {
+	if scan.ScanPolicyID == "" {
+		e.fail(scan, message)
+		return
+	}
+	now := time.Now().UTC()
+	if scan.StartedAt != nil {
+		scan.ActiveSeconds += max(0, int64(now.Sub(*scan.StartedAt).Seconds()))
+	}
+	scan.Status = model.StatusPaused
+	scan.Error = message
+	scan.StartedAt = nil
+	scan.CompletedAt = nil
+	if err := e.store.Save(scan); err != nil {
+		slog.Error("Could not persist paused scheduled scan", "scan_id", scan.ID, "error", err)
+		return
+	}
+	slog.Info("Scheduled scan paused", "scan_id", scan.ID, "reason", message)
 }
 
 func (e *Engine) allowed(ip net.IP) bool {

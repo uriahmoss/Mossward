@@ -13,6 +13,7 @@ const (
 	StatusRunning   ScanStatus = "running"
 	StatusCompleted ScanStatus = "completed"
 	StatusFailed    ScanStatus = "failed"
+	StatusPaused    ScanStatus = "paused"
 )
 
 type Finding struct {
@@ -44,8 +45,9 @@ type ServiceObservation struct {
 }
 
 type Target struct {
-	Name    string `json:"name"`
-	Address string `json:"address"`
+	Name     string   `json:"name"`
+	Address  string   `json:"address"`
+	GroupIDs []string `json:"group_ids,omitempty"`
 }
 
 func (t *Target) UnmarshalJSON(data []byte) error {
@@ -84,6 +86,17 @@ type Scan struct {
 	CompletedAt   *time.Time           `json:"completed_at,omitempty"`
 	ScopePolicyID string               `json:"scope_policy_id,omitempty"`
 	MaxConcurrent int                  `json:"max_concurrent,omitempty"`
+	ScanPolicyID  string               `json:"scan_policy_id,omitempty"`
+	Checkpoints   []ScanCheckpoint     `json:"-"`
+	ActiveSeconds int64                `json:"active_seconds"`
+	WindowEnd     *time.Time           `json:"window_end,omitempty"`
+	LongAlertSent bool                 `json:"long_alert_sent"`
+}
+
+type ScanCheckpoint struct {
+	Address     string
+	Port        int
+	CompletedAt time.Time
 }
 
 type CVERecord struct {

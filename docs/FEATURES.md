@@ -226,20 +226,31 @@ implemented and verified; an unchecked item is not yet complete.
 
 ### Asset inventory
 
-- [ ] Durable asset records independent of individual scans
-- [ ] Asset identity and address correlation
-- [ ] Ownership, environment, and classification fields
+- [x] Durable asset records independent of individual scans
+- [x] Asset identity and address correlation
+- [x] Ownership, environment, and classification fields
+- [x] Custom asset groups with multi-group membership
+- [x] Explicit Administrator acknowledgement for overlapping memberships
+- [x] Reverse visibility from groups to referencing scan policies
 - [ ] Service and exposure history
 - [ ] Evidence provenance across scanner and endpoint sources
 - [ ] Asset aging, merge, and retirement behavior
 
 ### Scan policies and scheduling
 
-- [ ] Reusable scan profiles
-- [ ] Scheduled scans
+- [x] Reusable scan profiles
+- [x] Group-targeted scan policies with address deduplication
+- [x] Per-target group provenance retained on policy-launched scans
+- [x] Scheduled scans
 - [ ] Scan cancellation
 - [ ] Per-policy rate limits
-- [ ] Maintenance windows
+- [x] Maintenance windows
+- [x] Per-policy IANA timezone and daylight-saving-aware execution
+- [x] Friendly one-time, daily, and weekly schedules with advanced cron
+- [x] Configurable missed-run behavior and overlapping-run skips
+- [x] Persistent target-and-port checkpoints across maintenance windows
+- [x] Configurable cumulative active-runtime email alerts
+- [x] Administrator-managed TLS SMTP settings with encrypted credentials
 - [ ] Distributed scanner workers
 - [ ] Signed and scope-limited worker jobs
 

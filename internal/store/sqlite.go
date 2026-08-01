@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 10
+const schemaVersion = 17
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -175,6 +175,41 @@ func (s *SQLiteStore) migrate() error {
 	}
 	if current < 10 {
 		if err := s.applyEndpointLifecycleMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 11 {
+		if err := s.applyAssetInventoryMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 12 {
+		if err := s.applyAssetCorrelationMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 13 {
+		if err := s.applyAssetMetadataMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 14 {
+		if err := s.applyAssetGroupPolicyMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 15 {
+		if err := s.applyResumableScanMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 16 {
+		if err := s.applyPolicyScheduleMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 17 {
+		if err := s.applyNotificationMigration(); err != nil {
 			return err
 		}
 	}
@@ -339,16 +374,17 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 	}
 	if _, err := tx.Exec(`
 		INSERT INTO scans(id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at,
-			scope_policy_id, max_concurrent)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			scope_policy_id, max_concurrent, scan_policy_id, active_seconds, window_end, long_alert_sent)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.ID, scan.Name, scan.Status, scan.Error, scan.TotalChecks, scan.DoneChecks,
 		formatTime(scan.CreatedAt), formatOptionalTime(scan.StartedAt), formatOptionalTime(scan.CompletedAt),
-		scan.ScopePolicyID, scan.MaxConcurrent); err != nil {
+		scan.ScopePolicyID, scan.MaxConcurrent, scan.ScanPolicyID, scan.ActiveSeconds, formatOptionalTime(scan.WindowEnd), scan.LongAlertSent); err != nil {
 		return fmt.Errorf("insert scan: %w", err)
 	}
 	for index, target := range scan.Targets {
-		if _, err := tx.Exec(`INSERT INTO scan_targets(scan_id, ordinal, name, address) VALUES(?, ?, ?, ?)`,
-			scan.ID, index, target.Name, target.Address); err != nil {
+		groupIDs, _ := json.Marshal(target.GroupIDs)
+		if _, err := tx.Exec(`INSERT INTO scan_targets(scan_id, ordinal, name, address, group_ids) VALUES(?, ?, ?, ?, ?)`,
+			scan.ID, index, target.Name, target.Address, groupIDs); err != nil {
 			return fmt.Errorf("insert scan target: %w", err)
 		}
 	}
@@ -395,6 +431,15 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 			return fmt.Errorf("insert CVE match: %w", err)
 		}
 	}
+	for _, checkpoint := range scan.Checkpoints {
+		if _, err := tx.Exec(`INSERT INTO scan_checkpoints(scan_id,address,port,completed_at) VALUES(?,?,?,?)`,
+			scan.ID, checkpoint.Address, checkpoint.Port, formatTime(checkpoint.CompletedAt)); err != nil {
+			return fmt.Errorf("insert scan checkpoint: %w", err)
+		}
+	}
+	if err := upsertScanAssets(tx, scan); err != nil {
+		return err
+	}
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit scan save: %w", err)
 	}
@@ -405,13 +450,14 @@ func (s *SQLiteStore) Get(id string) (model.Scan, error) {
 	var scan model.Scan
 	var status string
 	var created string
-	var started, completed sql.NullString
+	var started, completed, windowEnd sql.NullString
 	err := s.db.QueryRow(`
 		SELECT id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at,
-			scope_policy_id, max_concurrent
+			scope_policy_id, max_concurrent, scan_policy_id, active_seconds, window_end, long_alert_sent
 		FROM scans WHERE id = ?
 	`, id).Scan(&scan.ID, &scan.Name, &status, &scan.Error, &scan.TotalChecks, &scan.DoneChecks,
-		&created, &started, &completed, &scan.ScopePolicyID, &scan.MaxConcurrent)
+		&created, &started, &completed, &scan.ScopePolicyID, &scan.MaxConcurrent, &scan.ScanPolicyID,
+		&scan.ActiveSeconds, &windowEnd, &scan.LongAlertSent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Scan{}, ErrNotFound
 	}
@@ -426,6 +472,9 @@ func (s *SQLiteStore) Get(id string) (model.Scan, error) {
 		return model.Scan{}, err
 	}
 	if scan.CompletedAt, err = parseOptionalTime(completed); err != nil {
+		return model.Scan{}, err
+	}
+	if scan.WindowEnd, err = parseOptionalTime(windowEnd); err != nil {
 		return model.Scan{}, err
 	}
 	if err := s.loadTargets(&scan); err != nil {
@@ -443,6 +492,14 @@ func (s *SQLiteStore) Get(id string) (model.Scan, error) {
 	if err := s.loadCVEMatches(&scan); err != nil {
 		return model.Scan{}, err
 	}
+	if err := s.loadCheckpoints(&scan); err != nil {
+		return model.Scan{}, err
+	}
+	var alertCount int
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scan_long_alerts WHERE scan_id=?`, scan.ID).Scan(&alertCount); err != nil {
+		return model.Scan{}, err
+	}
+	scan.LongAlertSent = alertCount > 0
 	return scan, nil
 }
 
@@ -482,9 +539,14 @@ func (s *SQLiteStore) ReconcileInterrupted() error {
 	now := formatTime(time.Now().UTC())
 	_, err := s.db.Exec(`
 		UPDATE scans
-		SET status = ?, error = ?, completed_at = ?
+		SET status = CASE WHEN scan_policy_id<>'' THEN ? ELSE ? END,
+			error = CASE WHEN scan_policy_id<>'' THEN 'scheduled scan paused by process shutdown' ELSE 'scan interrupted by a previous process shutdown' END,
+			completed_at = CASE WHEN scan_policy_id<>'' THEN NULL ELSE ? END,
+			active_seconds = active_seconds + CASE WHEN scan_policy_id<>'' AND status=? AND started_at IS NOT NULL
+				THEN MAX(0,CAST((julianday(?) - julianday(started_at))*86400 AS INTEGER)) ELSE 0 END,
+			started_at = CASE WHEN scan_policy_id<>'' THEN NULL ELSE started_at END
 		WHERE status IN (?, ?)
-	`, model.StatusFailed, "scan interrupted by a previous process shutdown", now,
+	`, model.StatusPaused, model.StatusFailed, now, model.StatusRunning, now,
 		model.StatusQueued, model.StatusRunning)
 	if err != nil {
 		return fmt.Errorf("reconcile interrupted scans: %w", err)
@@ -492,8 +554,27 @@ func (s *SQLiteStore) ReconcileInterrupted() error {
 	return nil
 }
 
+func (s *SQLiteStore) loadCheckpoints(scan *model.Scan) error {
+	rows, err := s.db.Query(`SELECT address,port,completed_at FROM scan_checkpoints WHERE scan_id=? ORDER BY address,port`, scan.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	scan.Checkpoints = []model.ScanCheckpoint{}
+	for rows.Next() {
+		var item model.ScanCheckpoint
+		var completed string
+		if err := rows.Scan(&item.Address, &item.Port, &completed); err != nil {
+			return err
+		}
+		item.CompletedAt, _ = parseTime(completed)
+		scan.Checkpoints = append(scan.Checkpoints, item)
+	}
+	return rows.Err()
+}
+
 func (s *SQLiteStore) loadTargets(scan *model.Scan) error {
-	rows, err := s.db.Query(`SELECT name, address FROM scan_targets WHERE scan_id = ? ORDER BY ordinal`, scan.ID)
+	rows, err := s.db.Query(`SELECT name, address, group_ids FROM scan_targets WHERE scan_id = ? ORDER BY ordinal`, scan.ID)
 	if err != nil {
 		return fmt.Errorf("load scan targets: %w", err)
 	}
@@ -501,9 +582,11 @@ func (s *SQLiteStore) loadTargets(scan *model.Scan) error {
 	scan.Targets = []model.Target{}
 	for rows.Next() {
 		var target model.Target
-		if err := rows.Scan(&target.Name, &target.Address); err != nil {
+		var groupIDs string
+		if err := rows.Scan(&target.Name, &target.Address, &groupIDs); err != nil {
 			return fmt.Errorf("read scan target: %w", err)
 		}
+		_ = json.Unmarshal([]byte(groupIDs), &target.GroupIDs)
 		scan.Targets = append(scan.Targets, target)
 	}
 	return rows.Err()
