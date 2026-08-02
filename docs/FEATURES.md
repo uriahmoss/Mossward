@@ -351,7 +351,8 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Administrator-assigned network, port, concurrency, and rate scopes
 - [x] Signed, expiring, declarative jobs with unique identifiers
 - [x] Worker-job scope validation and server-side job-identifier replay prevention
-- [ ] Worker-side replay ledger and duplicate-result rejection
+- [ ] Worker-side persistent replay ledger before job execution
+- [x] Lease-authenticated completion receipts and duplicate-result rejection
 - [ ] Signed, sequenced evidence batches with collector provenance
 - [ ] Persistent target-and-port checkpoints for interrupted distributed jobs
 - [ ] Encrypted bounded store-and-forward for temporary server outages

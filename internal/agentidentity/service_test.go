@@ -31,6 +31,7 @@ type memoryEndpointStore struct {
 	workerLastSeen  *time.Time
 	workerJob       model.SignedWorkerJob
 	workerLeaseHash []byte
+	workerResult    model.WorkerJobResultReceipt
 }
 
 func (s *memoryEndpointStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentToken, _ model.AuditEvent) error {
@@ -83,6 +84,16 @@ func (s *memoryEndpointStore) LeaseScannerWorkerJob(id string, hash []byte, _, _
 	job := s.workerJob
 	s.workerJob = model.SignedWorkerJob{}
 	return job, nil
+}
+func (s *memoryEndpointStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultReceipt, hash []byte, _ time.Time) error {
+	if receipt.WorkerID != s.worker.ID || len(hash) != sha256.Size {
+		return store.ErrInvalidWorkerJobLease
+	}
+	if s.workerResult.ResultID == receipt.ResultID {
+		return store.ErrWorkerResultReplay
+	}
+	s.workerResult = receipt
+	return nil
 }
 
 func (s *memoryEndpointStore) CreateAgentEnrollmentToken(token model.AgentEnrollmentToken, _ model.AuditEvent) error {
@@ -293,6 +304,25 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 	var lease model.WorkerJobLease
 	if err := json.NewDecoder(response.Body).Decode(&lease); err != nil || lease.Envelope.Job.ID != "job" || lease.Token == "" || !lease.ExpiresAt.Equal(now.Add(workerJobLeaseLifetime)) {
 		t.Fatalf("unexpected scanner-worker lease: %#v %v", lease, err)
+	}
+	resultBody, err := json.Marshal(model.WorkerJobResult{SchemaVersion: 1, ID: "result", JobID: "job", LeaseToken: lease.Token,
+		Outcome: model.WorkerJobResultSucceeded, CompletedAt: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	resultRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/result", bytes.NewReader(resultBody))
+	resultRequest.TLS = request.TLS
+	resultResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(resultResponse, resultRequest)
+	if resultResponse.Code != http.StatusAccepted || repository.workerResult.ResultID != "result" {
+		t.Fatalf("scanner-worker result was not accepted: %d %s", resultResponse.Code, resultResponse.Body.String())
+	}
+	replayRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/result", bytes.NewReader(resultBody))
+	replayRequest.TLS = request.TLS
+	replayResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(replayResponse, replayRequest)
+	if replayResponse.Code != http.StatusConflict {
+		t.Fatalf("scanner-worker result replay returned %d", replayResponse.Code)
 	}
 	second := httptest.NewRecorder()
 	service.Handler().ServeHTTP(second, request)

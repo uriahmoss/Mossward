@@ -39,3 +39,29 @@ type WorkerJobLease struct {
 	Token     string          `json:"lease_token"`
 	ExpiresAt time.Time       `json:"lease_expires_at"`
 }
+
+type WorkerJobResultOutcome string
+
+const (
+	WorkerJobResultSucceeded WorkerJobResultOutcome = "succeeded"
+	WorkerJobResultFailed    WorkerJobResultOutcome = "failed"
+	WorkerJobResultCanceled  WorkerJobResultOutcome = "canceled"
+)
+
+type WorkerJobResult struct {
+	SchemaVersion int                    `json:"schema_version"`
+	ID            string                 `json:"result_id"`
+	JobID         string                 `json:"job_id"`
+	LeaseToken    string                 `json:"lease_token"`
+	Outcome       WorkerJobResultOutcome `json:"outcome"`
+	CompletedAt   time.Time              `json:"completed_at"`
+}
+
+type WorkerJobResultReceipt struct {
+	ResultID    string                 `json:"result_id"`
+	JobID       string                 `json:"job_id"`
+	WorkerID    string                 `json:"worker_id"`
+	Outcome     WorkerJobResultOutcome `json:"outcome"`
+	CompletedAt time.Time              `json:"completed_at"`
+	AcceptedAt  time.Time              `json:"accepted_at"`
+}

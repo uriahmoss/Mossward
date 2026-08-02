@@ -17,6 +17,8 @@ var ErrEndpointCertificateChanged = errors.New("endpoint certificate is no longe
 var ErrAssetNotFound = errors.New("asset not found")
 var ErrInvalidAssetLifecycle = errors.New("invalid asset lifecycle status")
 var ErrWorkerJobReplay = errors.New("scanner-worker job identifier was already used")
+var ErrWorkerResultReplay = errors.New("scanner-worker result identifier was already used")
+var ErrInvalidWorkerJobLease = errors.New("scanner-worker job lease is invalid")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -111,5 +113,6 @@ type Repository interface {
 	CreateScannerWorkerJob(model.SignedWorkerJob, time.Time) error
 	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
+	CompleteScannerWorkerJob(model.WorkerJobResultReceipt, []byte, time.Time) error
 	Close() error
 }

@@ -263,8 +263,14 @@ Scanner workers can now poll the control plane over their existing outbound
 mTLS connection. The server leases only jobs explicitly assigned to the
 authenticated worker, stores only a hash of the short-lived lease credential,
 and safely makes abandoned jobs available again after lease expiration. Worker
-execution and result submission remain disabled until their dedicated slices
+execution and evidence submission remain disabled until their dedicated slices
 are implemented and verified.
+
+The control plane also accepts bounded completion receipts for actively leased
+jobs. Each receipt is bound to the authenticated worker and one-time lease,
+records a unique result identifier and outcome, and atomically consumes the
+lease so duplicate submissions cannot change completed job state. Signed
+evidence transfer and worker-side scan execution are still disabled.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
