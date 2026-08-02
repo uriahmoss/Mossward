@@ -23,7 +23,7 @@ func (s *SQLiteStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultRece
 	if !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("check scanner-worker result replay: %w", err)
 	}
-	result, err := tx.Exec(`UPDATE scanner_worker_jobs SET status='completed',result_id=?,result_outcome=?,completed_at=?,lease_token_hash=NULL,lease_expires_at=NULL WHERE id=? AND worker_id=? AND status='leased' AND lease_token_hash=? AND lease_expires_at>? AND expires_at>?`, receipt.ResultID, receipt.Outcome, formatTime(receipt.CompletedAt), receipt.JobID, receipt.WorkerID, tokenHash, formatTime(now), formatTime(now))
+	result, err := tx.Exec(`UPDATE scanner_worker_jobs SET status='completed',result_id=?,result_outcome=?,completed_at=?,lease_token_hash=NULL,lease_expires_at=NULL WHERE id=? AND worker_id=? AND status='leased' AND lease_token_hash=? AND lease_expires_at>? AND expires_at>? AND (?<>'succeeded' OR EXISTS(SELECT 1 FROM scanner_worker_evidence_batches WHERE job_id=? AND final=1))`, receipt.ResultID, receipt.Outcome, formatTime(receipt.CompletedAt), receipt.JobID, receipt.WorkerID, tokenHash, formatTime(now), formatTime(now), receipt.Outcome, receipt.JobID)
 	if err != nil {
 		return fmt.Errorf("complete scanner-worker job: %w", err)
 	}

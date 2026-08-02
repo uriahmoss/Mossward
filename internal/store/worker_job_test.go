@@ -53,6 +53,14 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 	}
 	receipt := model.WorkerJobResultReceipt{ResultID: "result", JobID: job.ID, WorkerID: "worker",
 		Outcome: model.WorkerJobResultSucceeded, CompletedAt: now.Add(time.Second), AcceptedAt: now.Add(2 * time.Second)}
+	if err := repository.CompleteScannerWorkerJob(receipt, tokenHash[:], receipt.AcceptedAt); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("successful scanner-worker result without final evidence was accepted: %v", err)
+	}
+	finalBatch := model.SignedWorkerEvidenceBatch{CertificateSerial: "serial", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+		ID: "result-final", WorkerID: "worker", JobID: job.ID, ScanID: job.ScanID, Sequence: 1, Final: true, CollectedAt: now}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(finalBatch, now); err != nil {
+		t.Fatal(err)
+	}
 	if err := repository.CompleteScannerWorkerJob(receipt, tokenHash[:], receipt.AcceptedAt); err != nil {
 		t.Fatalf("valid scanner-worker result was rejected: %v", err)
 	}
@@ -71,6 +79,43 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 	}
 	if status != model.WorkerJobCompleted || resultID != "result" || outcome != string(model.WorkerJobResultSucceeded) || completedAt != formatTime(receipt.CompletedAt) || storedHash != nil {
 		t.Fatalf("unexpected completed worker-job state: status=%s result=%s outcome=%s completed=%s hash=%x", status, resultID, outcome, completedAt, storedHash)
+	}
+}
+
+func TestScannerWorkerEvidenceRequiresContiguousSequence(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := repository.db.Exec(`INSERT INTO scanner_workers(id,name,status,certificate_serial,certificate_pem,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at) VALUES('worker','Worker','active','serial','certificate','["192.0.2.0/24"]','[443]',4,10,?,?)`, formatTime(now), formatTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	job := model.WorkerJob{SchemaVersion: 1, ID: "evidence-job", WorkerID: "worker", ScanID: "scan", IssuedAt: now,
+		ExpiresAt: now.Add(5 * time.Minute), Status: model.WorkerJobPending}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("worker", []byte("lease"), now, now.Add(2*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	batch := model.WorkerEvidenceBatch{SchemaVersion: 1, ID: "batch-1", WorkerID: "worker", JobID: job.ID,
+		ScanID: job.ScanID, Sequence: 1, CollectedAt: now}
+	envelope := model.SignedWorkerEvidenceBatch{CertificateSerial: "serial", Batch: batch, Signature: "signature"}
+	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); err != nil {
+		t.Fatalf("first worker evidence batch was rejected: %v", err)
+	}
+	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceReplay) {
+		t.Fatalf("worker evidence replay was accepted: %v", err)
+	}
+	envelope.Batch.ID, envelope.Batch.Sequence = "batch-3", 3
+	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceSequence) {
+		t.Fatalf("worker evidence sequence gap was accepted: %v", err)
+	}
+	envelope.Batch.ID, envelope.Batch.Sequence, envelope.Batch.Final = "batch-2", 2, true
+	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); err != nil {
+		t.Fatalf("final worker evidence batch was rejected: %v", err)
+	}
+	envelope.Batch.ID, envelope.Batch.Sequence, envelope.Batch.Final = "batch-after-final", 3, false
+	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceSequence) {
+		t.Fatalf("worker evidence after final batch was accepted: %v", err)
 	}
 }
 

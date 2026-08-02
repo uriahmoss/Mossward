@@ -353,7 +353,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Worker-job scope validation and server-side job-identifier replay prevention
 - [x] Worker-side persistent replay ledger before job execution
 - [x] Lease-authenticated completion receipts and duplicate-result rejection
-- [ ] Signed, sequenced evidence batches with collector provenance
+- [x] Signed, sequenced evidence batches with collector provenance
 - [ ] Persistent target-and-port checkpoints for interrupted distributed jobs
 - [ ] Encrypted bounded store-and-forward for temporary server outages
 - [ ] Load-aware assignment, site affinity, backpressure, and polling jitter

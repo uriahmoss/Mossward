@@ -279,6 +279,14 @@ before atomically recording the job ID. Previously recorded IDs remain blocked
 after process restarts, and the ledger is claimed before any future executor is
 allowed to act.
 
+Scanner-worker evidence can be transferred in bounded, certificate-signed
+batches over the authenticated worker channel. Each batch carries immutable
+worker, job, scan, certificate, and sequence provenance; observations and
+findings are restricted to the job's exact targets and ports. The control plane
+rejects tampering, duplicate IDs, sequence gaps, expired leases, and data after
+a final batch. A successful completion receipt requires final evidence, while
+failed or canceled jobs may close without observations.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

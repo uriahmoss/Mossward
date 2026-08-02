@@ -19,6 +19,8 @@ var ErrInvalidAssetLifecycle = errors.New("invalid asset lifecycle status")
 var ErrWorkerJobReplay = errors.New("scanner-worker job identifier was already used")
 var ErrWorkerResultReplay = errors.New("scanner-worker result identifier was already used")
 var ErrInvalidWorkerJobLease = errors.New("scanner-worker job lease is invalid")
+var ErrWorkerEvidenceReplay = errors.New("scanner-worker evidence batch was already accepted")
+var ErrWorkerEvidenceSequence = errors.New("scanner-worker evidence batch sequence is invalid")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -114,5 +116,6 @@ type Repository interface {
 	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
 	CompleteScannerWorkerJob(model.WorkerJobResultReceipt, []byte, time.Time) error
+	RecordScannerWorkerEvidenceBatch(model.SignedWorkerEvidenceBatch, time.Time) error
 	Close() error
 }

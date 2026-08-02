@@ -33,6 +33,8 @@ type WorkerStore interface {
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
 	CompleteScannerWorkerJob(model.WorkerJobResultReceipt, []byte, time.Time) error
+	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
+	RecordScannerWorkerEvidenceBatch(model.SignedWorkerEvidenceBatch, time.Time) error
 }
 
 type WorkerEnrollmentResult struct {

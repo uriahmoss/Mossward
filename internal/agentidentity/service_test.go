@@ -2,6 +2,9 @@ package agentidentity
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
@@ -17,6 +20,7 @@ import (
 
 	"mossward/internal/model"
 	"mossward/internal/store"
+	"mossward/internal/workerevidence"
 	"mossward/internal/workerjob"
 )
 
@@ -32,6 +36,8 @@ type memoryEndpointStore struct {
 	workerJob       model.SignedWorkerJob
 	workerLeaseHash []byte
 	workerResult    model.WorkerJobResultReceipt
+	leasedWorkerJob model.SignedWorkerJob
+	workerEvidence  []model.SignedWorkerEvidenceBatch
 }
 
 func (s *memoryEndpointStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentToken, _ model.AuditEvent) error {
@@ -83,6 +89,7 @@ func (s *memoryEndpointStore) LeaseScannerWorkerJob(id string, hash []byte, _, _
 	s.workerLeaseHash = append([]byte(nil), hash...)
 	job := s.workerJob
 	s.workerJob = model.SignedWorkerJob{}
+	s.leasedWorkerJob = job
 	return job, nil
 }
 func (s *memoryEndpointStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultReceipt, hash []byte, _ time.Time) error {
@@ -93,6 +100,21 @@ func (s *memoryEndpointStore) CompleteScannerWorkerJob(receipt model.WorkerJobRe
 		return store.ErrWorkerResultReplay
 	}
 	s.workerResult = receipt
+	return nil
+}
+func (s *memoryEndpointStore) ScannerWorkerJob(id string) (model.SignedWorkerJob, error) {
+	if s.leasedWorkerJob.Job.ID != id {
+		return model.SignedWorkerJob{}, store.ErrNotFound
+	}
+	return s.leasedWorkerJob, nil
+}
+func (s *memoryEndpointStore) RecordScannerWorkerEvidenceBatch(envelope model.SignedWorkerEvidenceBatch, _ time.Time) error {
+	for _, existing := range s.workerEvidence {
+		if existing.Batch.ID == envelope.Batch.ID {
+			return store.ErrWorkerEvidenceReplay
+		}
+	}
+	s.workerEvidence = append(s.workerEvidence, envelope)
 	return nil
 }
 
@@ -286,7 +308,8 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 		t.Fatal(err)
 	}
 	repository := &memoryEndpointStore{worker: model.ScannerWorker{ID: "worker", Status: model.EndpointActive, ExpiresAt: now.Add(time.Hour)},
-		workerJob: model.SignedWorkerJob{Job: model.WorkerJob{ID: "job", WorkerID: "worker", ExpiresAt: now.Add(5 * time.Minute)}}}
+		workerJob: model.SignedWorkerJob{Job: model.WorkerJob{ID: "job", WorkerID: "worker", ScanID: "scan", IssuedAt: now.Add(-time.Minute),
+			ExpiresAt: now.Add(5 * time.Minute), Targets: []model.Target{{Name: "host", Address: "192.0.2.10"}}, Ports: []int{443}}}}
 	service := NewService(repository, pki)
 	service.now = func() time.Time { return now }
 	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/poll", nil)
@@ -294,7 +317,21 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{SerialNumber: big.NewInt(1), URIs: []*url.URL{identity}}}}
+	workerKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := &x509.Certificate{SerialNumber: big.NewInt(1), NotBefore: now.Add(-time.Hour), NotAfter: now.Add(time.Hour),
+		URIs: []*url.URL{identity}, KeyUsage: x509.KeyUsageDigitalSignature}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &workerKey.PublicKey, workerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	workerCertificate, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{workerCertificate}}
 	repository.worker.CertificateSerial = "1"
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)
@@ -304,6 +341,23 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 	var lease model.WorkerJobLease
 	if err := json.NewDecoder(response.Body).Decode(&lease); err != nil || lease.Envelope.Job.ID != "job" || lease.Token == "" || !lease.ExpiresAt.Equal(now.Add(workerJobLeaseLifetime)) {
 		t.Fatalf("unexpected scanner-worker lease: %#v %v", lease, err)
+	}
+	evidenceBatch := model.WorkerEvidenceBatch{SchemaVersion: 1, ID: "batch", WorkerID: "worker", JobID: "job", ScanID: "scan",
+		Sequence: 1, Final: true, CollectedAt: now, Observations: []model.ServiceObservation{{ID: "observation", Address: "192.0.2.10", Port: 443, ObservedAt: now}}}
+	evidenceEnvelope, err := workerevidence.Sign(evidenceBatch, workerCertificate, workerKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceBody, err := json.Marshal(evidenceEnvelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	evidenceRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/evidence", bytes.NewReader(evidenceBody))
+	evidenceRequest.TLS = request.TLS
+	evidenceResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(evidenceResponse, evidenceRequest)
+	if evidenceResponse.Code != http.StatusAccepted || len(repository.workerEvidence) != 1 {
+		t.Fatalf("scanner-worker evidence was not accepted: %d %s", evidenceResponse.Code, evidenceResponse.Body.String())
 	}
 	resultBody, err := json.Marshal(model.WorkerJobResult{SchemaVersion: 1, ID: "result", JobID: "job", LeaseToken: lease.Token,
 		Outcome: model.WorkerJobResultSucceeded, CompletedAt: now})

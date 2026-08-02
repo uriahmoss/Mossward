@@ -192,6 +192,10 @@ func (s *Service) Handler() http.Handler {
 			s.workerSubmitResult(w, r)
 			return
 		}
+		if r.URL.Path == "/api/scanner-worker/v1/jobs/evidence" {
+			s.workerSubmitEvidence(w, r)
+			return
+		}
 		if r.URL.Path != "/api/agent/v1/check-in" && r.URL.Path != "/api/agent/v1/certificate/renew" {
 			http.NotFound(w, r)
 			return
