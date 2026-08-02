@@ -117,6 +117,29 @@ func TestCreateScanAcceptsAuthorizedTarget(t *testing.T) {
 	}
 }
 
+func TestCancelScanPersistsStateAndAuditEvent(t *testing.T) {
+	handler, repository := testHandler(t)
+	scan := model.Scan{ID: "cancel-api", Name: "Queued", Status: model.StatusQueued, CreatedAt: time.Now().UTC(),
+		Targets: []model.Target{}, Ports: []int{443}}
+	if err := repository.Save(scan); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/scans/"+scan.ID+"/cancel", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected cancellation, got %d: %s", response.Code, response.Body.String())
+	}
+	stored, err := repository.Get(scan.ID)
+	if err != nil || stored.Status != model.StatusCanceled {
+		t.Fatalf("canceled scan state missing: %#v %v", stored, err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "scan.canceled", Limit: 10})
+	if err != nil || len(events) != 1 || events[0].TargetID != scan.ID {
+		t.Fatalf("scan cancellation audit event missing: %#v %v", events, err)
+	}
+}
+
 func TestCreateScanUsesSelectedDatabaseScopePolicy(t *testing.T) {
 	handler, repository := testHandler(t)
 	now := time.Now().UTC()

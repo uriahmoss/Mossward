@@ -244,7 +244,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Group-targeted scan policies with address deduplication
 - [x] Per-target group provenance retained on policy-launched scans
 - [x] Scheduled scans
-- [ ] Scan cancellation
+- [x] Scan cancellation with partial evidence retention and audit logging
 - [ ] Per-policy rate limits
 - [x] Maintenance windows
 - [x] Per-policy IANA timezone and daylight-saving-aware execution

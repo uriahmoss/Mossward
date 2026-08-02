@@ -4,6 +4,7 @@ const loading = document.querySelector("#detail-loading");
 const errorPanel = document.querySelector("#detail-error");
 const content = document.querySelector("#detail-content");
 let refreshTimer;
+const cancelButton = document.querySelector("#cancel-scan");
 
 const escapeHTML = (value) => String(value).replace(
   /[&<>"']/g,
@@ -43,6 +44,7 @@ function render(scan) {
   const status = document.querySelector("#scan-status");
   status.textContent = scan.status;
   status.dataset.status = scan.status;
+  cancelButton.hidden = !["queued", "running", "paused"].includes(scan.status);
 
   document.querySelector("#progress-label").textContent =
     scan.status === "queued" ? "Waiting in queue" :
@@ -186,3 +188,18 @@ async function loadScan() {
 }
 
 loadScan();
+
+cancelButton.addEventListener("click", async () => {
+  if (!window.confirm("Cancel this scan? Completed checks and collected evidence will be retained.")) return;
+  cancelButton.disabled = true;
+  const response = await fetch(`/api/scans/${encodeURIComponent(scanID)}/cancel`, {method: "POST",
+    headers: {"X-Mossward-CSRF": "1"}});
+  if (!response.ok) {
+    const result = await response.json();
+    cancelButton.disabled = false;
+    errorPanel.hidden = false;
+    errorPanel.textContent = result.error || "Could not cancel this scan.";
+    return;
+  }
+  await loadScan();
+});

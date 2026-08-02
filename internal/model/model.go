@@ -14,6 +14,7 @@ const (
 	StatusCompleted ScanStatus = "completed"
 	StatusFailed    ScanStatus = "failed"
 	StatusPaused    ScanStatus = "paused"
+	StatusCanceled  ScanStatus = "canceled"
 )
 
 type Finding struct {

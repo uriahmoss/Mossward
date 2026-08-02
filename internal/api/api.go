@@ -66,6 +66,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("GET /api/scans", api.listScans)
 	mux.HandleFunc("POST /api/scans", api.createScan)
 	mux.HandleFunc("GET /api/scans/{id}", api.getScan)
+	mux.HandleFunc("POST /api/scans/{id}/cancel", api.cancelScan)
 	mux.HandleFunc("GET /api/assets", api.listAssets)
 	mux.HandleFunc("GET /api/assets/{id}", api.getAsset)
 	mux.HandleFunc("PATCH /api/assets/{id}", api.updateAsset)
@@ -246,6 +247,37 @@ func (a *API) getScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, scan)
+}
+
+func (a *API) cancelScan(w http.ResponseWriter, r *http.Request) {
+	user, ok := a.currentUser(r)
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+	if user.Role == model.RoleViewer {
+		writeError(w, http.StatusForbidden, "analyst or administrator role required")
+		return
+	}
+	if err := a.scanner.Cancel(r.PathValue("id")); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "scan not found")
+			return
+		}
+		if errors.Is(err, scanner.ErrScanNotCancelable) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
+		slog.Error("Could not cancel scan", "scan_id", r.PathValue("id"), "error", err)
+		writeError(w, http.StatusInternalServerError, "could not cancel scan")
+		return
+	}
+	event := model.AuditEvent{OccurredAt: time.Now().UTC(), ActorID: user.ID, Action: "scan.canceled",
+		Severity: model.AuditWarning, TargetType: "scan", TargetID: r.PathValue("id"), SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.AppendAuditEvent(event); err != nil {
+		slog.Warn("Scan cancellation audit event could not be persisted", "scan_id", r.PathValue("id"), "error", err)
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) createScan(w http.ResponseWriter, r *http.Request) {

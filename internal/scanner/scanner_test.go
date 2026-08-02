@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,6 +10,58 @@ import (
 	"mossward/internal/model"
 	"mossward/internal/store"
 )
+
+func TestCancelQueuedScanPersistsCanceledState(t *testing.T) {
+	engine := testEngine(t)
+	scan := model.Scan{ID: "cancel-queued", Name: "Queued", Status: model.StatusQueued, CreatedAt: time.Now().UTC(),
+		Targets: []model.Target{}, Ports: []int{443}}
+	if err := engine.store.Save(scan); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Cancel(scan.ID); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := engine.store.Get(scan.ID)
+	if err != nil || stored.Status != model.StatusCanceled || stored.CompletedAt == nil || stored.Error == "" {
+		t.Fatalf("queued scan was not canceled: %#v %v", stored, err)
+	}
+}
+
+func TestCancelSignalsActiveScanContext(t *testing.T) {
+	engine := testEngine(t)
+	now := time.Now().UTC()
+	scan := model.Scan{ID: "cancel-running", Name: "Running", Status: model.StatusRunning, CreatedAt: now,
+		StartedAt: &now, Targets: []model.Target{}, Ports: []int{443}}
+	if err := engine.store.Save(scan); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel, ok := engine.beginScan(scan.ID)
+	if !ok {
+		t.Fatal("active scan context was not registered")
+	}
+	defer engine.endScan(scan.ID, cancel)
+	if err := engine.Cancel(scan.ID); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("active scan context was not canceled")
+	}
+}
+
+func TestCancelRejectsTerminalScan(t *testing.T) {
+	engine := testEngine(t)
+	now := time.Now().UTC()
+	scan := model.Scan{ID: "cancel-completed", Name: "Completed", Status: model.StatusCompleted, CreatedAt: now,
+		CompletedAt: &now, Targets: []model.Target{}, Ports: []int{443}}
+	if err := engine.store.Save(scan); err != nil {
+		t.Fatal(err)
+	}
+	if err := engine.Cancel(scan.ID); !errors.Is(err, ErrScanNotCancelable) {
+		t.Fatalf("terminal scan cancellation error = %v", err)
+	}
+}
 
 func testEngine(t *testing.T) *Engine {
 	t.Helper()

@@ -19,20 +19,23 @@ import (
 )
 
 var ErrQueueFull = errors.New("scan queue is full")
+var ErrScanNotCancelable = errors.New("scan is not in a cancelable state")
 
 const progressSaveDivisor = 100
 
 type Engine struct {
-	cfg    config.Config
-	store  store.Repository
-	nets   []*net.IPNet
-	probes *probe.Inspector
-	queue  chan model.Scan
-	ctx    context.Context
-	cancel context.CancelFunc
-	wg     sync.WaitGroup
-	state  sync.Mutex
-	closed bool
+	cfg      config.Config
+	store    store.Repository
+	nets     []*net.IPNet
+	probes   *probe.Inspector
+	queue    chan model.Scan
+	ctx      context.Context
+	cancel   context.CancelFunc
+	wg       sync.WaitGroup
+	state    sync.Mutex
+	closed   bool
+	active   map[string]context.CancelFunc
+	canceled map[string]bool
 }
 
 type scanJob struct {
@@ -87,6 +90,7 @@ func New(cfg config.Config, repository store.Repository) (*Engine, error) {
 	engine := &Engine{
 		cfg: cfg, store: repository, nets: networks, probes: probe.New(cfg.ConnectTimeout),
 		queue: make(chan model.Scan, cfg.QueueSize), ctx: ctx, cancel: cancel,
+		active: map[string]context.CancelFunc{}, canceled: map[string]bool{},
 	}
 	engine.wg.Add(1)
 	go engine.schedule()
@@ -287,6 +291,31 @@ func (e *Engine) Schedule(scan model.Scan) error {
 	}
 }
 
+func (e *Engine) Cancel(id string) error {
+	scan, err := e.store.Get(id)
+	if err != nil {
+		return err
+	}
+	if !cancelableScanStatus(scan.Status) {
+		return ErrScanNotCancelable
+	}
+	e.state.Lock()
+	cancel := e.active[id]
+	if cancel != nil || scan.Status == model.StatusQueued || scan.Status == model.StatusRunning {
+		e.canceled[id] = true
+	}
+	e.state.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	e.finishCanceled(scan)
+	return nil
+}
+
+func cancelableScanStatus(status model.ScanStatus) bool {
+	return status == model.StatusQueued || status == model.StatusRunning || status == model.StatusPaused
+}
+
 func (e *Engine) Shutdown() {
 	e.state.Lock()
 	if e.closed {
@@ -300,11 +329,25 @@ func (e *Engine) Shutdown() {
 	for {
 		select {
 		case scan := <-e.queue:
+			if e.consumeCanceled(scan.ID) {
+				e.finishCanceled(scan)
+				continue
+			}
 			e.interrupt(scan, "scan canceled during process shutdown")
 		default:
 			return
 		}
 	}
+}
+
+func (e *Engine) consumeCanceled(id string) bool {
+	e.state.Lock()
+	defer e.state.Unlock()
+	if !e.canceled[id] {
+		return false
+	}
+	delete(e.canceled, id)
+	return true
 }
 
 func (e *Engine) Ready() bool {
@@ -326,6 +369,12 @@ func (e *Engine) schedule() {
 }
 
 func (e *Engine) run(scan model.Scan) {
+	ctx, cancel, ok := e.beginScan(scan.ID)
+	if !ok {
+		e.finishCanceled(scan)
+		return
+	}
+	defer e.endScan(scan.ID, cancel)
 	slog.Info("Scan started", "scan_id", scan.ID, "checks", len(scan.Targets)*len(scan.Ports))
 	started := time.Now().UTC()
 	scan.Status = model.StatusRunning
@@ -340,8 +389,8 @@ func (e *Engine) run(scan model.Scan) {
 	jobs := make(chan scanJob)
 	results := make(chan probeResult)
 	queueClosed := make(chan bool, 1)
-	e.startWorkers(scan, jobs, results)
-	go func() { queueClosed <- e.queueJobs(scan, jobs) }()
+	e.startWorkers(ctx, scan, jobs, results)
+	go func() { queueClosed <- e.queueJobs(ctx, scan, jobs) }()
 
 	saveInterval := max(1, scan.TotalChecks/progressSaveDivisor)
 	for result := range results {
@@ -359,6 +408,10 @@ func (e *Engine) run(scan model.Scan) {
 	closedByWindow := <-queueClosed
 	if e.ctx.Err() != nil {
 		e.interrupt(scan, "scan canceled during process shutdown")
+		return
+	}
+	if ctx.Err() != nil {
+		e.finishCanceled(scan)
 		return
 	}
 	completed := time.Now().UTC()
@@ -383,7 +436,28 @@ func (e *Engine) run(scan model.Scan) {
 	slog.Info("Scan completed", "scan_id", scan.ID, "observations", len(scan.Observations), "findings", len(scan.Findings), "cve_matches", len(scan.CVEMatches))
 }
 
-func (e *Engine) startWorkers(scan model.Scan, jobs <-chan scanJob, results chan<- probeResult) {
+func (e *Engine) beginScan(id string) (context.Context, context.CancelFunc, bool) {
+	ctx, cancel := context.WithCancel(e.ctx)
+	e.state.Lock()
+	defer e.state.Unlock()
+	if e.canceled[id] {
+		delete(e.canceled, id)
+		cancel()
+		return ctx, cancel, false
+	}
+	e.active[id] = cancel
+	return ctx, cancel, true
+}
+
+func (e *Engine) endScan(id string, cancel context.CancelFunc) {
+	cancel()
+	e.state.Lock()
+	delete(e.active, id)
+	delete(e.canceled, id)
+	e.state.Unlock()
+}
+
+func (e *Engine) startWorkers(ctx context.Context, scan model.Scan, jobs <-chan scanJob, results chan<- probeResult) {
 	var workers sync.WaitGroup
 	workerCount := scan.MaxConcurrent
 	if workerCount < 1 || workerCount > e.cfg.MaxConcurrent {
@@ -393,7 +467,7 @@ func (e *Engine) startWorkers(scan model.Scan, jobs <-chan scanJob, results chan
 		workers.Add(1)
 		go func() {
 			defer workers.Done()
-			e.processJobs(jobs, results)
+			e.processJobs(ctx, jobs, results)
 		}()
 	}
 	go func() {
@@ -402,34 +476,34 @@ func (e *Engine) startWorkers(scan model.Scan, jobs <-chan scanJob, results chan
 	}()
 }
 
-func (e *Engine) processJobs(jobs <-chan scanJob, results chan<- probeResult) {
+func (e *Engine) processJobs(ctx context.Context, jobs <-chan scanJob, results chan<- probeResult) {
 	for {
 		select {
-		case <-e.ctx.Done():
+		case <-ctx.Done():
 			return
 		case item, ok := <-jobs:
 			if !ok {
 				return
 			}
-			result := e.inspect(item)
+			result := e.inspect(ctx, item)
 			select {
 			case results <- result:
-			case <-e.ctx.Done():
+			case <-ctx.Done():
 				return
 			}
 		}
 	}
 }
 
-func (e *Engine) inspect(item scanJob) probeResult {
-	observation, findings, reachable := e.probes.Inspect(e.ctx, item.target, item.port)
+func (e *Engine) inspect(ctx context.Context, item scanJob) probeResult {
+	observation, findings, reachable := e.probes.Inspect(ctx, item.target, item.port)
 	if !reachable {
 		return probeResult{job: item}
 	}
 	return probeResult{job: item, observation: &observation, findings: findings}
 }
 
-func (e *Engine) queueJobs(scan model.Scan, jobs chan<- scanJob) bool {
+func (e *Engine) queueJobs(ctx context.Context, scan model.Scan, jobs chan<- scanJob) bool {
 	defer close(jobs)
 	completed := map[string]bool{}
 	for _, item := range scan.Checkpoints {
@@ -452,7 +526,7 @@ func (e *Engine) queueJobs(scan model.Scan, jobs chan<- scanJob) bool {
 			}
 			select {
 			case jobs <- scanJob{target: target, port: port}:
-			case <-e.ctx.Done():
+			case <-ctx.Done():
 				return false
 			case <-window:
 				return true
@@ -460,6 +534,21 @@ func (e *Engine) queueJobs(scan model.Scan, jobs chan<- scanJob) bool {
 		}
 	}
 	return false
+}
+
+func (e *Engine) finishCanceled(scan model.Scan) {
+	now := time.Now().UTC()
+	if scan.StartedAt != nil {
+		scan.ActiveSeconds += max(0, int64(now.Sub(*scan.StartedAt).Seconds()))
+	}
+	scan.Status = model.StatusCanceled
+	scan.Error = "scan canceled by user"
+	scan.CompletedAt = &now
+	if err := e.store.Save(scan); err != nil {
+		slog.Error("Could not persist canceled scan state", "scan_id", scan.ID, "error", err)
+		return
+	}
+	slog.Info("Scan canceled", "scan_id", scan.ID, "completed_checks", scan.DoneChecks)
 }
 
 func (e *Engine) addCVEMatches(scan *model.Scan, observation model.ServiceObservation) {
