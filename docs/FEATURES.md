@@ -224,6 +224,15 @@ implemented and verified; an unchecked item is not yet complete.
 
 ## Roadmap — not yet started
 
+### Scan interface and results UX
+
+- [ ] Split the scan experience into focused linked pages or sections instead
+      of one oversized page
+- [ ] Add scan-result sorting and configurable filters
+- [ ] Redesign the overall scan-results presentation for clearer hierarchy,
+      readability, and responsive use
+- [ ] Add findings-specific sorting and filtering controls
+
 ### Asset inventory
 
 - [x] Durable asset records independent of individual scans
