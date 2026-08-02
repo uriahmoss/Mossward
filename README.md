@@ -272,6 +272,13 @@ records a unique result identifier and outcome, and atomically consumes the
 lease so duplicate submissions cannot change completed job state. Signed
 evidence transfer and worker-side scan execution are still disabled.
 
+The future scanner-worker runtime now has an owner-only persistent replay
+ledger foundation. A worker must verify a job's Ed25519 signature, identity,
+validity window, assigned networks, ports, resource limits, and capabilities
+before atomically recording the job ID. Previously recorded IDs remain blocked
+after process restarts, and the ledger is claimed before any future executor is
+allowed to act.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,
