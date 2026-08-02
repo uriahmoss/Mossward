@@ -480,12 +480,19 @@ func (a *API) beginBootstrap(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusForbidden, "initial setup is restricted to localhost")
 		return
 	}
-	var request identity.BootstrapRequest
+	var request struct {
+		identity.BootstrapRequest
+		ConfirmPassword string `json:"confirm_password"`
+	}
 	if !decodeJSON(w, r, &request) {
 		return
 	}
+	if request.Password != request.ConfirmPassword {
+		writeError(w, http.StatusBadRequest, "passwords do not match")
+		return
+	}
 	request.SourceIP = requestIP(r)
-	enrollment, err := a.auth.BeginBootstrap(request)
+	enrollment, err := a.auth.BeginBootstrap(request.BootstrapRequest)
 	if errors.Is(err, store.ErrAlreadyInitialized) {
 		writeError(w, http.StatusConflict, err.Error())
 		return

@@ -270,6 +270,22 @@ func TestUninitializedApplicationRedirectsToLocalSetup(t *testing.T) {
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("expected remote bootstrap rejection, got %d", response.Code)
 	}
+	request = httptest.NewRequest(http.MethodPost, "http://localhost:8080/api/auth/bootstrap/begin", bytes.NewBufferString(`{"email":"admin@example.test","display_name":"Admin","password":"correct horse battery staple","confirm_password":"different password value"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = "127.0.0.1:4444"
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "passwords do not match") {
+		t.Fatalf("expected password confirmation rejection, got %d: %s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPost, "http://localhost:8080/api/auth/bootstrap/begin", bytes.NewBufferString(`{"email":"admin@example.test","display_name":"Admin","password":"correct horse battery staple","confirm_password":"correct horse battery staple"}`))
+	request.Header.Set("Content-Type", "application/json")
+	request.RemoteAddr = "127.0.0.1:4444"
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"qr_code_data_uri":"data:image/png;base64,`) {
+		t.Fatalf("expected QR-backed local bootstrap enrollment, got %d: %s", response.Code, response.Body.String())
+	}
 }
 
 func TestTrustedProxyEstablishesSecureRequest(t *testing.T) {

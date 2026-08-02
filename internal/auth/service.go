@@ -1,13 +1,16 @@
 package auth
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"image/png"
 	"log/slog"
 	"net/mail"
 	"strings"
@@ -123,10 +126,11 @@ type BootstrapRequest struct {
 }
 
 type BootstrapEnrollment struct {
-	Token      string    `json:"token"`
-	Secret     string    `json:"secret"`
-	OTPAuthURL string    `json:"otpauth_url"`
-	ExpiresAt  time.Time `json:"expires_at"`
+	Token         string    `json:"token"`
+	Secret        string    `json:"secret"`
+	OTPAuthURL    string    `json:"otpauth_url"`
+	QRCodeDataURI string    `json:"qr_code_data_uri"`
+	ExpiresAt     time.Time `json:"expires_at"`
 }
 
 type pendingBootstrap struct {
@@ -169,6 +173,10 @@ func (s *Service) BeginBootstrap(request BootstrapRequest) (BootstrapEnrollment,
 	if err != nil {
 		return BootstrapEnrollment{}, fmt.Errorf("generate TOTP enrollment: %w", err)
 	}
+	qrCodeDataURI, err := totpQRCodeDataURI(key)
+	if err != nil {
+		return BootstrapEnrollment{}, err
+	}
 	token, err := randomHex(sessionTokenBytes)
 	if err != nil {
 		return BootstrapEnrollment{}, err
@@ -178,7 +186,19 @@ func (s *Service) BeginBootstrap(request BootstrapRequest) (BootstrapEnrollment,
 	s.pendingMu.Lock()
 	s.pending = map[string]pendingBootstrap{token: {request: request, secret: key.Secret(), expiresAt: expiresAt}}
 	s.pendingMu.Unlock()
-	return BootstrapEnrollment{Token: token, Secret: key.Secret(), OTPAuthURL: key.URL(), ExpiresAt: expiresAt}, nil
+	return BootstrapEnrollment{Token: token, Secret: key.Secret(), OTPAuthURL: key.URL(), QRCodeDataURI: qrCodeDataURI, ExpiresAt: expiresAt}, nil
+}
+
+func totpQRCodeDataURI(key *otp.Key) (string, error) {
+	image, err := key.Image(256, 256)
+	if err != nil {
+		return "", fmt.Errorf("generate TOTP QR code: %w", err)
+	}
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, image); err != nil {
+		return "", fmt.Errorf("encode TOTP QR code: %w", err)
+	}
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), nil
 }
 
 func (s *Service) CompleteBootstrap(token, passcode string) (model.User, []string, error) {

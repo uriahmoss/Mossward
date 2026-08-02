@@ -8,10 +8,12 @@
 <label for="display-name">Display name</label><input id="display-name" autocomplete="name" required>
 <label for="email">Email</label><input id="email" type="email" autocomplete="username" required>
 <label for="password">Password <span>14+ characters</span></label><input id="password" type="password" autocomplete="new-password" minlength="14" required>
+<label for="confirm-password">Verify password</label><input id="confirm-password" type="password" autocomplete="new-password" minlength="14" required>
 <button type="submit"><span>Continue to MFA</span><span>→</span></button><p id="setup-error" class="error"></p>
 </form>
-<section id="totp-step" hidden><h2>Enroll an authenticator app</h2><p class="hero-copy">Add the secret below to your authenticator app, then enter its six-digit code.</p>
-<code id="totp-secret" class="secret-display"></code><form id="totp-form"><label for="totp-code">Authenticator code</label>
+<section id="totp-step" hidden><h2>Enroll an authenticator app</h2><p class="hero-copy">Scan the QR code with your authenticator app, or enter the setup key manually. Then enter its six-digit code.</p>
+<div class="totp-enrollment"><div><img id="totp-qr-code" class="totp-qr-code" alt="QR code for Mossward authenticator setup"><p class="field-note">Scan with your authenticator app</p></div>
+<div><p class="field-note">Manual setup key</p><code id="totp-secret" class="secret-display"></code></div></div><form id="totp-form"><label for="totp-code">Authenticator code</label>
 <input id="totp-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" required>
 <button type="submit"><span>Finish setup</span><span>→</span></button><p id="totp-error" class="error"></p></form></section>
 <section id="recovery-step" hidden><h2>Save your recovery codes</h2><p class="hero-copy">These codes are shown once. Store them somewhere secure.</p>

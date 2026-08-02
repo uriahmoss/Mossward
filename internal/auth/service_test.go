@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -80,6 +81,9 @@ func TestRecentMFAExpiresAndCanBeRefreshed(t *testing.T) {
 		Password: "correct horse battery staple"})
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.HasPrefix(enrollment.QRCodeDataURI, "data:image/png;base64,") || enrollment.OTPAuthURL == "" {
+		t.Fatalf("bootstrap enrollment is missing QR provisioning: %#v", enrollment)
 	}
 	code, err := totp.GenerateCode(enrollment.Secret, service.now())
 	if err != nil {

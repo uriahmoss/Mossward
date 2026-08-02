@@ -74,6 +74,11 @@ a { color: inherit; }
 .auth-card h2 { margin-top: 0; }
 .secret-display, .recovery-codes { display: block; margin: 22px 0; padding: 16px; border: 1px solid var(--line); border-radius: 10px; background: #07150f; color: var(--green-light); overflow-wrap: anywhere; white-space: pre-wrap; }
 .recovery-codes { line-height: 1.8; columns: 2; }
+.totp-enrollment { display: grid; grid-template-columns: minmax(180px, 256px) minmax(0, 1fr); gap: 24px; align-items: center; margin: 22px 0; }
+.totp-qr-code { display: block; width: min(100%, 256px); aspect-ratio: 1; padding: 10px; border-radius: 12px; background: #fff; }
+.totp-enrollment .secret-display { margin: 8px 0 0; }
+.field-note { margin: 0 0 8px; color: var(--muted); font-size: 14px; }
+@media (max-width: 640px) { .totp-enrollment { grid-template-columns: 1fr; } }
 .auth-action { display: inline-block; margin-top: 12px; color: var(--green); text-decoration: none; }
 .header-actions { display: flex; align-items: center; gap: 20px; }
 .compact-button { width: auto; margin: 0; padding: 8px 10px; font-size: 11px; }

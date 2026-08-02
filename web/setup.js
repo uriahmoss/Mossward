@@ -6,15 +6,24 @@ let bootstrapToken = "";
 setupForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   document.querySelector("#setup-error").textContent = "";
+  const password = document.querySelector("#password").value;
+  const confirmPassword = document.querySelector("#confirm-password").value;
+  if (password !== confirmPassword) {
+    document.querySelector("#setup-error").textContent = "Passwords do not match.";
+    document.querySelector("#confirm-password").focus();
+    return;
+  }
   const response = await fetch("/api/auth/bootstrap/begin", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({
     display_name: document.querySelector("#display-name").value,
     email: document.querySelector("#email").value,
-    password: document.querySelector("#password").value,
+    password,
+    confirm_password: confirmPassword,
   })});
   const result = await response.json();
   if (!response.ok) { document.querySelector("#setup-error").textContent = result.error; return; }
   bootstrapToken = result.token;
   document.querySelector("#totp-secret").textContent = result.secret;
+  document.querySelector("#totp-qr-code").src = result.qr_code_data_uri;
   setupForm.hidden = true;
   totpStep.hidden = false;
 });
