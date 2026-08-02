@@ -110,5 +110,6 @@ type Repository interface {
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
 	CreateScannerWorkerJob(model.SignedWorkerJob, time.Time) error
 	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
+	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
 	Close() error
 }

@@ -5,9 +5,12 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"errors"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -18,14 +21,16 @@ import (
 )
 
 type memoryEndpointStore struct {
-	token          model.AgentEnrollmentToken
-	endpoint       model.Endpoint
-	consumed       bool
-	lastSeen       *time.Time
-	workerToken    model.WorkerEnrollmentToken
-	worker         model.ScannerWorker
-	workerConsumed bool
-	workerLastSeen *time.Time
+	token           model.AgentEnrollmentToken
+	endpoint        model.Endpoint
+	consumed        bool
+	lastSeen        *time.Time
+	workerToken     model.WorkerEnrollmentToken
+	worker          model.ScannerWorker
+	workerConsumed  bool
+	workerLastSeen  *time.Time
+	workerJob       model.SignedWorkerJob
+	workerLeaseHash []byte
 }
 
 func (s *memoryEndpointStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentToken, _ model.AuditEvent) error {
@@ -69,6 +74,15 @@ func (s *memoryEndpointStore) RevokeScannerWorker(id, reason string, revokedAt t
 	}
 	s.worker.Status, s.worker.RevocationReason, s.worker.RevokedAt = model.EndpointRevoked, reason, &revokedAt
 	return nil
+}
+func (s *memoryEndpointStore) LeaseScannerWorkerJob(id string, hash []byte, _, _ time.Time) (model.SignedWorkerJob, error) {
+	if id != s.worker.ID || s.workerJob.Job.ID == "" {
+		return model.SignedWorkerJob{}, store.ErrNotFound
+	}
+	s.workerLeaseHash = append([]byte(nil), hash...)
+	job := s.workerJob
+	s.workerJob = model.SignedWorkerJob{}
+	return job, nil
 }
 
 func (s *memoryEndpointStore) CreateAgentEnrollmentToken(token model.AgentEnrollmentToken, _ model.AuditEvent) error {
@@ -251,5 +265,38 @@ func TestScannerWorkerHeartbeatValidationAndOfflineAlert(t *testing.T) {
 	alerts := scannerWorkerAlerts(worker, now)
 	if len(alerts) != 1 || alerts[0].Code != "worker_offline" {
 		t.Fatalf("missing offline scanner-worker alert: %#v", alerts)
+	}
+}
+
+func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	pki, err := LoadOrCreatePKI(t.TempDir(), []string{"agent.mossward.test"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryEndpointStore{worker: model.ScannerWorker{ID: "worker", Status: model.EndpointActive, ExpiresAt: now.Add(time.Hour)},
+		workerJob: model.SignedWorkerJob{Job: model.WorkerJob{ID: "job", WorkerID: "worker", ExpiresAt: now.Add(5 * time.Minute)}}}
+	service := NewService(repository, pki)
+	service.now = func() time.Time { return now }
+	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/poll", nil)
+	identity, err := url.Parse("spiffe://mossward/scanner-worker/worker")
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.TLS = &tls.ConnectionState{PeerCertificates: []*x509.Certificate{{SerialNumber: big.NewInt(1), URIs: []*url.URL{identity}}}}
+	repository.worker.CertificateSerial = "1"
+	response := httptest.NewRecorder()
+	service.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || len(repository.workerLeaseHash) != sha256.Size {
+		t.Fatalf("scanner-worker job was not leased: %d %s", response.Code, response.Body.String())
+	}
+	var lease model.WorkerJobLease
+	if err := json.NewDecoder(response.Body).Decode(&lease); err != nil || lease.Envelope.Job.ID != "job" || lease.Token == "" || !lease.ExpiresAt.Equal(now.Add(workerJobLeaseLifetime)) {
+		t.Fatalf("unexpected scanner-worker lease: %#v %v", lease, err)
+	}
+	second := httptest.NewRecorder()
+	service.Handler().ServeHTTP(second, request)
+	if second.Code != http.StatusNoContent {
+		t.Fatalf("empty worker queue returned %d", second.Code)
 	}
 }

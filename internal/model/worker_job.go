@@ -33,3 +33,9 @@ type SignedWorkerJob struct {
 	Job       WorkerJob `json:"job"`
 	Signature string    `json:"signature"`
 }
+
+type WorkerJobLease struct {
+	Envelope  SignedWorkerJob `json:"envelope"`
+	Token     string          `json:"lease_token"`
+	ExpiresAt time.Time       `json:"lease_expires_at"`
+}

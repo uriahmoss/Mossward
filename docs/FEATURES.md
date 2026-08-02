@@ -345,6 +345,8 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Separate control plane and scanner workers
 - [x] Explicit worker enrollment, revocation, and mutually authenticated identity
 - [ ] Outbound-only worker polling with no required inbound listener
+- [x] Server-side mTLS job polling with worker-bound atomic leases
+- [x] Hashed one-time lease credentials and safe expired-lease reclamation
 - [x] Worker health, version, certificate, capacity, and capability heartbeats
 - [x] Administrator-assigned network, port, concurrency, and rate scopes
 - [x] Signed, expiring, declarative jobs with unique identifiers

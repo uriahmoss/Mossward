@@ -259,6 +259,13 @@ The same constrained provenance model accepts authenticated endpoint evidence
 when endpoint collectors are implemented; Mossward does not currently claim
 that an endpoint collector is available.
 
+Scanner workers can now poll the control plane over their existing outbound
+mTLS connection. The server leases only jobs explicitly assigned to the
+authenticated worker, stores only a hash of the short-lived lease credential,
+and safely makes abandoned jobs available again after lease expiration. Worker
+execution and result submission remain disabled until their dedicated slices
+are implemented and verified.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

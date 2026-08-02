@@ -31,6 +31,7 @@ type WorkerStore interface {
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
 	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
+	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
 }
 
 type WorkerEnrollmentResult struct {
