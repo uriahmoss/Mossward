@@ -105,7 +105,7 @@ type Repository interface {
 	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error
 	ListScannerWorkers() ([]model.ScannerWorker, error)
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
-	MarkScannerWorkerSeen(string, time.Time) error
+	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
 	Close() error
 }

@@ -345,7 +345,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Separate control plane and scanner workers
 - [x] Explicit worker enrollment, revocation, and mutually authenticated identity
 - [ ] Outbound-only worker polling with no required inbound listener
-- [ ] Worker health, version, certificate, capacity, and capability heartbeats
+- [x] Worker health, version, certificate, capacity, and capability heartbeats
 - [x] Administrator-assigned network, port, concurrency, and rate scopes
 - [ ] Signed, expiring, declarative jobs with unique identifiers
 - [ ] Worker-side scope validation, replay prevention, and duplicate-result rejection

@@ -16,6 +16,10 @@ import (
 const (
 	maximumWorkerConcurrency = 256
 	maximumWorkerRate        = 1000
+	workerHeartbeatSchema    = 1
+	workerHeartbeatTextLimit = 200
+	workerHealthMessageLimit = 500
+	workerOfflineAfter       = 5 * time.Minute
 )
 
 type WorkerStore interface {
@@ -24,7 +28,7 @@ type WorkerStore interface {
 	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error
 	ListScannerWorkers() ([]model.ScannerWorker, error)
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
-	MarkScannerWorkerSeen(string, time.Time) error
+	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
 }
 
@@ -157,10 +161,74 @@ func scannerWorkerAlerts(worker model.ScannerWorker, now time.Time) []model.Endp
 	if !now.Before(worker.ExpiresAt) {
 		return []model.EndpointAlert{{Code: "certificate_expired", Severity: "error", Message: "Scanner-worker certificate has expired"}}
 	}
+	alerts := []model.EndpointAlert{}
 	if !now.Before(worker.ExpiresAt.Add(-certificateRenewBefore)) {
-		return []model.EndpointAlert{{Code: "certificate_expiring", Severity: "warning", Message: "Scanner-worker certificate expires within 30 days"}}
+		alerts = append(alerts, model.EndpointAlert{Code: "certificate_expiring", Severity: "warning", Message: "Scanner-worker certificate expires within 30 days"})
 	}
-	return []model.EndpointAlert{}
+	if worker.LastSeenAt == nil || now.Sub(*worker.LastSeenAt) >= workerOfflineAfter {
+		alerts = append(alerts, model.EndpointAlert{Code: "worker_offline", Severity: "warning", Message: "Scanner worker has not checked in within 5 minutes"})
+	}
+	if worker.Health == model.WorkerHealthDegraded {
+		alerts = append(alerts, model.EndpointAlert{Code: "worker_degraded", Severity: "warning", Message: worker.HealthMessage})
+	}
+	return alerts
+}
+
+func validateWorkerHeartbeat(heartbeat *model.WorkerHeartbeat, maximumConcurrency int) error {
+	heartbeat.SoftwareVersion = strings.TrimSpace(heartbeat.SoftwareVersion)
+	heartbeat.OperatingSystem = strings.ToLower(strings.TrimSpace(heartbeat.OperatingSystem))
+	heartbeat.Architecture = strings.ToLower(strings.TrimSpace(heartbeat.Architecture))
+	heartbeat.HealthMessage = strings.TrimSpace(heartbeat.HealthMessage)
+	if heartbeat.SchemaVersion != workerHeartbeatSchema {
+		return errors.New("unsupported scanner-worker heartbeat schema")
+	}
+	if heartbeat.SoftwareVersion == "" || len(heartbeat.SoftwareVersion) > workerHeartbeatTextLimit {
+		return errors.New("scanner-worker software version is invalid")
+	}
+	if heartbeat.OperatingSystem != "linux" && heartbeat.OperatingSystem != "windows" {
+		return errors.New("scanner-worker operating system is unsupported")
+	}
+	if heartbeat.Architecture != "amd64" && heartbeat.Architecture != "arm64" {
+		return errors.New("scanner-worker architecture is unsupported")
+	}
+	if heartbeat.AvailableConcurrency < 0 || heartbeat.AvailableConcurrency > maximumConcurrency {
+		return errors.New("scanner-worker available concurrency exceeds its assigned limit")
+	}
+	if heartbeat.Health != model.WorkerHealthHealthy && heartbeat.Health != model.WorkerHealthDegraded {
+		return errors.New("scanner-worker health state is invalid")
+	}
+	if len(heartbeat.HealthMessage) > workerHealthMessageLimit || (heartbeat.Health == model.WorkerHealthDegraded && heartbeat.HealthMessage == "") {
+		return errors.New("degraded scanner-worker health requires a bounded message")
+	}
+	capabilities, err := normalizedWorkerCapabilities(heartbeat.Capabilities)
+	if err != nil {
+		return err
+	}
+	heartbeat.Capabilities = capabilities
+	return nil
+}
+
+func normalizedWorkerCapabilities(values []model.WorkerCapability) ([]model.WorkerCapability, error) {
+	allowed := map[model.WorkerCapability]bool{
+		model.WorkerCapabilityTCPConnect: true, model.WorkerCapabilityServiceIdentification: true,
+		model.WorkerCapabilityHTTP: true, model.WorkerCapabilityTLS: true, model.WorkerCapabilitySSH: true,
+	}
+	seen := map[model.WorkerCapability]bool{}
+	result := []model.WorkerCapability{}
+	for _, capability := range values {
+		if !allowed[capability] {
+			return nil, errors.New("scanner worker reported an unsupported capability")
+		}
+		if !seen[capability] {
+			result = append(result, capability)
+			seen[capability] = true
+		}
+	}
+	if len(result) == 0 {
+		return nil, errors.New("scanner worker must report at least one capability")
+	}
+	sort.Slice(result, func(i, j int) bool { return result[i] < result[j] })
+	return result, nil
 }
 
 func (s *Service) RevokeScannerWorker(id, reason, actorID, sourceIP string) error {

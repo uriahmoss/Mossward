@@ -244,6 +244,9 @@ The distributed-scanner foundation supports short-lived, single-use worker
 enrollment, worker-generated private keys, SPIFFE-style mutually authenticated
 identity, explicit network and resource scopes, check-in inventory, and audited
 revocation. Distributed scan-job execution is not enabled yet.
+Versioned worker heartbeats report a constrained capability allowlist, software
+and platform versions, available concurrency, and healthy or degraded state.
+Workers that do not check in for five minutes are flagged as offline.
 
 Durable asset evidence records retain the source type, source identity,
 originating record, collection time, address, and source scan when applicable.

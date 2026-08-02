@@ -8,6 +8,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,11 +53,13 @@ func (s *memoryEndpointStore) ScannerWorkerBySerial(serial string) (model.Scanne
 	}
 	return s.worker, nil
 }
-func (s *memoryEndpointStore) MarkScannerWorkerSeen(id string, seenAt time.Time) error {
+func (s *memoryEndpointStore) RecordScannerWorkerHeartbeat(id string, heartbeat model.WorkerHeartbeat, seenAt time.Time) error {
 	if id != s.worker.ID {
 		return store.ErrNotFound
 	}
-	s.workerLastSeen = &seenAt
+	s.worker.SoftwareVersion, s.worker.OperatingSystem, s.worker.Architecture = heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture
+	s.worker.Capabilities, s.worker.AvailableConcurrency = heartbeat.Capabilities, heartbeat.AvailableConcurrency
+	s.worker.Health, s.worker.HealthMessage, s.workerLastSeen = heartbeat.Health, heartbeat.HealthMessage, &seenAt
 	return nil
 }
 func (s *memoryEndpointStore) RevokeScannerWorker(id, reason string, revokedAt time.Time, _ model.AuditEvent) error {
@@ -213,14 +216,35 @@ func TestScannerWorkerEnrollmentAndMTLSCheckIn(t *testing.T) {
 	if err := service.verifyConnection(connection); err != nil {
 		t.Fatalf("verify enrolled scanner worker: %v", err)
 	}
-	httpRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/check-in", nil)
+	heartbeat := `{"schema_version":1,"software_version":"1.0.0","operating_system":"linux","architecture":"amd64","capabilities":["tcp_connect","tls_configuration"],"available_concurrency":3,"health":"healthy"}`
+	httpRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/check-in", strings.NewReader(heartbeat))
 	httpRequest.TLS = &connection
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, httpRequest)
-	if response.Code != http.StatusOK || repository.workerLastSeen == nil {
+	if response.Code != http.StatusOK || repository.workerLastSeen == nil || repository.worker.SoftwareVersion != "1.0.0" || len(repository.worker.Capabilities) != 2 {
 		t.Fatalf("scanner-worker check-in failed: %d %s", response.Code, response.Body.String())
 	}
 	if _, err := service.EnrollWorker(token, string(endpointCSR(t)), "127.0.0.1"); !errors.Is(err, store.ErrInvalidEnrollmentToken) {
 		t.Fatalf("worker token replay was accepted: %v", err)
+	}
+}
+
+func TestScannerWorkerHeartbeatValidationAndOfflineAlert(t *testing.T) {
+	heartbeat := model.WorkerHeartbeat{SchemaVersion: 1, SoftwareVersion: "1.0.0", OperatingSystem: "linux",
+		Architecture: "amd64", Capabilities: []model.WorkerCapability{"arbitrary_execution"},
+		AvailableConcurrency: 1, Health: model.WorkerHealthHealthy}
+	if err := validateWorkerHeartbeat(&heartbeat, 4); err == nil {
+		t.Fatal("unsupported scanner-worker capability was accepted")
+	}
+	heartbeat.Capabilities = []model.WorkerCapability{model.WorkerCapabilityTCPConnect}
+	heartbeat.AvailableConcurrency = 5
+	if err := validateWorkerHeartbeat(&heartbeat, 4); err == nil {
+		t.Fatal("scanner worker exceeded its assigned concurrency")
+	}
+	now := time.Now().UTC()
+	worker := model.ScannerWorker{Status: model.EndpointActive, ExpiresAt: now.Add(60 * 24 * time.Hour), Health: model.WorkerHealthHealthy}
+	alerts := scannerWorkerAlerts(worker, now)
+	if len(alerts) != 1 || alerts[0].Code != "worker_offline" {
+		t.Fatalf("missing offline scanner-worker alert: %#v", alerts)
 	}
 }

@@ -88,7 +88,7 @@ func (s *SQLiteStore) ConsumeWorkerEnrollmentToken(hash []byte, worker model.Sca
 }
 
 func (s *SQLiteStore) ListScannerWorkers() ([]model.ScannerWorker, error) {
-	rows, err := s.db.Query(`SELECT id,name,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason FROM scanner_workers ORDER BY name,enrolled_at`)
+	rows, err := s.db.Query(workerSelect + ` ORDER BY name,enrolled_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -105,17 +105,23 @@ func (s *SQLiteStore) ListScannerWorkers() ([]model.ScannerWorker, error) {
 }
 
 func (s *SQLiteStore) ScannerWorkerBySerial(serial string) (model.ScannerWorker, error) {
-	worker, err := scanWorker(s.db.QueryRow(`SELECT id,name,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason FROM scanner_workers WHERE certificate_serial=?`, serial))
+	worker, err := scanWorker(s.db.QueryRow(workerSelect+` WHERE certificate_serial=?`, serial))
 	if errors.Is(err, sql.ErrNoRows) {
 		return worker, ErrNotFound
 	}
 	return worker, err
 }
 
-func (s *SQLiteStore) MarkScannerWorkerSeen(id string, seenAt time.Time) error {
-	result, err := s.db.Exec(`UPDATE scanner_workers SET last_seen_at=? WHERE id=? AND status='active'`, formatTime(seenAt), id)
+const workerSelect = `SELECT id,name,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,software_version,operating_system,architecture,capabilities,available_concurrency,health,health_message FROM scanner_workers`
+
+func (s *SQLiteStore) RecordScannerWorkerHeartbeat(id string, heartbeat model.WorkerHeartbeat, seenAt time.Time) error {
+	capabilities, err := json.Marshal(heartbeat.Capabilities)
 	if err != nil {
-		return err
+		return fmt.Errorf("encode scanner-worker capabilities: %w", err)
+	}
+	result, err := s.db.Exec(`UPDATE scanner_workers SET last_seen_at=?,software_version=?,operating_system=?,architecture=?,capabilities=?,available_concurrency=?,health=?,health_message=? WHERE id=? AND status='active'`, formatTime(seenAt), heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture, capabilities, heartbeat.AvailableConcurrency, heartbeat.Health, heartbeat.HealthMessage, id)
+	if err != nil {
+		return fmt.Errorf("record scanner-worker heartbeat: %w", err)
 	}
 	changed, _ := result.RowsAffected()
 	if changed != 1 {
@@ -148,17 +154,21 @@ type workerScanner interface{ Scan(...any) error }
 
 func scanWorker(row workerScanner) (model.ScannerWorker, error) {
 	var worker model.ScannerWorker
-	var cidrs, ports, enrolledAt, expiresAt string
+	var cidrs, ports, enrolledAt, expiresAt, capabilities string
 	var lastSeen, revokedAt sql.NullString
 	if err := row.Scan(&worker.ID, &worker.Name, &worker.Status, &worker.CertificateSerial, &cidrs, &ports,
 		&worker.MaxConcurrent, &worker.RateLimitPerSecond, &enrolledAt, &expiresAt, &lastSeen, &revokedAt,
-		&worker.RevocationReason); err != nil {
+		&worker.RevocationReason, &worker.SoftwareVersion, &worker.OperatingSystem, &worker.Architecture,
+		&capabilities, &worker.AvailableConcurrency, &worker.Health, &worker.HealthMessage); err != nil {
 		return worker, err
 	}
 	if err := json.Unmarshal([]byte(cidrs), &worker.AllowedCIDRs); err != nil {
 		return worker, err
 	}
 	if err := json.Unmarshal([]byte(ports), &worker.AllowedPorts); err != nil {
+		return worker, err
+	}
+	if err := json.Unmarshal([]byte(capabilities), &worker.Capabilities); err != nil {
 		return worker, err
 	}
 	worker.EnrolledAt, _ = parseTime(enrolledAt)

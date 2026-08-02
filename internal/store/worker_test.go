@@ -39,4 +39,14 @@ func TestScannerWorkerEnrollmentTokenIsScopedAndSingleUse(t *testing.T) {
 	if err != nil || len(workers) != 1 || workers[0].AllowedPorts[1] != 443 {
 		t.Fatalf("scanner-worker inventory missing: %#v %v", workers, err)
 	}
+	heartbeat := model.WorkerHeartbeat{SchemaVersion: 1, SoftwareVersion: "1.0.0", OperatingSystem: "linux",
+		Architecture: "amd64", Capabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect},
+		AvailableConcurrency: 3, Health: model.WorkerHealthHealthy}
+	if err := repository.RecordScannerWorkerHeartbeat(worker.ID, heartbeat, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	workers, err = repository.ListScannerWorkers()
+	if err != nil || workers[0].SoftwareVersion != heartbeat.SoftwareVersion || workers[0].AvailableConcurrency != 3 || workers[0].LastSeenAt == nil {
+		t.Fatalf("scanner-worker heartbeat missing: %#v %v", workers, err)
+	}
 }

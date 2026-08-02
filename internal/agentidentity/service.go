@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -230,7 +231,22 @@ func (s *Service) workerCheckIn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.now()
-	if err := s.workerStore.MarkScannerWorkerSeen(worker.ID, now); err != nil {
+	var heartbeat model.WorkerHeartbeat
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&heartbeat); err != nil {
+		http.Error(w, "invalid scanner-worker heartbeat", http.StatusBadRequest)
+		return
+	}
+	if decoder.Decode(&struct{}{}) != io.EOF {
+		http.Error(w, "scanner-worker heartbeat must contain exactly one object", http.StatusBadRequest)
+		return
+	}
+	if err := validateWorkerHeartbeat(&heartbeat, worker.MaxConcurrent); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	if err := s.workerStore.RecordScannerWorkerHeartbeat(worker.ID, heartbeat, now); err != nil {
 		http.Error(w, "scanner-worker state unavailable", http.StatusServiceUnavailable)
 		return
 	}
