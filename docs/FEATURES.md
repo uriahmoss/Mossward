@@ -347,8 +347,9 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Outbound-only worker polling with no required inbound listener
 - [x] Worker health, version, certificate, capacity, and capability heartbeats
 - [x] Administrator-assigned network, port, concurrency, and rate scopes
-- [ ] Signed, expiring, declarative jobs with unique identifiers
-- [ ] Worker-side scope validation, replay prevention, and duplicate-result rejection
+- [x] Signed, expiring, declarative jobs with unique identifiers
+- [x] Worker-job scope validation and server-side job-identifier replay prevention
+- [ ] Worker-side replay ledger and duplicate-result rejection
 - [ ] Signed, sequenced evidence batches with collector provenance
 - [ ] Persistent target-and-port checkpoints for interrupted distributed jobs
 - [ ] Encrypted bounded store-and-forward for temporary server outages

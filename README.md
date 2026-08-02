@@ -247,6 +247,11 @@ revocation. Distributed scan-job execution is not enabled yet.
 Versioned worker heartbeats report a constrained capability allowlist, software
 and platform versions, available concurrency, and healthy or degraded state.
 Workers that do not check in for five minutes are flagged as offline.
+Distributed jobs use a versioned declarative envelope signed by a dedicated
+Ed25519 key that is separate from the certificate authority. Job validation
+enforces the enrolled worker's networks, ports, capabilities, concurrency, and
+rate limits, while persistent unique job identifiers provide replay tracking.
+Job polling and execution remain disabled until the next transport slices.
 
 Durable asset evidence records retain the source type, source identity,
 originating record, collection time, address, and source scan when applicable.

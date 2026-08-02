@@ -15,6 +15,7 @@ import (
 
 	"mossward/internal/model"
 	"mossward/internal/store"
+	"mossward/internal/workerjob"
 )
 
 const (
@@ -41,6 +42,7 @@ type Service struct {
 	store       EndpointStore
 	workerStore WorkerStore
 	pki         *PKI
+	jobSigner   *workerjob.Signer
 	now         func() time.Time
 }
 
@@ -50,8 +52,11 @@ type EnrollmentResult struct {
 	CAChainPEM     string         `json:"ca_chain_pem"`
 }
 
-func NewService(repository EndpointStore, pki *PKI) *Service {
+func NewService(repository EndpointStore, pki *PKI, signers ...*workerjob.Signer) *Service {
 	service := &Service{store: repository, pki: pki, now: func() time.Time { return time.Now().UTC() }}
+	if len(signers) > 0 {
+		service.jobSigner = signers[0]
+	}
 	service.workerStore, _ = repository.(WorkerStore)
 	return service
 }

@@ -25,6 +25,7 @@ import (
 	"mossward/internal/serverbackup"
 	"mossward/internal/store"
 	"mossward/internal/transport"
+	"mossward/internal/workerjob"
 )
 
 const (
@@ -283,7 +284,12 @@ func newAgentIdentity(cfg config.Config, repository store.Repository) (*agentide
 		return nil, err
 	}
 	slog.Info("Mossward endpoint certificate authority loaded", "directory", cfg.AgentPKIDirectory)
-	return agentidentity.NewService(repository, pki), nil
+	jobSigner, err := workerjob.LoadOrCreateSigner(cfg.AgentPKIDirectory)
+	if err != nil {
+		return nil, fmt.Errorf("load scanner-worker job signer: %w", err)
+	}
+	slog.Info("Mossward scanner-worker job signer loaded", "key_id", jobSigner.KeyID())
+	return agentidentity.NewService(repository, pki, jobSigner), nil
 }
 
 func serve(server *http.Server, cfg config.Config) error {

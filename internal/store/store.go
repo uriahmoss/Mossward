@@ -16,6 +16,7 @@ var ErrInvalidEnrollmentToken = errors.New("endpoint enrollment token is invalid
 var ErrEndpointCertificateChanged = errors.New("endpoint certificate is no longer current")
 var ErrAssetNotFound = errors.New("asset not found")
 var ErrInvalidAssetLifecycle = errors.New("invalid asset lifecycle status")
+var ErrWorkerJobReplay = errors.New("scanner-worker job identifier was already used")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -107,5 +108,7 @@ type Repository interface {
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
 	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
+	CreateScannerWorkerJob(model.SignedWorkerJob, time.Time) error
+	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
 	Close() error
 }

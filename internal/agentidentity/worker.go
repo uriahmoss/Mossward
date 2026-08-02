@@ -2,6 +2,7 @@ package agentidentity
 
 import (
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"net/netip"
@@ -33,9 +34,11 @@ type WorkerStore interface {
 }
 
 type WorkerEnrollmentResult struct {
-	Worker         model.ScannerWorker `json:"worker"`
-	CertificatePEM string              `json:"certificate_pem"`
-	CAChainPEM     string              `json:"ca_chain_pem"`
+	Worker              model.ScannerWorker `json:"worker"`
+	CertificatePEM      string              `json:"certificate_pem"`
+	CAChainPEM          string              `json:"ca_chain_pem"`
+	JobSigningKeyID     string              `json:"job_signing_key_id"`
+	JobSigningPublicKey string              `json:"job_signing_public_key"`
 }
 
 func (s *Service) CreateWorkerEnrollmentToken(request model.WorkerEnrollmentToken, actorID, sourceIP string) (model.WorkerEnrollmentToken, string, error) {
@@ -110,6 +113,9 @@ func deduplicateWorkerPorts(ports []int) []int {
 }
 
 func (s *Service) EnrollWorker(token, csrPEM, sourceIP string) (WorkerEnrollmentResult, error) {
+	if s.jobSigner == nil {
+		return WorkerEnrollmentResult{}, errors.New("scanner-worker job signing is unavailable")
+	}
 	hash, err := enrollmentTokenHash(token)
 	if err != nil || s.workerStore == nil {
 		return WorkerEnrollmentResult{}, store.ErrInvalidEnrollmentToken
@@ -137,7 +143,8 @@ func (s *Service) EnrollWorker(token, csrPEM, sourceIP string) (WorkerEnrollment
 	if err := s.workerStore.ConsumeWorkerEnrollmentToken(hash, worker, now, event); err != nil {
 		return WorkerEnrollmentResult{}, err
 	}
-	return WorkerEnrollmentResult{Worker: worker, CertificatePEM: certificatePEM, CAChainPEM: s.pki.CAChainPEM()}, nil
+	return WorkerEnrollmentResult{Worker: worker, CertificatePEM: certificatePEM, CAChainPEM: s.pki.CAChainPEM(),
+		JobSigningKeyID: s.jobSigner.KeyID(), JobSigningPublicKey: base64.RawStdEncoding.EncodeToString(s.jobSigner.PublicKey())}, nil
 }
 
 func (s *Service) ScannerWorkers() ([]model.ScannerWorker, error) {
