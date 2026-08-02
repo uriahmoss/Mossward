@@ -37,9 +37,10 @@ type EndpointStore interface {
 }
 
 type Service struct {
-	store EndpointStore
-	pki   *PKI
-	now   func() time.Time
+	store       EndpointStore
+	workerStore WorkerStore
+	pki         *PKI
+	now         func() time.Time
 }
 
 type EnrollmentResult struct {
@@ -49,7 +50,9 @@ type EnrollmentResult struct {
 }
 
 func NewService(repository EndpointStore, pki *PKI) *Service {
-	return &Service{store: repository, pki: pki, now: func() time.Time { return time.Now().UTC() }}
+	service := &Service{store: repository, pki: pki, now: func() time.Time { return time.Now().UTC() }}
+	service.workerStore, _ = repository.(WorkerStore)
+	return service
 }
 
 func (s *Service) CreateEnrollmentToken(name, actorID, sourceIP string) (model.AgentEnrollmentToken, string, error) {
@@ -167,7 +170,15 @@ func (s *Service) TLSConfig() *tls.Config {
 
 func (s *Service) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost || (r.URL.Path != "/api/agent/v1/check-in" && r.URL.Path != "/api/agent/v1/certificate/renew") {
+		if r.Method != http.MethodPost {
+			http.NotFound(w, r)
+			return
+		}
+		if r.URL.Path == "/api/scanner-worker/v1/check-in" {
+			s.workerCheckIn(w, r)
+			return
+		}
+		if r.URL.Path != "/api/agent/v1/check-in" && r.URL.Path != "/api/agent/v1/certificate/renew" {
 			http.NotFound(w, r)
 			return
 		}
@@ -205,8 +216,44 @@ func (s *Service) Handler() http.Handler {
 }
 
 func (s *Service) verifyConnection(connection tls.ConnectionState) error {
-	_, err := s.endpointFromConnection(&connection)
+	if _, err := s.endpointFromConnection(&connection); err == nil {
+		return nil
+	}
+	_, err := s.workerFromConnection(&connection)
 	return err
+}
+
+func (s *Service) workerCheckIn(w http.ResponseWriter, r *http.Request) {
+	worker, err := s.workerFromConnection(r.TLS)
+	if err != nil {
+		http.Error(w, "authenticated scanner worker required", http.StatusUnauthorized)
+		return
+	}
+	now := s.now()
+	if err := s.workerStore.MarkScannerWorkerSeen(worker.ID, now); err != nil {
+		http.Error(w, "scanner-worker state unavailable", http.StatusServiceUnavailable)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"status": "accepted", "worker_id": worker.ID, "server_time": now})
+}
+
+func (s *Service) workerFromConnection(connection *tls.ConnectionState) (model.ScannerWorker, error) {
+	if connection == nil || len(connection.PeerCertificates) == 0 || s.workerStore == nil {
+		return model.ScannerWorker{}, errors.New("scanner-worker certificate missing")
+	}
+	certificate := connection.PeerCertificates[0]
+	worker, err := s.workerStore.ScannerWorkerBySerial(certificate.SerialNumber.String())
+	if err != nil || worker.Status != model.EndpointActive || !s.now().Before(worker.ExpiresAt) {
+		return model.ScannerWorker{}, errors.New("scanner-worker certificate is not active")
+	}
+	wanted := "spiffe://mossward/scanner-worker/" + worker.ID
+	for _, identity := range certificate.URIs {
+		if identity.String() == wanted {
+			return worker, nil
+		}
+	}
+	return model.ScannerWorker{}, errors.New("scanner-worker certificate identity mismatch")
 }
 
 func (s *Service) endpointFromConnection(connection *tls.ConnectionState) (model.Endpoint, error) {

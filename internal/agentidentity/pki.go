@@ -83,6 +83,14 @@ func (p *PKI) CAChainPEM() string {
 }
 
 func (p *PKI) IssueEndpoint(id, name string, csrPEM []byte, now time.Time) (string, string, time.Time, error) {
+	return p.issueClientCertificate("endpoint", id, name, csrPEM, now)
+}
+
+func (p *PKI) IssueScannerWorker(id, name string, csrPEM []byte, now time.Time) (string, string, time.Time, error) {
+	return p.issueClientCertificate("scanner-worker", id, name, csrPEM, now)
+}
+
+func (p *PKI) issueClientCertificate(kind, id, name string, csrPEM []byte, now time.Time) (string, string, time.Time, error) {
 	request, err := parseCSR(csrPEM)
 	if err != nil {
 		return "", "", time.Time{}, err
@@ -94,14 +102,14 @@ func (p *PKI) IssueEndpoint(id, name string, csrPEM []byte, now time.Time) (stri
 	if err != nil {
 		return "", "", time.Time{}, err
 	}
-	identity, _ := url.Parse("spiffe://mossward/endpoint/" + id)
+	identity, _ := url.Parse("spiffe://mossward/" + kind + "/" + id)
 	expiresAt := minTime(now.Add(endpointLifetime), p.intermediateCertificate.NotAfter)
 	template := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: name},
 		NotBefore: now.Add(-clockSkewAllowance), NotAfter: expiresAt, URIs: []*url.URL{identity},
 		KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}
 	der, err := x509.CreateCertificate(rand.Reader, template, p.intermediateCertificate, request.PublicKey, p.intermediateKey)
 	if err != nil {
-		return "", "", time.Time{}, fmt.Errorf("issue endpoint certificate: %w", err)
+		return "", "", time.Time{}, fmt.Errorf("issue %s certificate: %w", kind, err)
 	}
 	certificatePEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
 	certificatePEM = append(certificatePEM, p.intermediatePEM...)

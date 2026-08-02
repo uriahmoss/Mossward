@@ -77,6 +77,40 @@ document.querySelector("#endpoint-enrollment-form").addEventListener("submit", a
   event.target.reset(); await loadEndpointIdentity();
 });
 
+async function loadScannerWorkers() {
+  const response = await fetch("/api/admin/scanner-workers");
+  if (response.status === 503) {
+    document.querySelector("#workers-list").textContent = "Scanner-worker identity is not enabled on this server.";
+    return;
+  }
+  if (!response.ok) { return; }
+  const workers = await response.json();
+  document.querySelector("#workers-list").innerHTML = workers.length ? workers.map((worker) => `<article class="session-row"><div><strong>${escapeHTML(worker.name)}</strong><span>${escapeHTML(worker.status)} · ${worker.allowed_cidrs.map(escapeHTML).join(", ")} · ${worker.allowed_ports.length} ports · concurrency ${worker.max_concurrent} · ${worker.rate_limit_per_second ? `${worker.rate_limit_per_second} checks/sec` : "unlimited rate"} · certificate expires ${new Date(worker.expires_at).toLocaleString()}${worker.last_seen_at ? ` · last seen ${new Date(worker.last_seen_at).toLocaleString()}` : " · never connected"}${worker.alerts?.length ? ` · ${worker.alerts.map((alert) => escapeHTML(alert.message)).join("; ")}` : ""}${worker.revocation_reason ? ` · ${escapeHTML(worker.revocation_reason)}` : ""}</span></div>${worker.status === "active" ? `<button class="worker-revoke compact-button" data-id="${worker.id}">Revoke</button>` : ""}</article>`).join("") : "No scanner workers enrolled.";
+  document.querySelectorAll(".worker-revoke").forEach((button) => button.addEventListener("click", () => revokeScannerWorker(button.dataset.id)));
+}
+
+document.querySelector("#worker-enrollment-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); usersError.textContent = "";
+  const request = {name: document.querySelector("#worker-name").value,
+    allowed_cidrs: document.querySelector("#worker-cidrs").value.split(",").map((value) => value.trim()).filter(Boolean),
+    allowed_ports: document.querySelector("#worker-ports").value.split(",").map((value) => Number(value.trim())).filter(Number.isInteger),
+    max_concurrent: Number(document.querySelector("#worker-concurrency").value),
+    rate_limit_per_second: Number(document.querySelector("#worker-rate").value)};
+  const response = await secureFetch("/api/admin/scanner-worker-enrollment-tokens", {method: "POST", headers: csrfHeaders, body: JSON.stringify(request)});
+  const result = await response.json();
+  if (!response.ok) { usersError.textContent = result.error; return; }
+  document.querySelector("#worker-token-result").textContent = `Copy this one-time worker token now: ${result.token}`;
+  event.target.reset();
+});
+
+async function revokeScannerWorker(id) {
+  const reason = window.prompt("Reason for revoking this scanner worker:");
+  if (!reason) { return; }
+  const response = await secureFetch(`/api/admin/scanner-workers/${encodeURIComponent(id)}/revoke`, {method: "POST", headers: csrfHeaders, body: JSON.stringify({reason})});
+  if (!response.ok) { const result = await response.json(); usersError.textContent = result.error; return; }
+  await loadScannerWorkers();
+}
+
 async function loadOIDCProviders() {
   const response = await fetch("/api/admin/oidc/providers");
   if (!response.ok) { return; }
@@ -205,4 +239,4 @@ document.querySelector("#invite-form").addEventListener("submit", async (event) 
   event.target.reset(); await loadInvitations();
 });
 
-loadUsers(); loadInvitations(); loadOIDCProviders(); loadPolicy(); loadScopePolicies(); loadAuditEvents(); loadCertificateStatus(); loadEndpointIdentity();
+loadUsers(); loadInvitations(); loadOIDCProviders(); loadPolicy(); loadScopePolicies(); loadAuditEvents(); loadCertificateStatus(); loadEndpointIdentity(); loadScannerWorkers();

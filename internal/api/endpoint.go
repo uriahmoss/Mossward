@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"mossward/internal/model"
 	"mossward/internal/store"
 )
 
@@ -13,6 +14,93 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/agent-enrollment-tokens", a.createAgentEnrollmentToken)
 	mux.HandleFunc("POST /api/agent/enroll", a.enrollAgent)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/revoke", a.revokeEndpoint)
+	mux.HandleFunc("GET /api/admin/scanner-workers", a.listScannerWorkers)
+	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
+	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
+	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listScannerWorkers(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	if !a.requireAgentIdentity(w) {
+		return
+	}
+	workers, err := a.agentIdentity.ScannerWorkers()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list scanner workers")
+		return
+	}
+	writeJSON(w, http.StatusOK, workers)
+}
+
+func (a *API) createScannerWorkerEnrollmentToken(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	if !a.requireAgentIdentity(w) {
+		return
+	}
+	var request model.WorkerEnrollmentToken
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	record, token, err := a.agentIdentity.CreateWorkerEnrollmentToken(request, actor.ID, requestIP(r))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{"enrollment": record, "token": token})
+}
+
+func (a *API) enrollScannerWorker(w http.ResponseWriter, r *http.Request) {
+	if !a.requireAgentIdentity(w) {
+		return
+	}
+	var request struct {
+		Token  string `json:"token"`
+		CSRPEM string `json:"csr_pem"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	result, err := a.agentIdentity.EnrollWorker(request.Token, request.CSRPEM, requestIP(r))
+	if errors.Is(err, store.ErrInvalidEnrollmentToken) {
+		writeError(w, http.StatusUnauthorized, "enrollment token is invalid or expired")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (a *API) revokeScannerWorker(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	if !a.requireAgentIdentity(w) {
+		return
+	}
+	var request struct {
+		Reason string `json:"reason"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := a.agentIdentity.RevokeScannerWorker(r.PathValue("id"), request.Reason, actor.ID, requestIP(r)); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "active scanner worker not found")
+			return
+		}
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) revokeEndpoint(w http.ResponseWriter, r *http.Request) {

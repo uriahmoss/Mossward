@@ -277,6 +277,7 @@ func TestIdentitySchemaMigrationCreatesSecurityTables(t *testing.T) {
 		"asset_services", "asset_service_events",
 		"asset_evidence",
 		"asset_aging_settings",
+		"scanner_worker_enrollment_tokens", "scanner_workers",
 	} {
 		var found string
 		err := repository.db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&found)

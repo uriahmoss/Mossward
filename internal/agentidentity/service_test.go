@@ -16,10 +16,55 @@ import (
 )
 
 type memoryEndpointStore struct {
-	token    model.AgentEnrollmentToken
-	endpoint model.Endpoint
-	consumed bool
-	lastSeen *time.Time
+	token          model.AgentEnrollmentToken
+	endpoint       model.Endpoint
+	consumed       bool
+	lastSeen       *time.Time
+	workerToken    model.WorkerEnrollmentToken
+	worker         model.ScannerWorker
+	workerConsumed bool
+	workerLastSeen *time.Time
+}
+
+func (s *memoryEndpointStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentToken, _ model.AuditEvent) error {
+	s.workerToken = token
+	return nil
+}
+func (s *memoryEndpointStore) WorkerEnrollmentToken(hash []byte, now time.Time) (model.WorkerEnrollmentToken, error) {
+	if s.workerConsumed || !bytes.Equal(hash, s.workerToken.TokenHash) || !now.Before(s.workerToken.ExpiresAt) {
+		return model.WorkerEnrollmentToken{}, store.ErrInvalidEnrollmentToken
+	}
+	return s.workerToken, nil
+}
+func (s *memoryEndpointStore) ConsumeWorkerEnrollmentToken(hash []byte, worker model.ScannerWorker, _ time.Time, _ model.AuditEvent) error {
+	if s.workerConsumed || !bytes.Equal(hash, s.workerToken.TokenHash) {
+		return store.ErrInvalidEnrollmentToken
+	}
+	s.workerConsumed, s.worker = true, worker
+	return nil
+}
+func (s *memoryEndpointStore) ListScannerWorkers() ([]model.ScannerWorker, error) {
+	return []model.ScannerWorker{s.worker}, nil
+}
+func (s *memoryEndpointStore) ScannerWorkerBySerial(serial string) (model.ScannerWorker, error) {
+	if serial != s.worker.CertificateSerial {
+		return model.ScannerWorker{}, store.ErrNotFound
+	}
+	return s.worker, nil
+}
+func (s *memoryEndpointStore) MarkScannerWorkerSeen(id string, seenAt time.Time) error {
+	if id != s.worker.ID {
+		return store.ErrNotFound
+	}
+	s.workerLastSeen = &seenAt
+	return nil
+}
+func (s *memoryEndpointStore) RevokeScannerWorker(id, reason string, revokedAt time.Time, _ model.AuditEvent) error {
+	if id != s.worker.ID || s.worker.Status != model.EndpointActive {
+		return store.ErrNotFound
+	}
+	s.worker.Status, s.worker.RevocationReason, s.worker.RevokedAt = model.EndpointRevoked, reason, &revokedAt
+	return nil
 }
 
 func (s *memoryEndpointStore) CreateAgentEnrollmentToken(token model.AgentEnrollmentToken, _ model.AuditEvent) error {
@@ -138,5 +183,44 @@ func TestEndpointCertificateRenewalAndRevocation(t *testing.T) {
 	items, err := service.Endpoints()
 	if err != nil || len(items) != 1 || items[0].Status != model.EndpointRevoked || len(items[0].Alerts) != 1 {
 		t.Fatalf("unexpected revoked inventory: %#v %v", items, err)
+	}
+}
+
+func TestScannerWorkerEnrollmentAndMTLSCheckIn(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	pki, err := LoadOrCreatePKI(t.TempDir(), []string{"agent.mossward.test"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository := &memoryEndpointStore{}
+	service := NewService(repository, pki)
+	service.now = func() time.Time { return now }
+	request := model.WorkerEnrollmentToken{Name: "Branch scanner", AllowedCIDRs: []string{"192.0.2.0/24"},
+		AllowedPorts: []int{443}, MaxConcurrent: 4, RateLimitPerSecond: 10}
+	_, token, err := service.CreateWorkerEnrollmentToken(request, "admin", "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.EnrollWorker(token, string(endpointCSR(t)), "127.0.0.1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Worker.Name != request.Name || result.Worker.MaxConcurrent != request.MaxConcurrent || result.CertificatePEM == "" {
+		t.Fatalf("unexpected scanner-worker enrollment: %#v", result)
+	}
+	leaf := decodeCertificate(t, []byte(result.CertificatePEM))
+	connection := tls.ConnectionState{PeerCertificates: []*x509.Certificate{leaf}}
+	if err := service.verifyConnection(connection); err != nil {
+		t.Fatalf("verify enrolled scanner worker: %v", err)
+	}
+	httpRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/check-in", nil)
+	httpRequest.TLS = &connection
+	response := httptest.NewRecorder()
+	service.Handler().ServeHTTP(response, httpRequest)
+	if response.Code != http.StatusOK || repository.workerLastSeen == nil {
+		t.Fatalf("scanner-worker check-in failed: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := service.EnrollWorker(token, string(endpointCSR(t)), "127.0.0.1"); !errors.Is(err, store.ErrInvalidEnrollmentToken) {
+		t.Fatalf("worker token replay was accepted: %v", err)
 	}
 }

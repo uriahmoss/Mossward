@@ -240,6 +240,11 @@ administrators while retaining completed checks and collected evidence.
 Reusable policies can also pace check dispatch smoothly from 1 to 1,000 checks
 per second, or use an unlimited rate, independently of concurrency controls.
 
+The distributed-scanner foundation supports short-lived, single-use worker
+enrollment, worker-generated private keys, SPIFFE-style mutually authenticated
+identity, explicit network and resource scopes, check-in inventory, and audited
+revocation. Distributed scan-job execution is not enabled yet.
+
 Durable asset evidence records retain the source type, source identity,
 originating record, collection time, address, and source scan when applicable.
 The same constrained provenance model accepts authenticated endpoint evidence

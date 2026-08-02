@@ -1,0 +1,175 @@
+package agentidentity
+
+import (
+	"crypto/rand"
+	"encoding/hex"
+	"errors"
+	"net/netip"
+	"sort"
+	"strings"
+	"time"
+
+	"mossward/internal/model"
+	"mossward/internal/store"
+)
+
+const (
+	maximumWorkerConcurrency = 256
+	maximumWorkerRate        = 1000
+)
+
+type WorkerStore interface {
+	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error
+	WorkerEnrollmentToken([]byte, time.Time) (model.WorkerEnrollmentToken, error)
+	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error
+	ListScannerWorkers() ([]model.ScannerWorker, error)
+	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
+	MarkScannerWorkerSeen(string, time.Time) error
+	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
+}
+
+type WorkerEnrollmentResult struct {
+	Worker         model.ScannerWorker `json:"worker"`
+	CertificatePEM string              `json:"certificate_pem"`
+	CAChainPEM     string              `json:"ca_chain_pem"`
+}
+
+func (s *Service) CreateWorkerEnrollmentToken(request model.WorkerEnrollmentToken, actorID, sourceIP string) (model.WorkerEnrollmentToken, string, error) {
+	if s.workerStore == nil {
+		return request, "", errors.New("scanner-worker identity storage is unavailable")
+	}
+	request.Name = strings.TrimSpace(request.Name)
+	if err := validateWorkerEnrollment(&request); err != nil {
+		return request, "", err
+	}
+	id, token, hash, err := newEnrollmentToken()
+	if err != nil {
+		return request, "", err
+	}
+	now := s.now()
+	request.ID, request.TokenHash, request.CreatedBy = id, hash, actorID
+	request.CreatedAt, request.ExpiresAt = now, now.Add(enrollmentTokenLifetime)
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "scanner_worker.enrollment_token.created",
+		Severity: model.AuditWarning, TargetType: "scanner_worker_enrollment", TargetID: id, SourceIP: sourceIP, Details: "{}"}
+	if err := s.workerStore.CreateWorkerEnrollmentToken(request, event); err != nil {
+		return request, "", err
+	}
+	return request, token, nil
+}
+
+func validateWorkerEnrollment(request *model.WorkerEnrollmentToken) error {
+	if request.Name == "" || len(request.Name) > endpointNameLimit {
+		return errors.New("worker name must be between 1 and 200 characters")
+	}
+	if len(request.AllowedCIDRs) == 0 || len(request.AllowedPorts) == 0 {
+		return errors.New("worker requires at least one allowed network and port")
+	}
+	cidrs := make([]string, 0, len(request.AllowedCIDRs))
+	seenCIDRs := map[string]bool{}
+	for _, raw := range request.AllowedCIDRs {
+		prefix, err := netip.ParsePrefix(strings.TrimSpace(raw))
+		if err != nil {
+			return errors.New("worker contains an invalid allowed network")
+		}
+		normalized := prefix.Masked().String()
+		if !seenCIDRs[normalized] {
+			cidrs = append(cidrs, normalized)
+			seenCIDRs[normalized] = true
+		}
+	}
+	request.AllowedCIDRs = cidrs
+	ports := append([]int(nil), request.AllowedPorts...)
+	sort.Ints(ports)
+	for _, port := range ports {
+		if port < 1 || port > 65535 {
+			return errors.New("worker contains an invalid allowed port")
+		}
+	}
+	request.AllowedPorts = deduplicateWorkerPorts(ports)
+	if request.MaxConcurrent < 1 || request.MaxConcurrent > maximumWorkerConcurrency {
+		return errors.New("worker concurrency must be between 1 and 256")
+	}
+	if request.RateLimitPerSecond < 0 || request.RateLimitPerSecond > maximumWorkerRate {
+		return errors.New("worker rate limit must be between 0 and 1000 checks per second")
+	}
+	return nil
+}
+
+func deduplicateWorkerPorts(ports []int) []int {
+	result := ports[:0]
+	for _, port := range ports {
+		if len(result) == 0 || result[len(result)-1] != port {
+			result = append(result, port)
+		}
+	}
+	return result
+}
+
+func (s *Service) EnrollWorker(token, csrPEM, sourceIP string) (WorkerEnrollmentResult, error) {
+	hash, err := enrollmentTokenHash(token)
+	if err != nil || s.workerStore == nil {
+		return WorkerEnrollmentResult{}, store.ErrInvalidEnrollmentToken
+	}
+	now := s.now()
+	enrollment, err := s.workerStore.WorkerEnrollmentToken(hash, now)
+	if err != nil {
+		return WorkerEnrollmentResult{}, store.ErrInvalidEnrollmentToken
+	}
+	idBytes := make([]byte, 16)
+	if _, err := rand.Read(idBytes); err != nil {
+		return WorkerEnrollmentResult{}, err
+	}
+	id := hex.EncodeToString(idBytes)
+	serial, certificatePEM, expiresAt, err := s.pki.IssueScannerWorker(id, enrollment.Name, []byte(csrPEM), now)
+	if err != nil {
+		return WorkerEnrollmentResult{}, err
+	}
+	worker := model.ScannerWorker{ID: id, Name: enrollment.Name, Status: model.EndpointActive,
+		CertificateSerial: serial, CertificatePEM: certificatePEM, AllowedCIDRs: enrollment.AllowedCIDRs,
+		AllowedPorts: enrollment.AllowedPorts, MaxConcurrent: enrollment.MaxConcurrent,
+		RateLimitPerSecond: enrollment.RateLimitPerSecond, EnrolledAt: now, ExpiresAt: expiresAt}
+	event := model.AuditEvent{OccurredAt: now, Action: "scanner_worker.enrolled", Severity: model.AuditInfo,
+		TargetType: "scanner_worker", TargetID: id, SourceIP: sourceIP, Details: "{}"}
+	if err := s.workerStore.ConsumeWorkerEnrollmentToken(hash, worker, now, event); err != nil {
+		return WorkerEnrollmentResult{}, err
+	}
+	return WorkerEnrollmentResult{Worker: worker, CertificatePEM: certificatePEM, CAChainPEM: s.pki.CAChainPEM()}, nil
+}
+
+func (s *Service) ScannerWorkers() ([]model.ScannerWorker, error) {
+	if s.workerStore == nil {
+		return nil, errors.New("scanner-worker identity storage is unavailable")
+	}
+	workers, err := s.workerStore.ListScannerWorkers()
+	if err != nil {
+		return nil, err
+	}
+	for index := range workers {
+		workers[index].Alerts = scannerWorkerAlerts(workers[index], s.now())
+	}
+	return workers, nil
+}
+
+func scannerWorkerAlerts(worker model.ScannerWorker, now time.Time) []model.EndpointAlert {
+	if worker.Status == model.EndpointRevoked {
+		return []model.EndpointAlert{{Code: "certificate_revoked", Severity: "error", Message: "Scanner-worker certificate is revoked"}}
+	}
+	if !now.Before(worker.ExpiresAt) {
+		return []model.EndpointAlert{{Code: "certificate_expired", Severity: "error", Message: "Scanner-worker certificate has expired"}}
+	}
+	if !now.Before(worker.ExpiresAt.Add(-certificateRenewBefore)) {
+		return []model.EndpointAlert{{Code: "certificate_expiring", Severity: "warning", Message: "Scanner-worker certificate expires within 30 days"}}
+	}
+	return []model.EndpointAlert{}
+}
+
+func (s *Service) RevokeScannerWorker(id, reason, actorID, sourceIP string) error {
+	reason = strings.TrimSpace(reason)
+	if reason == "" || len(reason) > revocationReasonLimit {
+		return errors.New("revocation reason must be between 1 and 500 characters")
+	}
+	now := s.now()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "scanner_worker.revoked",
+		Severity: model.AuditWarning, TargetType: "scanner_worker", TargetID: id, SourceIP: sourceIP, Details: "{}"}
+	return s.workerStore.RevokeScannerWorker(id, reason, now, event)
+}

@@ -100,5 +100,12 @@ type Repository interface {
 	MarkEndpointSeen(string, time.Time) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
+	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error
+	WorkerEnrollmentToken([]byte, time.Time) (model.WorkerEnrollmentToken, error)
+	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error
+	ListScannerWorkers() ([]model.ScannerWorker, error)
+	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
+	MarkScannerWorkerSeen(string, time.Time) error
+	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
 	Close() error
 }
