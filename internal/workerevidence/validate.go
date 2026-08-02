@@ -48,10 +48,11 @@ func Validate(batch model.WorkerEvidenceBatch, job model.WorkerJob, now time.Tim
 	if batch.CollectedAt.IsZero() || batch.CollectedAt.Before(job.IssuedAt.Add(-evidenceClockSkew)) || batch.CollectedAt.After(now.Add(evidenceClockSkew)) {
 		return errors.New("worker evidence collection time is invalid")
 	}
-	if len(batch.Observations)+len(batch.Findings) == 0 && !batch.Final {
+	itemCount := len(batch.Observations) + len(batch.Findings) + len(batch.Checkpoints)
+	if itemCount == 0 && !batch.Final {
 		return errors.New("non-final worker evidence batch is empty")
 	}
-	if len(batch.Observations)+len(batch.Findings) > maximumEvidenceItems {
+	if itemCount > maximumEvidenceItems {
 		return errors.New("worker evidence batch contains too many items")
 	}
 	encoded, err := json.Marshal(batch)
@@ -86,6 +87,19 @@ func validateEvidenceItems(batch model.WorkerEvidenceBatch, job model.WorkerJob)
 		if !validEvidenceItem(finding.ID, finding.Address, finding.Port, finding.ObservedAt, job.IssuedAt, batch.CollectedAt, targets, ports, identities) {
 			return errors.New("worker finding is duplicate, invalid, or outside its job")
 		}
+	}
+	checkpoints := map[netip.AddrPort]bool{}
+	for _, checkpoint := range batch.Checkpoints {
+		address, err := netip.ParseAddr(checkpoint.Address)
+		if err != nil || checkpoint.Port < 1 || checkpoint.Port > 65535 {
+			return errors.New("worker checkpoint is duplicate, invalid, or outside its job")
+		}
+		key := netip.AddrPortFrom(address, uint16(checkpoint.Port))
+		if checkpoints[key] || !targets[address] || !ports[checkpoint.Port] || checkpoint.CompletedAt.IsZero() ||
+			checkpoint.CompletedAt.Before(job.IssuedAt.Add(-evidenceClockSkew)) || checkpoint.CompletedAt.After(batch.CollectedAt.Add(evidenceClockSkew)) {
+			return errors.New("worker checkpoint is duplicate, invalid, or outside its job")
+		}
+		checkpoints[key] = true
 	}
 	return nil
 }

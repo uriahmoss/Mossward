@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -15,6 +16,15 @@ func (s *SQLiteStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultRece
 		return fmt.Errorf("begin scanner-worker job completion: %w", err)
 	}
 	defer tx.Rollback()
+	if receipt.Outcome == model.WorkerJobResultSucceeded {
+		complete, err := workerJobCheckpointsComplete(tx, receipt.JobID)
+		if err != nil {
+			return err
+		}
+		if !complete {
+			return ErrInvalidWorkerJobLease
+		}
+	}
 	var existing string
 	err = tx.QueryRow(`SELECT id FROM scanner_worker_jobs WHERE result_id=?`, receipt.ResultID).Scan(&existing)
 	if err == nil {
@@ -35,4 +45,27 @@ func (s *SQLiteStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultRece
 		return ErrInvalidWorkerJobLease
 	}
 	return tx.Commit()
+}
+
+func workerJobCheckpointsComplete(tx *sql.Tx, jobID string) (bool, error) {
+	var encoded string
+	if err := tx.QueryRow(`SELECT signed_envelope FROM scanner_worker_jobs WHERE id=?`, jobID).Scan(&encoded); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return false, fmt.Errorf("read scanner-worker job for checkpoint completion: %w", err)
+	}
+	var envelope model.SignedWorkerJob
+	if err := json.Unmarshal([]byte(encoded), &envelope); err != nil {
+		return false, fmt.Errorf("decode scanner-worker job for checkpoint completion: %w", err)
+	}
+	expected := len(envelope.Job.Targets) * len(envelope.Job.Ports)
+	if expected == 0 {
+		return false, nil
+	}
+	var completed int
+	if err := tx.QueryRow(`SELECT COUNT(*) FROM scanner_worker_job_checkpoints WHERE job_id=?`, jobID).Scan(&completed); err != nil {
+		return false, fmt.Errorf("count scanner-worker checkpoints: %w", err)
+	}
+	return completed == expected, nil
 }

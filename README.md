@@ -287,6 +287,13 @@ rejects tampering, duplicate IDs, sequence gaps, expired leases, and data after
 a final batch. A successful completion receipt requires final evidence, while
 failed or canceled jobs may close without observations.
 
+Distributed jobs persist signed completion checkpoints for every finished
+target-and-port pair, including checks that produce no positive observation.
+Checkpoint writes are idempotent across evidence batches and survive lease or
+process interruption. A worker job cannot report successful completion until
+the server has the complete expected checkpoint matrix. Automatic resume and
+reassignment based on these checkpoints remain separate roadmap slices.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

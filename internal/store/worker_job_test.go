@@ -41,7 +41,7 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := model.WorkerJob{SchemaVersion: 1, ID: "result-job", WorkerID: "worker", ScanID: "scan", IssuedAt: now,
-		ExpiresAt: now.Add(5 * time.Minute), Status: model.WorkerJobPending}
+		ExpiresAt: now.Add(5 * time.Minute), Targets: []model.Target{{Name: "host", Address: "192.0.2.10"}}, Ports: []int{443}, Status: model.WorkerJobPending}
 	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -57,7 +57,8 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 		t.Fatalf("successful scanner-worker result without final evidence was accepted: %v", err)
 	}
 	finalBatch := model.SignedWorkerEvidenceBatch{CertificateSerial: "serial", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
-		ID: "result-final", WorkerID: "worker", JobID: job.ID, ScanID: job.ScanID, Sequence: 1, Final: true, CollectedAt: now}}
+		ID: "result-final", WorkerID: "worker", JobID: job.ID, ScanID: job.ScanID, Sequence: 1, Final: true, CollectedAt: now,
+		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.10", Port: 443, CompletedAt: now}}}}
 	if err := repository.RecordScannerWorkerEvidenceBatch(finalBatch, now); err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +90,7 @@ func TestScannerWorkerEvidenceRequiresContiguousSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	job := model.WorkerJob{SchemaVersion: 1, ID: "evidence-job", WorkerID: "worker", ScanID: "scan", IssuedAt: now,
-		ExpiresAt: now.Add(5 * time.Minute), Status: model.WorkerJobPending}
+		ExpiresAt: now.Add(5 * time.Minute), Targets: []model.Target{{Name: "host", Address: "192.0.2.10"}}, Ports: []int{443}, Status: model.WorkerJobPending}
 	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -97,10 +98,15 @@ func TestScannerWorkerEvidenceRequiresContiguousSequence(t *testing.T) {
 		t.Fatal(err)
 	}
 	batch := model.WorkerEvidenceBatch{SchemaVersion: 1, ID: "batch-1", WorkerID: "worker", JobID: job.ID,
-		ScanID: job.ScanID, Sequence: 1, CollectedAt: now}
+		ScanID: job.ScanID, Sequence: 1, CollectedAt: now,
+		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.10", Port: 443, CompletedAt: now}}}
 	envelope := model.SignedWorkerEvidenceBatch{CertificateSerial: "serial", Batch: batch, Signature: "signature"}
 	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); err != nil {
 		t.Fatalf("first worker evidence batch was rejected: %v", err)
+	}
+	checkpoints, err := repository.ScannerWorkerJobCheckpoints(job.ID)
+	if err != nil || len(checkpoints) != 1 || checkpoints[0].Address != "192.0.2.10" || checkpoints[0].Port != 443 {
+		t.Fatalf("scanner-worker checkpoint did not persist: %#v %v", checkpoints, err)
 	}
 	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceReplay) {
 		t.Fatalf("worker evidence replay was accepted: %v", err)
@@ -112,6 +118,10 @@ func TestScannerWorkerEvidenceRequiresContiguousSequence(t *testing.T) {
 	envelope.Batch.ID, envelope.Batch.Sequence, envelope.Batch.Final = "batch-2", 2, true
 	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); err != nil {
 		t.Fatalf("final worker evidence batch was rejected: %v", err)
+	}
+	checkpoints, err = repository.ScannerWorkerJobCheckpoints(job.ID)
+	if err != nil || len(checkpoints) != 1 {
+		t.Fatalf("duplicate scanner-worker checkpoint was not idempotent: %#v %v", checkpoints, err)
 	}
 	envelope.Batch.ID, envelope.Batch.Sequence, envelope.Batch.Final = "batch-after-final", 3, false
 	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceSequence) {

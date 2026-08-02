@@ -363,7 +363,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Worker-side persistent replay ledger before job execution
 - [x] Lease-authenticated completion receipts and duplicate-result rejection
 - [x] Signed, sequenced evidence batches with collector provenance
-- [ ] Persistent target-and-port checkpoints for interrupted distributed jobs
+- [x] Persistent target-and-port checkpoints for interrupted distributed jobs
 - [ ] Encrypted bounded store-and-forward for temporary server outages
 - [ ] Load-aware assignment, site affinity, backpressure, and polling jitter
 - [ ] Safe failover and reassignment after explicit lease expiration

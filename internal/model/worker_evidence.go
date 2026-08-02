@@ -13,6 +13,13 @@ type WorkerEvidenceBatch struct {
 	CollectedAt   time.Time            `json:"collected_at"`
 	Observations  []ServiceObservation `json:"observations"`
 	Findings      []Finding            `json:"findings"`
+	Checkpoints   []WorkerCheckpoint   `json:"checkpoints"`
+}
+
+type WorkerCheckpoint struct {
+	Address     string    `json:"address"`
+	Port        int       `json:"port"`
+	CompletedAt time.Time `json:"completed_at"`
 }
 
 type SignedWorkerEvidenceBatch struct {

@@ -117,6 +117,13 @@ func (s *memoryEndpointStore) RecordScannerWorkerEvidenceBatch(envelope model.Si
 	s.workerEvidence = append(s.workerEvidence, envelope)
 	return nil
 }
+func (s *memoryEndpointStore) ScannerWorkerJobCheckpoints(string) ([]model.WorkerCheckpoint, error) {
+	checkpoints := []model.WorkerCheckpoint{}
+	for _, envelope := range s.workerEvidence {
+		checkpoints = append(checkpoints, envelope.Batch.Checkpoints...)
+	}
+	return checkpoints, nil
+}
 
 func (s *memoryEndpointStore) CreateAgentEnrollmentToken(token model.AgentEnrollmentToken, _ model.AuditEvent) error {
 	s.token = token
@@ -343,7 +350,8 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 		t.Fatalf("unexpected scanner-worker lease: %#v %v", lease, err)
 	}
 	evidenceBatch := model.WorkerEvidenceBatch{SchemaVersion: 1, ID: "batch", WorkerID: "worker", JobID: "job", ScanID: "scan",
-		Sequence: 1, Final: true, CollectedAt: now, Observations: []model.ServiceObservation{{ID: "observation", Address: "192.0.2.10", Port: 443, ObservedAt: now}}}
+		Sequence: 1, Final: true, CollectedAt: now, Observations: []model.ServiceObservation{{ID: "observation", Address: "192.0.2.10", Port: 443, ObservedAt: now}},
+		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.10", Port: 443, CompletedAt: now}}}
 	evidenceEnvelope, err := workerevidence.Sign(evidenceBatch, workerCertificate, workerKey)
 	if err != nil {
 		t.Fatal(err)

@@ -117,5 +117,6 @@ type Repository interface {
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
 	CompleteScannerWorkerJob(model.WorkerJobResultReceipt, []byte, time.Time) error
 	RecordScannerWorkerEvidenceBatch(model.SignedWorkerEvidenceBatch, time.Time) error
+	ScannerWorkerJobCheckpoints(string) ([]model.WorkerCheckpoint, error)
 	Close() error
 }

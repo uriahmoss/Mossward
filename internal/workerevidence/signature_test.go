@@ -51,6 +51,16 @@ func TestWorkerEvidenceRejectsOutOfScopeAndDuplicateItems(t *testing.T) {
 	if err := Validate(batch, job, now); err == nil {
 		t.Fatal("duplicate worker evidence identity was accepted")
 	}
+	batch, job = evidenceFixture(now)
+	batch.Checkpoints[0].Port = 22
+	if err := Validate(batch, job, now); err == nil {
+		t.Fatal("out-of-scope worker checkpoint was accepted")
+	}
+	batch, job = evidenceFixture(now)
+	batch.Checkpoints = append(batch.Checkpoints, batch.Checkpoints[0])
+	if err := Validate(batch, job, now); err == nil {
+		t.Fatal("duplicate worker checkpoint was accepted")
+	}
 }
 
 func evidenceFixture(now time.Time) (model.WorkerEvidenceBatch, model.WorkerJob) {
@@ -59,7 +69,8 @@ func evidenceFixture(now time.Time) (model.WorkerEvidenceBatch, model.WorkerJob)
 	batch := model.WorkerEvidenceBatch{SchemaVersion: 1, ID: "batch", WorkerID: job.WorkerID, JobID: job.ID,
 		ScanID: job.ScanID, Sequence: 1, CollectedAt: now,
 		Observations: []model.ServiceObservation{{ID: "observation", Target: "host", Address: "192.0.2.10", Port: 443,
-			Protocol: "https", Confidence: "high", Evidence: "reachable", ObservedAt: now}}}
+			Protocol: "https", Confidence: "high", Evidence: "reachable", ObservedAt: now}},
+		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.10", Port: 443, CompletedAt: now}}}
 	return batch, job
 }
 

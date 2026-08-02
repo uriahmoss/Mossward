@@ -35,7 +35,39 @@ func (s *SQLiteStore) RecordScannerWorkerEvidenceBatch(envelope model.SignedWork
 	if err != nil {
 		return fmt.Errorf("record scanner-worker evidence batch: %w", err)
 	}
+	if err := recordWorkerCheckpoints(tx, envelope.Batch); err != nil {
+		return err
+	}
 	return tx.Commit()
+}
+
+func recordWorkerCheckpoints(tx *sql.Tx, batch model.WorkerEvidenceBatch) error {
+	for _, checkpoint := range batch.Checkpoints {
+		_, err := tx.Exec(`INSERT INTO scanner_worker_job_checkpoints(job_id,worker_id,scan_id,address,port,completed_at,batch_id) VALUES(?,?,?,?,?,?,?) ON CONFLICT(job_id,address,port) DO NOTHING`, batch.JobID, batch.WorkerID, batch.ScanID, checkpoint.Address, checkpoint.Port, formatTime(checkpoint.CompletedAt), batch.ID)
+		if err != nil {
+			return fmt.Errorf("record scanner-worker checkpoint: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *SQLiteStore) ScannerWorkerJobCheckpoints(jobID string) ([]model.WorkerCheckpoint, error) {
+	rows, err := s.db.Query(`SELECT address,port,completed_at FROM scanner_worker_job_checkpoints WHERE job_id=? ORDER BY address,port`, jobID)
+	if err != nil {
+		return nil, fmt.Errorf("list scanner-worker checkpoints: %w", err)
+	}
+	defer rows.Close()
+	checkpoints := []model.WorkerCheckpoint{}
+	for rows.Next() {
+		var checkpoint model.WorkerCheckpoint
+		var completedAt string
+		if err := rows.Scan(&checkpoint.Address, &checkpoint.Port, &completedAt); err != nil {
+			return nil, fmt.Errorf("scan scanner-worker checkpoint: %w", err)
+		}
+		checkpoint.CompletedAt, _ = parseTime(completedAt)
+		checkpoints = append(checkpoints, checkpoint)
+	}
+	return checkpoints, rows.Err()
 }
 
 func validateEvidenceSequence(tx *sql.Tx, batch model.WorkerEvidenceBatch, receivedAt time.Time) error {
