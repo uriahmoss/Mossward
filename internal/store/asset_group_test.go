@@ -32,9 +32,13 @@ func TestReusablePolicyDeduplicatesOverlappingGroupTargets(t *testing.T) {
 	if err := repository.EnsureDefaultScopePolicy(scope); err != nil {
 		t.Fatal(err)
 	}
-	policy := model.ReusableScanPolicy{ID: "policy", Name: "Servers", ScopePolicyID: scope.ID, GroupIDs: []string{"group-1", "group-2"}, Ports: []int{443}, Enabled: true, CreatedAt: now, UpdatedAt: now}
+	policy := model.ReusableScanPolicy{ID: "policy", Name: "Servers", ScopePolicyID: scope.ID, GroupIDs: []string{"group-1", "group-2"}, Ports: []int{443}, Enabled: true, CreatedAt: now, UpdatedAt: now, RateLimitPerSecond: 10}
 	if err := repository.UpsertReusableScanPolicy(policy, event); err != nil {
 		t.Fatal(err)
+	}
+	storedPolicy, err := repository.ReusableScanPolicy(policy.ID)
+	if err != nil || storedPolicy.RateLimitPerSecond != policy.RateLimitPerSecond {
+		t.Fatalf("policy rate limit did not round-trip: %#v %v", storedPolicy, err)
 	}
 	targets, err := repository.ReusableScanPolicyTargets(policy.ID)
 	if err != nil || len(targets) != 1 || len(targets[0].GroupIDs) != 2 {

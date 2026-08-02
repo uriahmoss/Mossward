@@ -375,7 +375,7 @@ func (e *Engine) run(scan model.Scan) {
 		return
 	}
 	defer e.endScan(scan.ID, cancel)
-	slog.Info("Scan started", "scan_id", scan.ID, "checks", len(scan.Targets)*len(scan.Ports))
+	slog.Info("Scan started", "scan_id", scan.ID, "checks", len(scan.Targets)*len(scan.Ports), "rate_limit_per_second", scan.RateLimitPerSecond)
 	started := time.Now().UTC()
 	scan.Status = model.StatusRunning
 	scan.StartedAt = &started
@@ -505,6 +505,8 @@ func (e *Engine) inspect(ctx context.Context, item scanJob) probeResult {
 
 func (e *Engine) queueJobs(ctx context.Context, scan model.Scan, jobs chan<- scanJob) bool {
 	defer close(jobs)
+	pace, stopPace := scanPace(scan.RateLimitPerSecond)
+	defer stopPace()
 	completed := map[string]bool{}
 	for _, item := range scan.Checkpoints {
 		completed[fmt.Sprintf("%s:%d", item.Address, item.Port)] = true
@@ -524,6 +526,9 @@ func (e *Engine) queueJobs(ctx context.Context, scan model.Scan, jobs chan<- sca
 			if completed[fmt.Sprintf("%s:%d", target.Address, port)] {
 				continue
 			}
+			if waitForDispatch(ctx, pace, window) {
+				return window != nil && ctx.Err() == nil
+			}
 			select {
 			case jobs <- scanJob{target: target, port: port}:
 			case <-ctx.Done():
@@ -534,6 +539,28 @@ func (e *Engine) queueJobs(ctx context.Context, scan model.Scan, jobs chan<- sca
 		}
 	}
 	return false
+}
+
+func scanPace(checksPerSecond int) (<-chan time.Time, func()) {
+	if checksPerSecond <= 0 {
+		return nil, func() {}
+	}
+	ticker := time.NewTicker(time.Second / time.Duration(checksPerSecond))
+	return ticker.C, ticker.Stop
+}
+
+func waitForDispatch(ctx context.Context, pace, window <-chan time.Time) bool {
+	if pace == nil {
+		return false
+	}
+	select {
+	case <-pace:
+		return false
+	case <-ctx.Done():
+		return true
+	case <-window:
+		return true
+	}
 }
 
 func (e *Engine) finishCanceled(scan model.Scan) {

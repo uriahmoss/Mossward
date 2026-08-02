@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 20
+const schemaVersion = 21
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -228,6 +228,11 @@ func (s *SQLiteStore) migrate() error {
 			return err
 		}
 	}
+	if current < 21 {
+		if err := s.applyRateLimitMigration(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -389,11 +394,11 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 	}
 	if _, err := tx.Exec(`
 		INSERT INTO scans(id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at,
-			scope_policy_id, max_concurrent, scan_policy_id, active_seconds, window_end, long_alert_sent)
-		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			scope_policy_id, max_concurrent, scan_policy_id, active_seconds, window_end, long_alert_sent, rate_limit_per_second)
+		VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`, scan.ID, scan.Name, scan.Status, scan.Error, scan.TotalChecks, scan.DoneChecks,
 		formatTime(scan.CreatedAt), formatOptionalTime(scan.StartedAt), formatOptionalTime(scan.CompletedAt),
-		scan.ScopePolicyID, scan.MaxConcurrent, scan.ScanPolicyID, scan.ActiveSeconds, formatOptionalTime(scan.WindowEnd), scan.LongAlertSent); err != nil {
+		scan.ScopePolicyID, scan.MaxConcurrent, scan.ScanPolicyID, scan.ActiveSeconds, formatOptionalTime(scan.WindowEnd), scan.LongAlertSent, scan.RateLimitPerSecond); err != nil {
 		return fmt.Errorf("insert scan: %w", err)
 	}
 	for index, target := range scan.Targets {
@@ -471,11 +476,11 @@ func (s *SQLiteStore) Get(id string) (model.Scan, error) {
 	var started, completed, windowEnd sql.NullString
 	err := s.db.QueryRow(`
 		SELECT id, name, status, error, total_checks, done_checks, created_at, started_at, completed_at,
-			scope_policy_id, max_concurrent, scan_policy_id, active_seconds, window_end, long_alert_sent
+			scope_policy_id, max_concurrent, scan_policy_id, active_seconds, window_end, long_alert_sent, rate_limit_per_second
 		FROM scans WHERE id = ?
 	`, id).Scan(&scan.ID, &scan.Name, &status, &scan.Error, &scan.TotalChecks, &scan.DoneChecks,
 		&created, &started, &completed, &scan.ScopePolicyID, &scan.MaxConcurrent, &scan.ScanPolicyID,
-		&scan.ActiveSeconds, &windowEnd, &scan.LongAlertSent)
+		&scan.ActiveSeconds, &windowEnd, &scan.LongAlertSent, &scan.RateLimitPerSecond)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Scan{}, ErrNotFound
 	}

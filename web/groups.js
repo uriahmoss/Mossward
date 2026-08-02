@@ -94,7 +94,7 @@ function renderPolicies() {
     <article class="session-row">
       <div><strong>${escapeHTML(policy.name)}</strong><span>${
         policy.group_ids.map((id) => escapeHTML(groupNames[id] || id)).join(", ")
-      } · ${policy.ports.length} ports · ${policy.schedule_kind === "manual" ? "manual" : `${escapeHTML(policy.schedule_kind)} in ${escapeHTML(policy.schedule_timezone)}${policy.next_run_at ? ` · next ${new Date(policy.next_run_at).toLocaleString()}` : ""}`} · ${policy.enabled ? "enabled" : "disabled"}</span></div>
+      } · ${policy.ports.length} ports · ${policy.rate_limit_per_second ? `${policy.rate_limit_per_second} checks/sec` : "unlimited rate"} · ${policy.schedule_kind === "manual" ? "manual" : `${escapeHTML(policy.schedule_kind)} in ${escapeHTML(policy.schedule_timezone)}${policy.next_run_at ? ` · next ${new Date(policy.next_run_at).toLocaleString()}` : ""}`} · ${policy.enabled ? "enabled" : "disabled"}</span></div>
       <button class="edit-policy compact-button" data-id="${policy.id}">Edit</button>
       ${policy.enabled ? `<button class="run-policy compact-button" data-id="${policy.id}">Run now</button>` : ""}
     </article>`).join("") : "No reusable scan policies.";
@@ -183,6 +183,7 @@ document.querySelector("#scan-policy-form").addEventListener("submit", async (ev
       window_end: document.querySelector("#window-end").value,
       run_missed: document.querySelector("#run-missed").checked,
       long_run_alert_seconds: Math.round(Number(document.querySelector("#long-alert-hours").value || 0) * 3600),
+	  rate_limit_per_second: Number(document.querySelector("#rate-limit-per-second").value || 0),
     })},
   );
   if (!response.ok) {
@@ -218,11 +219,27 @@ function editPolicy(id) {
   document.querySelector("#window-end").value = policy.window_end;
   document.querySelector("#run-missed").checked = policy.run_missed;
   document.querySelector("#long-alert-hours").value = policy.long_run_alert_seconds / 3600;
+	setRateLimit(policy.rate_limit_per_second || 0);
   [...document.querySelector("#scan-policy-groups").options].forEach((option) => {
     option.selected = policy.group_ids.includes(option.value);
   });
   document.querySelector("#scan-policy-name").focus();
 }
+
+function setRateLimit(value) {
+  const normalized = Number(value || 0);
+  document.querySelector("#rate-limit-per-second").value = normalized;
+  const preset = [0, 2, 10, 50].includes(normalized) ? String(normalized) : "custom";
+  document.querySelector("#rate-limit-preset").value = preset;
+}
+
+document.querySelector("#rate-limit-preset").addEventListener("change", (event) => {
+  if (event.target.value !== "custom") setRateLimit(event.target.value);
+});
+
+document.querySelector("#rate-limit-per-second").addEventListener("input", (event) => {
+  setRateLimit(event.target.value);
+});
 
 async function runPolicy(id) {
   const response = await fetch(`/api/scan-policies/${encodeURIComponent(id)}/run`, {

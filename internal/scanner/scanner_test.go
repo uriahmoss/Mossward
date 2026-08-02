@@ -1,6 +1,7 @@
 package scanner
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -60,6 +61,32 @@ func TestCancelRejectsTerminalScan(t *testing.T) {
 	}
 	if err := engine.Cancel(scan.ID); !errors.Is(err, ErrScanNotCancelable) {
 		t.Fatalf("terminal scan cancellation error = %v", err)
+	}
+}
+
+func TestQueueJobsSmoothlyAppliesPolicyRateLimit(t *testing.T) {
+	engine := testEngine(t)
+	scan := model.Scan{ID: "paced", RateLimitPerSecond: 20,
+		Targets: []model.Target{{Name: "loopback", Address: "127.0.0.1"}}, Ports: []int{80, 81, 82}}
+	jobs := make(chan scanJob)
+	started := time.Now()
+	times := []time.Duration{}
+	done := make(chan bool, 1)
+	go func() { done <- engine.queueJobs(context.Background(), scan, jobs) }()
+	for range jobs {
+		times = append(times, time.Since(started))
+	}
+	if closedByWindow := <-done; closedByWindow {
+		t.Fatal("rate-limited queue unexpectedly closed for a maintenance window")
+	}
+	minimumSpacing := 35 * time.Millisecond
+	if len(times) != 3 || times[0] < minimumSpacing {
+		t.Fatalf("first check was dispatched as a burst: %v", times)
+	}
+	for index := 1; index < len(times); index++ {
+		if times[index]-times[index-1] < minimumSpacing {
+			t.Fatalf("checks were not smoothly paced: %v", times)
+		}
 	}
 }
 

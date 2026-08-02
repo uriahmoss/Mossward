@@ -245,7 +245,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Per-target group provenance retained on policy-launched scans
 - [x] Scheduled scans
 - [x] Scan cancellation with partial evidence retention and audit logging
-- [ ] Per-policy rate limits
+- [x] Smooth per-policy check-rate limits with friendly presets and advanced control
 - [x] Maintenance windows
 - [x] Per-policy IANA timezone and daylight-saving-aware execution
 - [x] Friendly one-time, daily, and weekly schedules with advanced cron
@@ -290,6 +290,22 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Endpoint-backed CVE correlation
 - [ ] Signed, rollback-capable updates
 
+### Endpoint extension framework
+
+- [ ] Versioned module interface and capability declarations
+- [ ] Signed manifests, package checksums, and trusted-publisher policy
+- [ ] Declarative inventory and configuration-check modules
+- [ ] Isolated low-privilege native-module host for OS-integrated detectors
+- [ ] Explicit filesystem, network, resource, and data-access permissions
+- [ ] Prevent modules from accessing endpoint identity private keys
+- [ ] Server-side module catalog and per-group or per-endpoint assignments
+- [ ] Compatibility checks across module, agent, and operating-system versions
+- [ ] Staged deployment rings, module health reporting, and rollback
+- [ ] Per-module resource limits, crash isolation, and emergency disable controls
+- [ ] Versioned developer SDK, validation tools, and testing harness
+- [ ] Prohibit arbitrary web-uploaded scripts, undeclared downloads, permission
+      expansion, self-propagation, and unreviewed shell execution
+
 ### Endpoint network telemetry
 
 - [ ] Optional privacy-bounded outbound connection metadata
@@ -327,6 +343,23 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Per-organization scope policies
 - [ ] PostgreSQL storage option
 - [ ] Separate control plane and scanner workers
+- [ ] Explicit worker enrollment, revocation, and mutually authenticated identity
+- [ ] Outbound-only worker polling with no required inbound listener
+- [ ] Worker health, version, certificate, capacity, and capability heartbeats
+- [ ] Administrator-assigned site, network, port, concurrency, and rate scopes
+- [ ] Signed, expiring, declarative jobs with unique identifiers
+- [ ] Worker-side scope validation, replay prevention, and duplicate-result rejection
+- [ ] Signed, sequenced evidence batches with collector provenance
+- [ ] Persistent target-and-port checkpoints for interrupted distributed jobs
+- [ ] Encrypted bounded store-and-forward for temporary server outages
+- [ ] Load-aware assignment, site affinity, backpressure, and polling jitter
+- [ ] Safe failover and reassignment after explicit lease expiration
+- [ ] Per-worker and global job-dispatch kill switches
+- [ ] Dead-letter quarantine for repeatedly failing jobs
+- [ ] Signed staged worker updates with deployment rings and rollback
+- [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers
+- [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,
+      peer-to-peer control, and automatic scope expansion
 - [ ] Append-only administrative audit stream
 - [ ] High-availability deployment guidance
 

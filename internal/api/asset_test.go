@@ -27,3 +27,11 @@ func TestOverlapRequiresExplicitAcknowledgement(t *testing.T) {
 		t.Fatal("non-overlap was blocked")
 	}
 }
+
+func TestReusablePolicyRejectsExcessiveRateLimit(t *testing.T) {
+	api := API{}
+	policy := model.ReusableScanPolicy{Name: "Too fast", GroupIDs: []string{"group"}, RateLimitPerSecond: maximumPolicyChecksPerSecond + 1}
+	if err := api.prepareReusableScanPolicy(&policy); err == nil || !strings.Contains(err.Error(), "rate limit") {
+		t.Fatalf("excessive rate limit was accepted: %v", err)
+	}
+}

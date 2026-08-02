@@ -28,6 +28,7 @@ type ReusableScanPolicy struct {
 	WindowEnd           string     `json:"window_end"`
 	RunMissed           bool       `json:"run_missed"`
 	LongRunAlertSeconds int64      `json:"long_run_alert_seconds"`
+	RateLimitPerSecond  int        `json:"rate_limit_per_second"`
 	NextRunAt           *time.Time `json:"next_run_at,omitempty"`
 	LastScheduledAt     *time.Time `json:"last_scheduled_at,omitempty"`
 }

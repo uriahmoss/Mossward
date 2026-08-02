@@ -71,27 +71,28 @@ func (t *Target) UnmarshalJSON(data []byte) error {
 }
 
 type Scan struct {
-	ID            string               `json:"id"`
-	Name          string               `json:"name"`
-	Targets       []Target             `json:"targets"`
-	Ports         []int                `json:"ports"`
-	Status        ScanStatus           `json:"status"`
-	Error         string               `json:"error,omitempty"`
-	Observations  []ServiceObservation `json:"observations"`
-	Findings      []Finding            `json:"findings"`
-	CVEMatches    []CVEMatch           `json:"cve_matches"`
-	TotalChecks   int                  `json:"total_checks"`
-	DoneChecks    int                  `json:"done_checks"`
-	CreatedAt     time.Time            `json:"created_at"`
-	StartedAt     *time.Time           `json:"started_at,omitempty"`
-	CompletedAt   *time.Time           `json:"completed_at,omitempty"`
-	ScopePolicyID string               `json:"scope_policy_id,omitempty"`
-	MaxConcurrent int                  `json:"max_concurrent,omitempty"`
-	ScanPolicyID  string               `json:"scan_policy_id,omitempty"`
-	Checkpoints   []ScanCheckpoint     `json:"-"`
-	ActiveSeconds int64                `json:"active_seconds"`
-	WindowEnd     *time.Time           `json:"window_end,omitempty"`
-	LongAlertSent bool                 `json:"long_alert_sent"`
+	ID                 string               `json:"id"`
+	Name               string               `json:"name"`
+	Targets            []Target             `json:"targets"`
+	Ports              []int                `json:"ports"`
+	Status             ScanStatus           `json:"status"`
+	Error              string               `json:"error,omitempty"`
+	Observations       []ServiceObservation `json:"observations"`
+	Findings           []Finding            `json:"findings"`
+	CVEMatches         []CVEMatch           `json:"cve_matches"`
+	TotalChecks        int                  `json:"total_checks"`
+	DoneChecks         int                  `json:"done_checks"`
+	CreatedAt          time.Time            `json:"created_at"`
+	StartedAt          *time.Time           `json:"started_at,omitempty"`
+	CompletedAt        *time.Time           `json:"completed_at,omitempty"`
+	ScopePolicyID      string               `json:"scope_policy_id,omitempty"`
+	MaxConcurrent      int                  `json:"max_concurrent,omitempty"`
+	ScanPolicyID       string               `json:"scan_policy_id,omitempty"`
+	Checkpoints        []ScanCheckpoint     `json:"-"`
+	ActiveSeconds      int64                `json:"active_seconds"`
+	WindowEnd          *time.Time           `json:"window_end,omitempty"`
+	LongAlertSent      bool                 `json:"long_alert_sent"`
+	RateLimitPerSecond int                  `json:"rate_limit_per_second"`
 }
 
 type ScanCheckpoint struct {

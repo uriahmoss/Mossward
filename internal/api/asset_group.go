@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
 	"strings"
@@ -11,6 +12,8 @@ import (
 	"mossward/internal/scanner"
 	"mossward/internal/scheduling"
 )
+
+const maximumPolicyChecksPerSecond = 1000
 
 const groupTextLimit = 500
 
@@ -191,6 +194,9 @@ func (a *API) prepareReusableScanPolicy(policy *model.ReusableScanPolicy) error 
 	if len(policy.GroupIDs) == 0 {
 		return errors.New("select at least one asset group")
 	}
+	if policy.RateLimitPerSecond < 0 || policy.RateLimitPerSecond > maximumPolicyChecksPerSecond {
+		return fmt.Errorf("rate limit must be between 0 and %d checks per second", maximumPolicyChecksPerSecond)
+	}
 	scope, err := a.store.ScopePolicy(policy.ScopePolicyID)
 	if err != nil || !scope.Enabled {
 		return errors.New("authorization scope policy is unavailable")
@@ -283,7 +289,7 @@ func (a *API) runReusableScanPolicy(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 500, "could not create scan")
 		return
 	}
-	scan := model.Scan{ID: scanID, Name: policy.Name, Targets: targets, Ports: ports, Status: model.StatusQueued, Observations: []model.ServiceObservation{}, Findings: []model.Finding{}, CVEMatches: []model.CVEMatch{}, TotalChecks: len(targets) * len(ports), CreatedAt: now, ScopePolicyID: scope.ID, MaxConcurrent: scope.MaxConcurrent, ScanPolicyID: policy.ID, WindowEnd: windowEnd}
+	scan := model.Scan{ID: scanID, Name: policy.Name, Targets: targets, Ports: ports, Status: model.StatusQueued, Observations: []model.ServiceObservation{}, Findings: []model.Finding{}, CVEMatches: []model.CVEMatch{}, TotalChecks: len(targets) * len(ports), CreatedAt: now, ScopePolicyID: scope.ID, MaxConcurrent: scope.MaxConcurrent, ScanPolicyID: policy.ID, WindowEnd: windowEnd, RateLimitPerSecond: policy.RateLimitPerSecond}
 	if err := a.scanner.Schedule(scan); errors.Is(err, scanner.ErrQueueFull) {
 		writeError(w, 503, err.Error())
 		return

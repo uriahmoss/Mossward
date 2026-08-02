@@ -89,7 +89,7 @@ func TestSQLiteStoreReconcilePausesScheduledScan(t *testing.T) {
 	repository := openTestStore(t)
 	started := time.Now().UTC().Add(-2 * time.Minute)
 	scan := model.Scan{ID: "scheduled-scan", Name: "scheduled", Status: model.StatusRunning,
-		CreatedAt: started, StartedAt: &started, ScanPolicyID: "policy"}
+		CreatedAt: started, StartedAt: &started, ScanPolicyID: "policy", RateLimitPerSecond: 7}
 	if err := repository.Save(scan); err != nil {
 		t.Fatal(err)
 	}
@@ -100,7 +100,7 @@ func TestSQLiteStoreReconcilePausesScheduledScan(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reconciled.Status != model.StatusPaused || reconciled.CompletedAt != nil || reconciled.StartedAt != nil || reconciled.ActiveSeconds < 100 {
+	if reconciled.Status != model.StatusPaused || reconciled.CompletedAt != nil || reconciled.StartedAt != nil || reconciled.ActiveSeconds < 100 || reconciled.RateLimitPerSecond != scan.RateLimitPerSecond {
 		t.Fatalf("scheduled scan was not resumably reconciled: %#v", reconciled)
 	}
 }

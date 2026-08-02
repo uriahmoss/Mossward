@@ -129,9 +129,9 @@ func (s *SQLiteStore) UpsertReusableScanPolicy(policy model.ReusableScanPolicy, 
 		return err
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec(`INSERT INTO reusable_scan_policies(id,name,scope_policy_id,ports,enabled,created_at,updated_at,schedule_kind,schedule_expression,schedule_timezone,window_start,window_end,run_missed,long_run_alert_seconds,next_run_at,last_scheduled_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-		ON CONFLICT(id) DO UPDATE SET name=excluded.name,scope_policy_id=excluded.scope_policy_id,ports=excluded.ports,enabled=excluded.enabled,updated_at=excluded.updated_at,schedule_kind=excluded.schedule_kind,schedule_expression=excluded.schedule_expression,schedule_timezone=excluded.schedule_timezone,window_start=excluded.window_start,window_end=excluded.window_end,run_missed=excluded.run_missed,long_run_alert_seconds=excluded.long_run_alert_seconds,next_run_at=excluded.next_run_at,last_scheduled_at=excluded.last_scheduled_at`,
-		policy.ID, policy.Name, policy.ScopePolicyID, ports, policy.Enabled, formatTime(policy.CreatedAt), formatTime(policy.UpdatedAt), policy.ScheduleKind, policy.ScheduleExpression, policy.ScheduleTimezone, policy.WindowStart, policy.WindowEnd, policy.RunMissed, policy.LongRunAlertSeconds, formatOptionalTime(policy.NextRunAt), formatOptionalTime(policy.LastScheduledAt))
+	_, err = tx.Exec(`INSERT INTO reusable_scan_policies(id,name,scope_policy_id,ports,enabled,created_at,updated_at,schedule_kind,schedule_expression,schedule_timezone,window_start,window_end,run_missed,long_run_alert_seconds,next_run_at,last_scheduled_at,rate_limit_per_second) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+		ON CONFLICT(id) DO UPDATE SET name=excluded.name,scope_policy_id=excluded.scope_policy_id,ports=excluded.ports,enabled=excluded.enabled,updated_at=excluded.updated_at,schedule_kind=excluded.schedule_kind,schedule_expression=excluded.schedule_expression,schedule_timezone=excluded.schedule_timezone,window_start=excluded.window_start,window_end=excluded.window_end,run_missed=excluded.run_missed,long_run_alert_seconds=excluded.long_run_alert_seconds,next_run_at=excluded.next_run_at,last_scheduled_at=excluded.last_scheduled_at,rate_limit_per_second=excluded.rate_limit_per_second`,
+		policy.ID, policy.Name, policy.ScopePolicyID, ports, policy.Enabled, formatTime(policy.CreatedAt), formatTime(policy.UpdatedAt), policy.ScheduleKind, policy.ScheduleExpression, policy.ScheduleTimezone, policy.WindowStart, policy.WindowEnd, policy.RunMissed, policy.LongRunAlertSeconds, formatOptionalTime(policy.NextRunAt), formatOptionalTime(policy.LastScheduledAt), policy.RateLimitPerSecond)
 	if err != nil {
 		return fmt.Errorf("save reusable scan policy: %w", err)
 	}
@@ -198,7 +198,7 @@ func scanReusablePolicy(row interface{ Scan(...any) error }) (model.ReusableScan
 	var nextRun, lastScheduled sql.NullString
 	err := row.Scan(&policy.ID, &policy.Name, &policy.ScopePolicyID, &ports, &policy.Enabled, &createdAt, &updatedAt,
 		&policy.ScheduleKind, &policy.ScheduleExpression, &policy.ScheduleTimezone, &policy.WindowStart, &policy.WindowEnd,
-		&policy.RunMissed, &policy.LongRunAlertSeconds, &nextRun, &lastScheduled)
+		&policy.RunMissed, &policy.LongRunAlertSeconds, &nextRun, &lastScheduled, &policy.RateLimitPerSecond)
 	if err != nil {
 		return policy, err
 	}
@@ -212,7 +212,7 @@ func scanReusablePolicy(row interface{ Scan(...any) error }) (model.ReusableScan
 	return policy, nil
 }
 
-const reusablePolicySelect = `SELECT id,name,scope_policy_id,ports,enabled,created_at,updated_at,schedule_kind,schedule_expression,schedule_timezone,window_start,window_end,run_missed,long_run_alert_seconds,next_run_at,last_scheduled_at FROM reusable_scan_policies`
+const reusablePolicySelect = `SELECT id,name,scope_policy_id,ports,enabled,created_at,updated_at,schedule_kind,schedule_expression,schedule_timezone,window_start,window_end,run_missed,long_run_alert_seconds,next_run_at,last_scheduled_at,rate_limit_per_second FROM reusable_scan_policies`
 
 func (s *SQLiteStore) UpdateReusablePolicySchedule(id string, nextRun, lastScheduled *time.Time, event model.AuditEvent) error {
 	tx, err := s.db.Begin()

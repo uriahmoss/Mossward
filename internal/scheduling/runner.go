@@ -174,7 +174,7 @@ func (r *Runner) buildScan(policy model.ReusableScanPolicy, windowEnd *time.Time
 	if err != nil {
 		return model.Scan{}, err
 	}
-	return model.Scan{ID: id, Name: policy.Name, Targets: targets, Ports: ports, Status: model.StatusQueued, Observations: []model.ServiceObservation{}, Findings: []model.Finding{}, CVEMatches: []model.CVEMatch{}, TotalChecks: len(targets) * len(ports), CreatedAt: now, ScopePolicyID: scope.ID, MaxConcurrent: scope.MaxConcurrent, ScanPolicyID: policy.ID, WindowEnd: windowEnd}, nil
+	return model.Scan{ID: id, Name: policy.Name, Targets: targets, Ports: ports, Status: model.StatusQueued, Observations: []model.ServiceObservation{}, Findings: []model.Finding{}, CVEMatches: []model.CVEMatch{}, TotalChecks: len(targets) * len(ports), CreatedAt: now, ScopePolicyID: scope.ID, MaxConcurrent: scope.MaxConcurrent, ScanPolicyID: policy.ID, WindowEnd: windowEnd, RateLimitPerSecond: policy.RateLimitPerSecond}, nil
 }
 func (r *Runner) advance(policy model.ReusableScanPolicy, now time.Time, reason string) {
 	last := now
