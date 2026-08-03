@@ -385,7 +385,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Load-aware assignment, site affinity, backpressure, and polling jitter
 - [x] Capped exponential worker retry with positive jitter and Retry-After support
 - [x] Configurable outbox-pressure states that pause new jobs without blocking delivery
-- [ ] Load-aware server-side worker selection
+- [x] Load-aware server-side worker selection
 - [ ] Administrator-assigned worker site affinity
 - [ ] Safe failover and reassignment after explicit lease expiration
 - [ ] Per-worker and global job-dispatch kill switches

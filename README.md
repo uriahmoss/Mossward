@@ -307,7 +307,14 @@ foundations. Positive cryptographic jitter spreads reconnect attempts without
 shortening a server-provided `Retry-After`, while bounded delays prevent
 uncontrolled wait growth. Workers can pause new-job polling at a configured
 queue threshold and continue forwarding already collected evidence. Server-side
-load-aware assignment and administrator-defined site affinity are still pending.
+administrator-defined site affinity is still pending.
+
+The control-plane dispatcher can now select a fresh, healthy worker whose
+assigned networks, ports, capabilities, rate limit, and available concurrency
+fit a job. Pending and leased jobs reserve capacity, selection and persistence
+are serialized to avoid local over-assignment, and deterministic load balancing
+prefers fewer active jobs before remaining capacity and heartbeat freshness.
+Administrator-defined site affinity remains pending.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides

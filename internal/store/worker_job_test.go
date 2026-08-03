@@ -32,6 +32,10 @@ func TestScannerWorkerJobIdentityIsImmutableAndReplayProtected(t *testing.T) {
 	if err != nil || loaded.Signature != envelope.Signature || loaded.Job.WorkerID != job.WorkerID {
 		t.Fatalf("signed worker job did not round-trip: %#v %v", loaded, err)
 	}
+	loads, err := repository.ScannerWorkerJobLoads(now)
+	if err != nil || loads[job.WorkerID].ActiveJobs != 1 || loads[job.WorkerID].ReservedConcurrency != job.MaxConcurrent {
+		t.Fatalf("unexpected scanner-worker job load: %#v %v", loads, err)
+	}
 }
 
 func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {

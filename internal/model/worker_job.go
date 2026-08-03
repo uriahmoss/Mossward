@@ -65,3 +65,8 @@ type WorkerJobResultReceipt struct {
 	CompletedAt time.Time              `json:"completed_at"`
 	AcceptedAt  time.Time              `json:"accepted_at"`
 }
+
+type WorkerJobLoad struct {
+	ActiveJobs          int `json:"active_jobs"`
+	ReservedConcurrency int `json:"reserved_concurrency"`
+}
