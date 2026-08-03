@@ -5,11 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
 	"os"
-	"path/filepath"
-	"runtime"
-	"strings"
 	"time"
 
 	"mossward/internal/model"
@@ -19,8 +15,7 @@ import (
 
 const (
 	replayLedgerSchemaVersion = 1
-	replayLedgerFileMode      = 0o600
-	replayLedgerDirectoryMode = 0o700
+	replayLedgerFileMode      = privateWorkerFileMode
 )
 
 var ErrJobReplay = errors.New("scanner-worker job was already claimed")
@@ -30,14 +25,14 @@ type ReplayLedger struct {
 }
 
 func OpenReplayLedger(path string) (*ReplayLedger, error) {
-	if err := prepareReplayLedgerPath(path); err != nil {
+	if err := preparePrivateWorkerPath(path, "replay ledger"); err != nil {
 		return nil, err
 	}
-	absolutePath, err := filepath.Abs(path)
+	dsn, err := workerSQLiteDSN(path)
 	if err != nil {
-		return nil, fmt.Errorf("resolve scanner-worker replay ledger path: %w", err)
+		return nil, err
 	}
-	database, err := sql.Open("sqlite", replayLedgerDSN(absolutePath))
+	database, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open scanner-worker replay ledger: %w", err)
 	}
@@ -52,40 +47,6 @@ func OpenReplayLedger(path string) (*ReplayLedger, error) {
 		return nil, fmt.Errorf("secure scanner-worker replay ledger: %w", err)
 	}
 	return ledger, nil
-}
-
-func prepareReplayLedgerPath(path string) error {
-	if strings.TrimSpace(path) == "" {
-		return errors.New("scanner-worker replay ledger path is required")
-	}
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, replayLedgerDirectoryMode); err != nil {
-		return fmt.Errorf("create scanner-worker replay ledger directory: %w", err)
-	}
-	if runtime.GOOS != "windows" {
-		directoryInfo, err := os.Stat(directory)
-		if err != nil {
-			return fmt.Errorf("inspect scanner-worker replay ledger directory: %w", err)
-		}
-		if directoryInfo.Mode().Perm()&0o077 != 0 {
-			return errors.New("scanner-worker replay ledger directory permissions are too broad")
-		}
-		if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o077 != 0 {
-			return errors.New("scanner-worker replay ledger permissions are too broad")
-		} else if err != nil && !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("inspect scanner-worker replay ledger: %w", err)
-		}
-	}
-	return nil
-}
-
-func replayLedgerDSN(path string) string {
-	slashPath := filepath.ToSlash(path)
-	if filepath.VolumeName(path) != "" && !strings.HasPrefix(slashPath, "/") {
-		slashPath = "/" + slashPath
-	}
-	return (&url.URL{Scheme: "file", Path: slashPath,
-		RawQuery: "_pragma=journal_mode(DELETE)&_pragma=busy_timeout(5000)&_pragma=synchronous(FULL)"}).String()
 }
 
 func (l *ReplayLedger) migrate() error {

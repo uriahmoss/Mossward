@@ -294,6 +294,21 @@ process interruption. A worker job cannot report successful completion until
 the server has the complete expected checkpoint matrix. Automatic resume and
 reassignment based on these checkpoints remain separate roadmap slices.
 
+The scanner-worker client foundation includes a bounded FIFO outbox for signed
+evidence and completion messages when the control plane is temporarily
+unavailable. Payloads are protected at rest with AES-256-GCM and a dedicated
+owner-only local key. The queue never evicts older evidence to admit new data,
+detects duplicate IDs and ciphertext tampering, and removes a message only
+after its delivery callback succeeds. Retry timing, jitter, and server-aware
+backpressure remain separate scheduling work.
+
+Worker scheduling now has configurable exponential retry and outbox-pressure
+foundations. Positive cryptographic jitter spreads reconnect attempts without
+shortening a server-provided `Retry-After`, while bounded delays prevent
+uncontrolled wait growth. Workers can pause new-job polling at a configured
+queue threshold and continue forwarding already collected evidence. Server-side
+load-aware assignment and administrator-defined site affinity are still pending.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,
