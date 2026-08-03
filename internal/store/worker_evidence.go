@@ -71,23 +71,25 @@ func (s *SQLiteStore) ScannerWorkerJobCheckpoints(jobID string) ([]model.WorkerC
 }
 
 func validateEvidenceSequence(tx *sql.Tx, batch model.WorkerEvidenceBatch, receivedAt time.Time) error {
-	var workerID, scanID, status, expiresAt string
-	if err := tx.QueryRow(`SELECT worker_id,scan_id,status,expires_at FROM scanner_worker_jobs WHERE id=?`, batch.JobID).Scan(&workerID, &scanID, &status, &expiresAt); err != nil {
+	var workerID, scanID, status, expiresAt, leaseExpiresAt string
+	if err := tx.QueryRow(`SELECT worker_id,scan_id,status,expires_at,COALESCE(lease_expires_at,'') FROM scanner_worker_jobs WHERE id=?`, batch.JobID).Scan(&workerID, &scanID, &status, &expiresAt, &leaseExpiresAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrInvalidWorkerJobLease
 		}
 		return fmt.Errorf("read scanner-worker evidence job: %w", err)
 	}
-	if workerID != batch.WorkerID || scanID != batch.ScanID || status != string(model.WorkerJobLeased) || expiresAt <= formatTime(receivedAt) {
+	if workerID != batch.WorkerID || scanID != batch.ScanID || status != string(model.WorkerJobLeased) ||
+		expiresAt <= formatTime(receivedAt) || leaseExpiresAt <= formatTime(receivedAt) {
 		return ErrInvalidWorkerJobLease
 	}
 	var lastSequence uint64
 	var final bool
-	err := tx.QueryRow(`SELECT sequence,final FROM scanner_worker_evidence_batches WHERE job_id=? ORDER BY sequence DESC LIMIT 1`, batch.JobID).Scan(&lastSequence, &final)
+	var lastWorkerID string
+	err := tx.QueryRow(`SELECT sequence,final,worker_id FROM scanner_worker_evidence_batches WHERE job_id=? ORDER BY sequence DESC LIMIT 1`, batch.JobID).Scan(&lastSequence, &final, &lastWorkerID)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("read scanner-worker evidence sequence: %w", err)
 	}
-	if final || batch.Sequence != lastSequence+1 {
+	if final && lastWorkerID == batch.WorkerID || batch.Sequence != lastSequence+1 {
 		return ErrWorkerEvidenceSequence
 	}
 	return nil

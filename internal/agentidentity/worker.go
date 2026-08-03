@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"net/netip"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -21,7 +22,10 @@ const (
 	workerHeartbeatTextLimit = 200
 	workerHealthMessageLimit = 500
 	workerOfflineAfter       = 5 * time.Minute
+	workerSiteIDLimit        = 64
 )
+
+var workerSiteIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type WorkerStore interface {
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error
@@ -71,6 +75,10 @@ func (s *Service) CreateWorkerEnrollmentToken(request model.WorkerEnrollmentToke
 func validateWorkerEnrollment(request *model.WorkerEnrollmentToken) error {
 	if request.Name == "" || len(request.Name) > endpointNameLimit {
 		return errors.New("worker name must be between 1 and 200 characters")
+	}
+	request.SiteID = strings.ToLower(strings.TrimSpace(request.SiteID))
+	if len(request.SiteID) > workerSiteIDLimit || (request.SiteID != "" && !workerSiteIDPattern.MatchString(request.SiteID)) {
+		return errors.New("worker site ID must contain lowercase letters, numbers, and single hyphens")
 	}
 	if len(request.AllowedCIDRs) == 0 || len(request.AllowedPorts) == 0 {
 		return errors.New("worker requires at least one allowed network and port")
@@ -139,6 +147,7 @@ func (s *Service) EnrollWorker(token, csrPEM, sourceIP string) (WorkerEnrollment
 		return WorkerEnrollmentResult{}, err
 	}
 	worker := model.ScannerWorker{ID: id, Name: enrollment.Name, Status: model.EndpointActive,
+		SiteID:            enrollment.SiteID,
 		CertificateSerial: serial, CertificatePEM: certificatePEM, AllowedCIDRs: enrollment.AllowedCIDRs,
 		AllowedPorts: enrollment.AllowedPorts, MaxConcurrent: enrollment.MaxConcurrent,
 		RateLimitPerSecond: enrollment.RateLimitPerSecond, EnrolledAt: now, ExpiresAt: expiresAt}

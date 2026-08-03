@@ -5,6 +5,7 @@ import "time"
 type ScannerWorker struct {
 	ID                   string             `json:"id"`
 	Name                 string             `json:"name"`
+	SiteID               string             `json:"site_id,omitempty"`
 	Status               EndpointStatus     `json:"status"`
 	CertificateSerial    string             `json:"certificate_serial"`
 	CertificatePEM       string             `json:"-"`
@@ -58,6 +59,7 @@ type WorkerHeartbeat struct {
 type WorkerEnrollmentToken struct {
 	ID                 string     `json:"id"`
 	Name               string     `json:"name"`
+	SiteID             string     `json:"site_id,omitempty"`
 	TokenHash          []byte     `json:"-"`
 	AllowedCIDRs       []string   `json:"allowed_cidrs"`
 	AllowedPorts       []int      `json:"allowed_ports"`

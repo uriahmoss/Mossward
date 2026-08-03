@@ -32,6 +32,10 @@ func (s *SQLiteStore) CreateScannerWorkerJob(envelope model.SignedWorkerJob, cre
 	if err != nil {
 		return fmt.Errorf("create scanner-worker job: %w", err)
 	}
+	_, err = tx.Exec(`INSERT INTO scanner_worker_job_assignments(job_id,attempt,worker_id,signed_envelope,assigned_at,reason) VALUES(?,1,?,?,?,'initial')`, envelope.Job.ID, envelope.Job.WorkerID, encoded, formatTime(createdAt))
+	if err != nil {
+		return fmt.Errorf("record initial scanner-worker job assignment: %w", err)
+	}
 	return tx.Commit()
 }
 

@@ -21,6 +21,7 @@ var ErrWorkerResultReplay = errors.New("scanner-worker result identifier was alr
 var ErrInvalidWorkerJobLease = errors.New("scanner-worker job lease is invalid")
 var ErrWorkerEvidenceReplay = errors.New("scanner-worker evidence batch was already accepted")
 var ErrWorkerEvidenceSequence = errors.New("scanner-worker evidence batch sequence is invalid")
+var ErrWorkerJobNotResumable = errors.New("scanner-worker job is not ready for safe reassignment")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -119,5 +120,7 @@ type Repository interface {
 	RecordScannerWorkerEvidenceBatch(model.SignedWorkerEvidenceBatch, time.Time) error
 	ScannerWorkerJobCheckpoints(string) ([]model.WorkerCheckpoint, error)
 	ScannerWorkerJobLoads(time.Time) (map[string]model.WorkerJobLoad, error)
+	ScannerWorkerJobResumeCandidate(string, time.Time) (model.WorkerJobResumeCandidate, error)
+	ReassignScannerWorkerJob(string, model.SignedWorkerJob, time.Time) error
 	Close() error
 }

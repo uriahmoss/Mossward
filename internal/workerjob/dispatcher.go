@@ -18,6 +18,8 @@ type DispatchStore interface {
 	ListScannerWorkers() ([]model.ScannerWorker, error)
 	ScannerWorkerJobLoads(time.Time) (map[string]model.WorkerJobLoad, error)
 	CreateScannerWorkerJob(model.SignedWorkerJob, time.Time) error
+	ScannerWorkerJobResumeCandidate(string, time.Time) (model.WorkerJobResumeCandidate, error)
+	ReassignScannerWorkerJob(string, model.SignedWorkerJob, time.Time) error
 }
 
 type Dispatcher struct {
@@ -63,6 +65,45 @@ func (d *Dispatcher) Dispatch(job model.WorkerJob) (model.SignedWorkerJob, error
 	return envelope, nil
 }
 
+func (d *Dispatcher) ReassignExpired(jobID string) (model.SignedWorkerJob, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	now := d.now()
+	candidate, err := d.store.ScannerWorkerJobResumeCandidate(jobID, now)
+	if err != nil {
+		return model.SignedWorkerJob{}, err
+	}
+	previousWorkerID := candidate.Envelope.Job.WorkerID
+	workers, err := d.store.ListScannerWorkers()
+	if err != nil {
+		return model.SignedWorkerJob{}, err
+	}
+	loads, err := d.store.ScannerWorkerJobLoads(now)
+	if err != nil {
+		return model.SignedWorkerJob{}, err
+	}
+	job := candidate.Envelope.Job
+	job.WorkerID = ""
+	job.Status = model.WorkerJobPending
+	job.Resume = &model.WorkerJobResume{PreviousWorkerID: previousWorkerID, Completed: candidate.Completed,
+		NextEvidenceSequence: candidate.NextEvidenceSequence}
+	worker, err := selectWorkerExcluding(job, workers, loads, now, previousWorkerID)
+	if err != nil {
+		return model.SignedWorkerJob{}, err
+	}
+	job.WorkerID = worker.ID
+	envelope, err := d.signer.Sign(job)
+	if err != nil {
+		return model.SignedWorkerJob{}, err
+	}
+	if err := d.store.ReassignScannerWorkerJob(previousWorkerID, envelope, now); err != nil {
+		return model.SignedWorkerJob{}, err
+	}
+	slog.Info("Scanner-worker job safely reassigned", "job_id", job.ID, "scan_id", job.ScanID,
+		"previous_worker_id", previousWorkerID, "worker_id", worker.ID, "completed_checkpoints", len(candidate.Completed))
+	return envelope, nil
+}
+
 type workerCandidate struct {
 	worker         model.ScannerWorker
 	remaining      int
@@ -71,8 +112,15 @@ type workerCandidate struct {
 }
 
 func selectWorker(job model.WorkerJob, workers []model.ScannerWorker, loads map[string]model.WorkerJobLoad, now time.Time) (model.ScannerWorker, error) {
+	return selectWorkerExcluding(job, workers, loads, now, "")
+}
+
+func selectWorkerExcluding(job model.WorkerJob, workers []model.ScannerWorker, loads map[string]model.WorkerJobLoad, now time.Time, excludedWorkerID string) (model.ScannerWorker, error) {
 	candidates := make([]workerCandidate, 0, len(workers))
 	for _, worker := range workers {
+		if worker.ID == excludedWorkerID {
+			continue
+		}
 		load := loads[worker.ID]
 		remaining := worker.AvailableConcurrency - load.ReservedConcurrency
 		if !workerAvailableForAssignment(worker, job, remaining, now) {
@@ -109,6 +157,9 @@ func workerAvailableForAssignment(worker model.ScannerWorker, job model.WorkerJo
 		return false
 	}
 	if now.Sub(*worker.LastSeenAt) > assignmentHeartbeatFreshness || !now.Before(worker.ExpiresAt) {
+		return false
+	}
+	if job.SiteID != "" && worker.SiteID != job.SiteID {
 		return false
 	}
 	return remaining >= job.MaxConcurrent

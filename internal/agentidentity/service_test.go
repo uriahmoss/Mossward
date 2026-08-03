@@ -257,7 +257,7 @@ func TestScannerWorkerEnrollmentAndMTLSCheckIn(t *testing.T) {
 	}
 	service := NewService(repository, pki, jobSigner)
 	service.now = func() time.Time { return now }
-	request := model.WorkerEnrollmentToken{Name: "Branch scanner", AllowedCIDRs: []string{"192.0.2.0/24"},
+	request := model.WorkerEnrollmentToken{Name: "Branch scanner", SiteID: "Chicago-HQ", AllowedCIDRs: []string{"192.0.2.0/24"},
 		AllowedPorts: []int{443}, MaxConcurrent: 4, RateLimitPerSecond: 10}
 	_, token, err := service.CreateWorkerEnrollmentToken(request, "admin", "127.0.0.1")
 	if err != nil {
@@ -267,7 +267,7 @@ func TestScannerWorkerEnrollmentAndMTLSCheckIn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Worker.Name != request.Name || result.Worker.MaxConcurrent != request.MaxConcurrent || result.CertificatePEM == "" || result.JobSigningPublicKey == "" {
+	if result.Worker.Name != request.Name || result.Worker.SiteID != "chicago-hq" || result.Worker.MaxConcurrent != request.MaxConcurrent || result.CertificatePEM == "" || result.JobSigningPublicKey == "" {
 		t.Fatalf("unexpected scanner-worker enrollment: %#v", result)
 	}
 	leaf := decodeCertificate(t, []byte(result.CertificatePEM))

@@ -16,17 +16,17 @@ func TestScannerWorkerEnrollmentTokenIsScopedAndSingleUse(t *testing.T) {
 		t.Fatal(err)
 	}
 	hash := sha256.Sum256([]byte("worker-token"))
-	token := model.WorkerEnrollmentToken{ID: "token", Name: "Branch", TokenHash: hash[:], AllowedCIDRs: []string{"192.0.2.0/24"},
+	token := model.WorkerEnrollmentToken{ID: "token", Name: "Branch", SiteID: "chicago-hq", TokenHash: hash[:], AllowedCIDRs: []string{"192.0.2.0/24"},
 		AllowedPorts: []int{22, 443}, MaxConcurrent: 4, RateLimitPerSecond: 10, CreatedBy: "admin", CreatedAt: now, ExpiresAt: now.Add(time.Minute)}
 	event := model.AuditEvent{OccurredAt: now, ActorID: "admin", Action: "test", Severity: model.AuditInfo, Details: "{}"}
 	if err := repository.CreateWorkerEnrollmentToken(token, event); err != nil {
 		t.Fatal(err)
 	}
 	loaded, err := repository.WorkerEnrollmentToken(hash[:], now)
-	if err != nil || len(loaded.AllowedCIDRs) != 1 || loaded.MaxConcurrent != token.MaxConcurrent {
+	if err != nil || loaded.SiteID != token.SiteID || len(loaded.AllowedCIDRs) != 1 || loaded.MaxConcurrent != token.MaxConcurrent {
 		t.Fatalf("worker enrollment scope missing: %#v %v", loaded, err)
 	}
-	worker := model.ScannerWorker{ID: "worker", Name: loaded.Name, Status: model.EndpointActive, CertificateSerial: "123",
+	worker := model.ScannerWorker{ID: "worker", Name: loaded.Name, SiteID: loaded.SiteID, Status: model.EndpointActive, CertificateSerial: "123",
 		CertificatePEM: "certificate", AllowedCIDRs: loaded.AllowedCIDRs, AllowedPorts: loaded.AllowedPorts,
 		MaxConcurrent: loaded.MaxConcurrent, RateLimitPerSecond: loaded.RateLimitPerSecond, EnrolledAt: now, ExpiresAt: now.Add(24 * time.Hour)}
 	if err := repository.ConsumeWorkerEnrollmentToken(hash[:], worker, now, event); err != nil {
@@ -36,7 +36,7 @@ func TestScannerWorkerEnrollmentTokenIsScopedAndSingleUse(t *testing.T) {
 		t.Fatalf("worker enrollment token replay accepted: %v", err)
 	}
 	workers, err := repository.ListScannerWorkers()
-	if err != nil || len(workers) != 1 || workers[0].AllowedPorts[1] != 443 {
+	if err != nil || len(workers) != 1 || workers[0].SiteID != token.SiteID || workers[0].AllowedPorts[1] != 443 {
 		t.Fatalf("scanner-worker inventory missing: %#v %v", workers, err)
 	}
 	heartbeat := model.WorkerHeartbeat{SchemaVersion: 1, SoftwareVersion: "1.0.0", OperatingSystem: "linux",

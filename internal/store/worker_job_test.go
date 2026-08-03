@@ -170,3 +170,59 @@ func TestScannerWorkerJobLeaseIsBoundAndReclaimedAfterExpiry(t *testing.T) {
 		t.Fatalf("unexpected reclaimed lease state: status=%s hash=%q attempts=%d", status, storedHash, attempts)
 	}
 }
+
+func TestScannerWorkerJobReassignmentPreservesCheckpointsAndRejectsOldWorker(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	for _, workerID := range []string{"old-worker", "new-worker"} {
+		if _, err := repository.db.Exec(`INSERT INTO scanner_workers(id,name,status,certificate_serial,certificate_pem,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at) VALUES(?,?, 'active',?,?, '["192.0.2.0/24"]','[443]',4,10,?,?)`, workerID, workerID, workerID+"-serial", "certificate", formatTime(now), formatTime(now.Add(time.Hour))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job := model.WorkerJob{SchemaVersion: 1, ID: "reassign-job", WorkerID: "old-worker", ScanID: "scan", IssuedAt: now,
+		ExpiresAt: now.Add(10 * time.Minute), Targets: []model.Target{{Name: "first", Address: "192.0.2.10"}, {Name: "second", Address: "192.0.2.11"}},
+		Ports: []int{443}, MaxConcurrent: 1, RequiredCapabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect}, Status: model.WorkerJobPending}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("old-worker", []byte("old-lease"), now, now.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	first := model.SignedWorkerEvidenceBatch{CertificateSerial: "old-worker-serial", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+		ID: "old-batch", WorkerID: "old-worker", JobID: job.ID, ScanID: job.ScanID, Sequence: 1, Final: true, CollectedAt: now,
+		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.10", Port: 443, CompletedAt: now}}}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(first, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.ScannerWorkerJobResumeCandidate(job.ID, now.Add(30*time.Second)); !errors.Is(err, ErrWorkerJobNotResumable) {
+		t.Fatalf("active lease was exposed for reassignment: %v", err)
+	}
+	resumeAt := now.Add(2 * time.Minute)
+	candidate, err := repository.ScannerWorkerJobResumeCandidate(job.ID, resumeAt)
+	if err != nil || candidate.NextEvidenceSequence != 2 || len(candidate.Completed) != 1 {
+		t.Fatalf("unexpected resume candidate: %#v %v", candidate, err)
+	}
+	job.WorkerID = "new-worker"
+	job.Resume = &model.WorkerJobResume{PreviousWorkerID: "old-worker", Completed: candidate.Completed, NextEvidenceSequence: 2}
+	if err := repository.ReassignScannerWorkerJob("old-worker", model.SignedWorkerJob{Job: job, Signature: "replacement"}, resumeAt); err != nil {
+		t.Fatal(err)
+	}
+	late := first
+	late.Batch.ID, late.Batch.Sequence = "late-old-batch", 2
+	if err := repository.RecordScannerWorkerEvidenceBatch(late, resumeAt); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("late evidence from old worker was accepted: %v", err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("new-worker", []byte("new-lease"), resumeAt, resumeAt.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	second := model.SignedWorkerEvidenceBatch{CertificateSerial: "new-worker-serial", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+		ID: "new-batch", WorkerID: "new-worker", JobID: job.ID, ScanID: job.ScanID, Sequence: 2, Final: true, CollectedAt: resumeAt,
+		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.11", Port: 443, CompletedAt: resumeAt}}}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(second, resumeAt); err != nil {
+		t.Fatalf("replacement worker could not continue evidence sequence: %v", err)
+	}
+	var assignments int
+	if err := repository.db.QueryRow(`SELECT COUNT(*) FROM scanner_worker_job_assignments WHERE job_id=?`, job.ID).Scan(&assignments); err != nil || assignments != 2 {
+		t.Fatalf("assignment history was not preserved: count=%d err=%v", assignments, err)
+	}
+}

@@ -263,14 +263,14 @@ Scanner workers can now poll the control plane over their existing outbound
 mTLS connection. The server leases only jobs explicitly assigned to the
 authenticated worker, stores only a hash of the short-lived lease credential,
 and safely makes abandoned jobs available again after lease expiration. Worker
-execution and evidence submission remain disabled until their dedicated slices
-are implemented and verified.
+scan execution remains disabled until its dedicated runtime slice is
+implemented and verified.
 
 The control plane also accepts bounded completion receipts for actively leased
 jobs. Each receipt is bound to the authenticated worker and one-time lease,
 records a unique result identifier and outcome, and atomically consumes the
 lease so duplicate submissions cannot change completed job state. Signed
-evidence transfer and worker-side scan execution are still disabled.
+Worker-side scan execution is still disabled.
 
 The future scanner-worker runtime now has an owner-only persistent replay
 ledger foundation. A worker must verify a job's Ed25519 signature, identity,
@@ -291,30 +291,35 @@ Distributed jobs persist signed completion checkpoints for every finished
 target-and-port pair, including checks that produce no positive observation.
 Checkpoint writes are idempotent across evidence batches and survive lease or
 process interruption. A worker job cannot report successful completion until
-the server has the complete expected checkpoint matrix. Automatic resume and
-reassignment based on these checkpoints remain separate roadmap slices.
+the server has the complete expected checkpoint matrix. After an explicit lease
+expiration, the dispatcher can re-sign the same job for a different eligible
+worker with a signed resume manifest containing completed checkpoints and the
+next evidence sequence. The reassignment is atomic, retains assignment history,
+and rejects late evidence from the previous worker.
 
 The scanner-worker client foundation includes a bounded FIFO outbox for signed
 evidence and completion messages when the control plane is temporarily
 unavailable. Payloads are protected at rest with AES-256-GCM and a dedicated
 owner-only local key. The queue never evicts older evidence to admit new data,
 detects duplicate IDs and ciphertext tampering, and removes a message only
-after its delivery callback succeeds. Retry timing, jitter, and server-aware
-backpressure remain separate scheduling work.
+after its delivery callback succeeds. Live worker-runtime integration remains
+separate scheduling work.
 
 Worker scheduling now has configurable exponential retry and outbox-pressure
 foundations. Positive cryptographic jitter spreads reconnect attempts without
 shortening a server-provided `Retry-After`, while bounded delays prevent
 uncontrolled wait growth. Workers can pause new-job polling at a configured
-queue threshold and continue forwarding already collected evidence. Server-side
-administrator-defined site affinity is still pending.
+queue threshold and continue forwarding already collected evidence.
 
 The control-plane dispatcher can now select a fresh, healthy worker whose
 assigned networks, ports, capabilities, rate limit, and available concurrency
 fit a job. Pending and leased jobs reserve capacity, selection and persistence
 are serialized to avoid local over-assignment, and deterministic load balancing
 prefers fewer active jobs before remaining capacity and heartbeat freshness.
-Administrator-defined site affinity remains pending.
+Administrators can assign an optional normalized site identifier when creating
+a worker enrollment token. Jobs without a site use normal load-aware selection;
+jobs with a site are dispatched only to workers carrying that exact identifier,
+with no implicit cross-site fallback.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides

@@ -4,10 +4,13 @@ import (
 	"crypto/ed25519"
 	"errors"
 	"net/netip"
+	"regexp"
 	"time"
 
 	"mossward/internal/model"
 )
+
+var jobSiteIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 func VerifyForWorker(envelope model.SignedWorkerJob, publicKey ed25519.PublicKey, worker model.ScannerWorker, now time.Time) error {
 	if err := Verify(envelope, publicKey); err != nil {
@@ -21,6 +24,7 @@ const (
 	maximumJobLifetime = 15 * time.Minute
 	jobClockSkew       = time.Minute
 	jobIdentityLimit   = 200
+	jobSiteIDLimit     = 64
 	maximumJobRate     = 1000
 )
 
@@ -30,6 +34,9 @@ func Validate(job model.WorkerJob, worker model.ScannerWorker, now time.Time) er
 	}
 	if !validJobIdentities(job) || job.WorkerID != worker.ID {
 		return errors.New("worker job identity is invalid")
+	}
+	if job.SiteID != "" && (job.SiteID != worker.SiteID || !jobSiteIDPattern.MatchString(job.SiteID)) {
+		return errors.New("worker job site affinity is invalid")
 	}
 	if job.IssuedAt.After(now.Add(jobClockSkew)) || !job.ExpiresAt.After(now) ||
 		!job.ExpiresAt.After(job.IssuedAt) || job.ExpiresAt.Sub(job.IssuedAt) > maximumJobLifetime {
@@ -47,12 +54,47 @@ func Validate(job model.WorkerJob, worker model.ScannerWorker, now time.Time) er
 	if err := validateJobPorts(job.Ports, worker.AllowedPorts); err != nil {
 		return err
 	}
+	if err := validateJobResume(job); err != nil {
+		return err
+	}
 	return validateJobCapabilities(job.RequiredCapabilities, worker.Capabilities)
+}
+
+func validateJobResume(job model.WorkerJob) error {
+	if job.Resume == nil {
+		return nil
+	}
+	if job.Resume.PreviousWorkerID == "" || job.Resume.PreviousWorkerID == job.WorkerID || job.Resume.NextEvidenceSequence == 0 {
+		return errors.New("worker job resume identity or sequence is invalid")
+	}
+	targets := map[netip.Addr]bool{}
+	for _, target := range job.Targets {
+		address, _ := netip.ParseAddr(target.Address)
+		targets[address] = true
+	}
+	ports := map[int]bool{}
+	for _, port := range job.Ports {
+		ports[port] = true
+	}
+	seen := map[netip.AddrPort]bool{}
+	for _, checkpoint := range job.Resume.Completed {
+		address, err := netip.ParseAddr(checkpoint.Address)
+		if err != nil || !targets[address] || !ports[checkpoint.Port] || checkpoint.CompletedAt.IsZero() {
+			return errors.New("worker job resume checkpoint is invalid or outside its scope")
+		}
+		key := netip.AddrPortFrom(address, uint16(checkpoint.Port))
+		if seen[key] {
+			return errors.New("worker job resume checkpoint is duplicated")
+		}
+		seen[key] = true
+	}
+	return nil
 }
 
 func validJobIdentities(job model.WorkerJob) bool {
 	return job.ID != "" && len(job.ID) <= jobIdentityLimit && job.WorkerID != "" &&
-		len(job.WorkerID) <= jobIdentityLimit && job.ScanID != "" && len(job.ScanID) <= jobIdentityLimit
+		len(job.WorkerID) <= jobIdentityLimit && job.ScanID != "" && len(job.ScanID) <= jobIdentityLimit &&
+		len(job.SiteID) <= jobSiteIDLimit
 }
 
 func validateJobResources(job model.WorkerJob, worker model.ScannerWorker) error {

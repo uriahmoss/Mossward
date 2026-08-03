@@ -222,16 +222,36 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Per-endpoint mutually authenticated TLS identity and check-in
 - [x] Endpoint certificate renewal, revocation, inventory, and alerts
 
-## Roadmap — not yet started
+## Ordered implementation roadmap
 
-### Scan interface and results UX
+Work through this sequence unless a review explicitly changes product priority.
+Items within a slice are ordered by dependency. Completed prerequisites remain
+checked so the next unfinished dependency is unambiguous.
 
-- [ ] Split the scan experience into focused linked pages or sections instead
-      of one oversized page
-- [ ] Add scan-result sorting and configurable filters
-- [ ] Redesign the overall scan-results presentation for clearer hierarchy,
-      readability, and responsive use
-- [ ] Add findings-specific sorting and filtering controls
+### 1. Distributed scanner-worker MVP — active
+
+- [x] Explicit worker enrollment, revocation, and mutually authenticated identity
+- [x] Worker health, version, certificate, capacity, and capability heartbeats
+- [x] Administrator-assigned network, port, concurrency, rate, and site scopes
+- [x] Signed, expiring, declarative jobs with worker-side scope validation
+- [x] Outbound-only mTLS polling with worker-bound atomic leases
+- [x] Persistent replay protection, completion receipts, and duplicate rejection
+- [x] Signed evidence batches and persistent target-and-port checkpoints
+- [x] Encrypted bounded outbox, backpressure, retry jitter, and load-aware dispatch
+- [x] Safe checkpoint-based failover after explicit lease expiration
+- [ ] Per-worker and global job-dispatch kill switches
+- [ ] Constrained worker scan runtime using only declared targets, ports, and checks
+- [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
+- [ ] Dead-letter quarantine for repeatedly failing jobs
+- [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers
+
+Do failover before enabling execution so interrupted work cannot silently duplicate
+checks. Add kill switches before the runtime so administrators can stop dispatch
+without disabling identity or evidence delivery. Dead-letter handling and fleet
+visibility follow the working end-to-end path because they depend on real runtime
+failure and health states.
+
+## Delivered foundations referenced by the roadmap
 
 ### Asset inventory
 
@@ -262,10 +282,21 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Persistent target-and-port checkpoints across maintenance windows
 - [x] Configurable cumulative active-runtime email alerts
 - [x] Administrator-managed TLS SMTP settings with encrypted credentials
-- [ ] Distributed scanner workers
-- [ ] Signed and scope-limited worker jobs
+- [ ] Launch scan policies through the distributed-worker runtime
+- [x] Signed and scope-limited worker jobs
 
-### Declarative checks
+## Remaining ordered roadmap
+
+### 2. Scan interface and results UX
+
+- [ ] Split the scan experience into focused linked pages or sections instead
+      of one oversized page
+- [ ] Add scan-result sorting and configurable filters
+- [ ] Redesign the overall scan-results presentation for clearer hierarchy,
+      readability, and responsive use
+- [ ] Add findings-specific sorting and filtering controls
+
+### 3. Declarative checks
 
 - [ ] Signed declarative check format
 - [ ] HTTP configuration checks
@@ -274,7 +305,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Check-version lifecycle and trust policy
 - [ ] Separate policy for any future intrusive checks
 
-### Reporting and evidence lifecycle
+### 4. Reporting and evidence lifecycle
 
 - [ ] Finding status and assignment
 - [ ] Exceptions and accepted-risk records
@@ -284,22 +315,17 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] CSV and structured-data exports
 - [ ] Printable reports
 
-### Endpoint agent
+### 5. Endpoint-agent core
 
-- [ ] Signed Linux endpoint agent
-- [ ] Signed Windows endpoint agent
 - [ ] Explicit enrollment and revocation
 - [ ] Mutually authenticated device identity
 - [ ] Outbound-only agent communication
 - [ ] Read-only collector allowlist
-- [ ] Operating-system and patch inventory
-- [ ] Installed package and application inventory
-- [ ] Listening service and owning-process inventory
-- [ ] Local security-posture evidence
-- [ ] Endpoint-backed CVE correlation
+- [ ] Signed Linux endpoint agent
+- [ ] Signed Windows endpoint agent
 - [ ] Signed, rollback-capable updates
 
-### Endpoint extension framework
+### 6. Endpoint extension framework
 
 - [ ] Versioned module interface and capability declarations
 - [ ] Signed manifests, package checksums, and trusted-publisher policy
@@ -315,7 +341,15 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Prohibit arbitrary web-uploaded scripts, undeclared downloads, permission
       expansion, self-propagation, and unreviewed shell execution
 
-### Endpoint network telemetry
+### 7. Endpoint inventory and CVE evidence
+
+- [ ] Operating-system and patch inventory
+- [ ] Installed package and application inventory
+- [ ] Listening service and owning-process inventory
+- [ ] Local security-posture evidence
+- [ ] Endpoint-backed CVE correlation
+
+### 8. Endpoint network telemetry
 
 - [ ] Optional privacy-bounded outbound connection metadata
 - [ ] Process-to-destination correlation
@@ -325,7 +359,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Configurable application and destination exclusions
 - [ ] No payload capture or TLS interception by default
 
-### Endpoint coverage and integrity
+### 9. Endpoint coverage and integrity
 
 - [ ] Opt-in missing-agent coverage detection
 - [ ] Authorized-segment discovery policies
@@ -335,7 +369,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Signed and sequence-numbered tamper events
 - [ ] Maintenance-window suppression with retained audit history
 
-### Optional endpoint relay
+### 10. Optional endpoint relay
 
 - [ ] Explicit relay promotion and revocation
 - [ ] Approved downstream agent allowlist
@@ -346,7 +380,7 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Approved failover behavior
 - [ ] Direct-versus-relayed path visibility
 
-### Relay communication windows and delayed telemetry
+### 11. Relay communication windows and delayed telemetry
 
 - [ ] Administrator-defined relay upload windows with per-policy timezone
 - [ ] Outbound relay-to-server connections only during approved windows
@@ -363,35 +397,13 @@ implemented and verified; an unchecked item is not yet complete.
 - [ ] Exclude Windows Event Logs, syslog, and general application-log collection
       unless Mossward's product scope is explicitly expanded later
 
-### Multi-user and distributed scale
+### 12. Later platform scale and worker operations
 
 - [ ] Organization and tenant boundaries
 - [ ] Per-organization scope policies
 - [ ] PostgreSQL storage option
-- [ ] Separate control plane and scanner workers
-- [x] Explicit worker enrollment, revocation, and mutually authenticated identity
-- [ ] Outbound-only worker polling with no required inbound listener
-- [x] Server-side mTLS job polling with worker-bound atomic leases
-- [x] Hashed one-time lease credentials and safe expired-lease reclamation
-- [x] Worker health, version, certificate, capacity, and capability heartbeats
-- [x] Administrator-assigned network, port, concurrency, and rate scopes
-- [x] Signed, expiring, declarative jobs with unique identifiers
-- [x] Worker-job scope validation and server-side job-identifier replay prevention
-- [x] Worker-side persistent replay ledger before job execution
-- [x] Lease-authenticated completion receipts and duplicate-result rejection
-- [x] Signed, sequenced evidence batches with collector provenance
-- [x] Persistent target-and-port checkpoints for interrupted distributed jobs
-- [x] Encrypted bounded store-and-forward for temporary server outages
-- [ ] Load-aware assignment, site affinity, backpressure, and polling jitter
-- [x] Capped exponential worker retry with positive jitter and Retry-After support
-- [x] Configurable outbox-pressure states that pause new jobs without blocking delivery
-- [x] Load-aware server-side worker selection
-- [ ] Administrator-assigned worker site affinity
-- [ ] Safe failover and reassignment after explicit lease expiration
-- [ ] Per-worker and global job-dispatch kill switches
-- [ ] Dead-letter quarantine for repeatedly failing jobs
+- [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
-- [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,
       peer-to-peer control, and automatic scope expansion
 - [ ] Append-only administrative audit stream

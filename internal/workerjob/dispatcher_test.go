@@ -10,9 +10,25 @@ import (
 )
 
 type dispatchMemoryStore struct {
-	mu      sync.Mutex
-	workers []model.ScannerWorker
-	jobs    []model.SignedWorkerJob
+	mu        sync.Mutex
+	workers   []model.ScannerWorker
+	jobs      []model.SignedWorkerJob
+	candidate model.WorkerJobResumeCandidate
+}
+
+func (s *dispatchMemoryStore) ScannerWorkerJobResumeCandidate(string, time.Time) (model.WorkerJobResumeCandidate, error) {
+	if s.candidate.Envelope.Job.ID == "" {
+		return model.WorkerJobResumeCandidate{}, errors.New("no resume candidate")
+	}
+	return s.candidate, nil
+}
+
+func (s *dispatchMemoryStore) ReassignScannerWorkerJob(previousWorkerID string, envelope model.SignedWorkerJob, _ time.Time) error {
+	if s.candidate.Envelope.Job.WorkerID != previousWorkerID {
+		return errors.New("previous worker changed")
+	}
+	s.jobs = append(s.jobs, envelope)
+	return nil
 }
 
 func (s *dispatchMemoryStore) ListScannerWorkers() ([]model.ScannerWorker, error) {
@@ -89,6 +105,68 @@ func TestDispatcherRejectsWorkersWithoutCapacityOrScope(t *testing.T) {
 	dispatcher.now = func() time.Time { return now }
 	if _, err := dispatcher.Dispatch(dispatchJobFixture("job", now)); !errors.Is(err, ErrNoEligibleWorker) {
 		t.Fatalf("job exceeded available worker capacity: %v", err)
+	}
+}
+
+func TestDispatcherEnforcesStrictSiteAffinity(t *testing.T) {
+	now := time.Now().UTC()
+	local := workerSelectionFixture("local", now)
+	local.SiteID = "chicago-hq"
+	remote := workerSelectionFixture("remote", now)
+	remote.SiteID = "dallas-dc"
+	repository := &dispatchMemoryStore{workers: []model.ScannerWorker{local, remote}}
+	signer, err := LoadOrCreateSigner(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, err := NewDispatcher(repository, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher.now = func() time.Time { return now }
+	job := dispatchJobFixture("site-job", now)
+	job.SiteID = "dallas-dc"
+	envelope, err := dispatcher.Dispatch(job)
+	if err != nil || envelope.Job.WorkerID != remote.ID || envelope.Job.SiteID != remote.SiteID {
+		t.Fatalf("strict site affinity selected the wrong worker: %#v %v", envelope, err)
+	}
+	job = dispatchJobFixture("missing-site-job", now)
+	job.SiteID = "new-york"
+	if _, err := dispatcher.Dispatch(job); !errors.Is(err, ErrNoEligibleWorker) {
+		t.Fatalf("site affinity silently fell back across sites: %v", err)
+	}
+}
+
+func TestDispatcherSafelyReassignsExpiredJobToDifferentWorker(t *testing.T) {
+	now := time.Now().UTC().Truncate(time.Second)
+	previous := workerSelectionFixture("previous", now)
+	replacement := workerSelectionFixture("replacement", now)
+	job := dispatchJobFixture("resume-job", now.Add(-2*time.Minute))
+	job.WorkerID = previous.ID
+	checkpoint := model.WorkerCheckpoint{Address: job.Targets[0].Address, Port: job.Ports[0], CompletedAt: now.Add(-time.Minute)}
+	job.Targets = append(job.Targets, model.Target{Name: "remaining", Address: "192.0.2.11"})
+	repository := &dispatchMemoryStore{workers: []model.ScannerWorker{previous, replacement}, candidate: model.WorkerJobResumeCandidate{
+		Envelope: model.SignedWorkerJob{Job: job}, Completed: []model.WorkerCheckpoint{checkpoint}, NextEvidenceSequence: 3}}
+	signer, err := LoadOrCreateSigner(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, err := NewDispatcher(repository, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher.now = func() time.Time { return now }
+	envelope, err := dispatcher.ReassignExpired(job.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resume := envelope.Job.Resume
+	if envelope.Job.WorkerID != replacement.ID || resume == nil || resume.PreviousWorkerID != previous.ID ||
+		resume.NextEvidenceSequence != 3 || len(resume.Completed) != 1 {
+		t.Fatalf("unexpected reassigned job: %#v", envelope.Job)
+	}
+	if err := VerifyForWorker(envelope, signer.PublicKey(), replacement, now); err != nil {
+		t.Fatalf("reassigned job signature or resume scope is invalid: %v", err)
 	}
 }
 

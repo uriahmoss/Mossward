@@ -24,7 +24,7 @@ func (s *SQLiteStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentTo
 		return fmt.Errorf("begin scanner-worker enrollment token: %w", err)
 	}
 	defer tx.Rollback()
-	_, err = tx.Exec(`INSERT INTO scanner_worker_enrollment_tokens(id,name,token_hash,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, token.ID, token.Name, token.TokenHash, cidrs, ports, token.MaxConcurrent, token.RateLimitPerSecond, token.CreatedBy, formatTime(token.CreatedAt), formatTime(token.ExpiresAt))
+	_, err = tx.Exec(`INSERT INTO scanner_worker_enrollment_tokens(id,name,site_id,token_hash,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,created_by,created_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, token.ID, token.Name, token.SiteID, token.TokenHash, cidrs, ports, token.MaxConcurrent, token.RateLimitPerSecond, token.CreatedBy, formatTime(token.CreatedAt), formatTime(token.ExpiresAt))
 	if err != nil {
 		return fmt.Errorf("create scanner-worker enrollment token: %w", err)
 	}
@@ -37,7 +37,7 @@ func (s *SQLiteStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentTo
 func (s *SQLiteStore) WorkerEnrollmentToken(hash []byte, now time.Time) (model.WorkerEnrollmentToken, error) {
 	var token model.WorkerEnrollmentToken
 	var cidrs, ports, createdAt, expiresAt string
-	err := s.db.QueryRow(`SELECT id,name,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,created_by,created_at,expires_at FROM scanner_worker_enrollment_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?`, hash, formatTime(now)).Scan(&token.ID, &token.Name, &cidrs, &ports, &token.MaxConcurrent, &token.RateLimitPerSecond, &token.CreatedBy, &createdAt, &expiresAt)
+	err := s.db.QueryRow(`SELECT id,name,site_id,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,created_by,created_at,expires_at FROM scanner_worker_enrollment_tokens WHERE token_hash=? AND used_at IS NULL AND expires_at>?`, hash, formatTime(now)).Scan(&token.ID, &token.Name, &token.SiteID, &cidrs, &ports, &token.MaxConcurrent, &token.RateLimitPerSecond, &token.CreatedBy, &createdAt, &expiresAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return token, ErrInvalidEnrollmentToken
 	}
@@ -77,7 +77,7 @@ func (s *SQLiteStore) ConsumeWorkerEnrollmentToken(hash []byte, worker model.Sca
 	if changed != 1 {
 		return ErrInvalidEnrollmentToken
 	}
-	_, err = tx.Exec(`INSERT INTO scanner_workers(id,name,status,certificate_serial,certificate_pem,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)`, worker.ID, worker.Name, worker.Status, worker.CertificateSerial, worker.CertificatePEM, cidrs, ports, worker.MaxConcurrent, worker.RateLimitPerSecond, formatTime(worker.EnrolledAt), formatTime(worker.ExpiresAt))
+	_, err = tx.Exec(`INSERT INTO scanner_workers(id,name,site_id,status,certificate_serial,certificate_pem,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, worker.ID, worker.Name, worker.SiteID, worker.Status, worker.CertificateSerial, worker.CertificatePEM, cidrs, ports, worker.MaxConcurrent, worker.RateLimitPerSecond, formatTime(worker.EnrolledAt), formatTime(worker.ExpiresAt))
 	if err != nil {
 		return fmt.Errorf("create scanner-worker identity: %w", err)
 	}
@@ -112,7 +112,7 @@ func (s *SQLiteStore) ScannerWorkerBySerial(serial string) (model.ScannerWorker,
 	return worker, err
 }
 
-const workerSelect = `SELECT id,name,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,software_version,operating_system,architecture,capabilities,available_concurrency,health,health_message FROM scanner_workers`
+const workerSelect = `SELECT id,name,site_id,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,software_version,operating_system,architecture,capabilities,available_concurrency,health,health_message FROM scanner_workers`
 
 func (s *SQLiteStore) RecordScannerWorkerHeartbeat(id string, heartbeat model.WorkerHeartbeat, seenAt time.Time) error {
 	capabilities, err := json.Marshal(heartbeat.Capabilities)
@@ -156,7 +156,7 @@ func scanWorker(row workerScanner) (model.ScannerWorker, error) {
 	var worker model.ScannerWorker
 	var cidrs, ports, enrolledAt, expiresAt, capabilities string
 	var lastSeen, revokedAt sql.NullString
-	if err := row.Scan(&worker.ID, &worker.Name, &worker.Status, &worker.CertificateSerial, &cidrs, &ports,
+	if err := row.Scan(&worker.ID, &worker.Name, &worker.SiteID, &worker.Status, &worker.CertificateSerial, &cidrs, &ports,
 		&worker.MaxConcurrent, &worker.RateLimitPerSecond, &enrolledAt, &expiresAt, &lastSeen, &revokedAt,
 		&worker.RevocationReason, &worker.SoftwareVersion, &worker.OperatingSystem, &worker.Architecture,
 		&capabilities, &worker.AvailableConcurrency, &worker.Health, &worker.HealthMessage); err != nil {

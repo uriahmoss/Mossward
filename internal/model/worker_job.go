@@ -17,6 +17,7 @@ type WorkerJob struct {
 	ID                   string             `json:"id"`
 	WorkerID             string             `json:"worker_id"`
 	ScanID               string             `json:"scan_id"`
+	SiteID               string             `json:"site_id,omitempty"`
 	IssuedAt             time.Time          `json:"issued_at"`
 	ExpiresAt            time.Time          `json:"expires_at"`
 	Targets              []Target           `json:"targets"`
@@ -24,7 +25,20 @@ type WorkerJob struct {
 	MaxConcurrent        int                `json:"max_concurrent"`
 	RateLimitPerSecond   int                `json:"rate_limit_per_second"`
 	RequiredCapabilities []WorkerCapability `json:"required_capabilities"`
+	Resume               *WorkerJobResume   `json:"resume,omitempty"`
 	Status               WorkerJobStatus    `json:"status"`
+}
+
+type WorkerJobResume struct {
+	PreviousWorkerID     string             `json:"previous_worker_id"`
+	Completed            []WorkerCheckpoint `json:"completed"`
+	NextEvidenceSequence uint64             `json:"next_evidence_sequence"`
+}
+
+type WorkerJobResumeCandidate struct {
+	Envelope             SignedWorkerJob
+	Completed            []WorkerCheckpoint
+	NextEvidenceSequence uint64
 }
 
 type SignedWorkerJob struct {
