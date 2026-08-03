@@ -40,6 +40,7 @@ type WorkerStore interface {
 	SetScannerWorkerDispatch(bool, model.AuditEvent) error
 	SetScannerWorkerDispatchForWorker(string, bool, model.AuditEvent) error
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
+	RenewScannerWorkerJobLease(string, string, []byte, time.Time, time.Time) (time.Time, error)
 	CompleteScannerWorkerJob(model.WorkerJobResultReceipt, []byte, time.Time) error
 	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
 	RecordScannerWorkerEvidenceBatch(model.SignedWorkerEvidenceBatch, time.Time) error

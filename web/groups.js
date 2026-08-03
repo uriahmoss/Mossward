@@ -94,7 +94,7 @@ function renderPolicies() {
     <article class="session-row">
       <div><strong>${escapeHTML(policy.name)}</strong><span>${
         policy.group_ids.map((id) => escapeHTML(groupNames[id] || id)).join(", ")
-      } · ${policy.ports.length} ports · ${policy.rate_limit_per_second ? `${policy.rate_limit_per_second} checks/sec` : "unlimited rate"} · ${policy.schedule_kind === "manual" ? "manual" : `${escapeHTML(policy.schedule_kind)} in ${escapeHTML(policy.schedule_timezone)}${policy.next_run_at ? ` · next ${new Date(policy.next_run_at).toLocaleString()}` : ""}`} · ${policy.enabled ? "enabled" : "disabled"}</span></div>
+      } · ${escapeHTML(policy.execution_mode || "local")}${policy.worker_site_id ? ` at ${escapeHTML(policy.worker_site_id)}` : ""} · ${policy.ports.length} ports · ${policy.rate_limit_per_second ? `${policy.rate_limit_per_second} checks/sec` : "unlimited rate"} · ${policy.schedule_kind === "manual" ? "manual" : `${escapeHTML(policy.schedule_kind)} in ${escapeHTML(policy.schedule_timezone)}${policy.next_run_at ? ` · next ${new Date(policy.next_run_at).toLocaleString()}` : ""}`} · ${policy.enabled ? "enabled" : "disabled"}</span></div>
       <button class="edit-policy compact-button" data-id="${policy.id}">Edit</button>
       ${policy.enabled ? `<button class="run-policy compact-button" data-id="${policy.id}">Run now</button>` : ""}
     </article>`).join("") : "No reusable scan policies.";
@@ -174,6 +174,8 @@ document.querySelector("#scan-policy-form").addEventListener("submit", async (ev
     {method: id ? "PUT" : "POST", headers: csrfHeaders, body: JSON.stringify({
       name: document.querySelector("#scan-policy-name").value,
       scope_policy_id: document.querySelector("#scan-policy-scope").value,
+      execution_mode: document.querySelector("#scan-policy-execution").value,
+      worker_site_id: document.querySelector("#scan-policy-worker-site").value.trim(),
       group_ids: selectedGroups, ports,
       enabled: document.querySelector("#scan-policy-enabled").checked,
       schedule_kind: document.querySelector("#schedule-kind").value,
@@ -210,6 +212,8 @@ function editPolicy(id) {
   document.querySelector("#scan-policy-id").value = policy.id;
   document.querySelector("#scan-policy-name").value = policy.name;
   document.querySelector("#scan-policy-scope").value = policy.scope_policy_id;
+	document.querySelector("#scan-policy-execution").value = policy.execution_mode || "local";
+	document.querySelector("#scan-policy-worker-site").value = policy.worker_site_id || "";
   document.querySelector("#scan-policy-ports").value = policy.ports.join(",");
   document.querySelector("#scan-policy-enabled").checked = policy.enabled;
   document.querySelector("#schedule-kind").value = policy.schedule_kind;

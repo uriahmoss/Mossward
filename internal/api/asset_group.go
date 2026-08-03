@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +17,8 @@ import (
 const maximumPolicyChecksPerSecond = 1000
 
 const groupTextLimit = 500
+
+var scanPolicyWorkerSitePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 func (a *API) registerAssetGroupRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/asset-groups", a.listAssetGroups)
@@ -196,6 +199,19 @@ func (a *API) prepareReusableScanPolicy(policy *model.ReusableScanPolicy) error 
 	}
 	if policy.RateLimitPerSecond < 0 || policy.RateLimitPerSecond > maximumPolicyChecksPerSecond {
 		return fmt.Errorf("rate limit must be between 0 and %d checks per second", maximumPolicyChecksPerSecond)
+	}
+	if policy.ExecutionMode == "" {
+		policy.ExecutionMode = model.ScanExecutionLocal
+	}
+	policy.WorkerSiteID = strings.ToLower(strings.TrimSpace(policy.WorkerSiteID))
+	if policy.ExecutionMode != model.ScanExecutionLocal && policy.ExecutionMode != model.ScanExecutionRemote {
+		return errors.New("scan policy execution must be local or remote")
+	}
+	if policy.ExecutionMode == model.ScanExecutionLocal {
+		policy.WorkerSiteID = ""
+	}
+	if len(policy.WorkerSiteID) > 64 || (policy.WorkerSiteID != "" && !scanPolicyWorkerSitePattern.MatchString(policy.WorkerSiteID)) {
+		return errors.New("remote worker site must contain lowercase letters, numbers, and single hyphens")
 	}
 	scope, err := a.store.ScopePolicy(policy.ScopePolicyID)
 	if err != nil || !scope.Enabled {

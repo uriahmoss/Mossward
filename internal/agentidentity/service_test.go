@@ -107,6 +107,12 @@ func (s *memoryEndpointStore) LeaseScannerWorkerJob(id string, hash []byte, _, _
 	s.leasedWorkerJob = job
 	return job, nil
 }
+func (s *memoryEndpointStore) RenewScannerWorkerJobLease(id, jobID string, hash []byte, _, expiresAt time.Time) (time.Time, error) {
+	if id != s.worker.ID || jobID != s.leasedWorkerJob.Job.ID || !bytes.Equal(hash, s.workerLeaseHash) {
+		return time.Time{}, store.ErrInvalidWorkerJobLease
+	}
+	return expiresAt, nil
+}
 func (s *memoryEndpointStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultReceipt, hash []byte, _ time.Time) error {
 	if receipt.WorkerID != s.worker.ID || len(hash) != sha256.Size {
 		return store.ErrInvalidWorkerJobLease
@@ -363,6 +369,14 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 	var lease model.WorkerJobLease
 	if err := json.NewDecoder(response.Body).Decode(&lease); err != nil || lease.Envelope.Job.ID != "job" || lease.Token == "" || !lease.ExpiresAt.Equal(now.Add(workerJobLeaseLifetime)) {
 		t.Fatalf("unexpected scanner-worker lease: %#v %v", lease, err)
+	}
+	renewalBody, _ := json.Marshal(model.WorkerJobLeaseRenewal{JobID: "job", LeaseToken: lease.Token})
+	renewalRequest := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/lease/renew", bytes.NewReader(renewalBody))
+	renewalRequest.TLS = request.TLS
+	renewalResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(renewalResponse, renewalRequest)
+	if renewalResponse.Code != http.StatusOK {
+		t.Fatalf("scanner-worker lease was not renewed: %d %s", renewalResponse.Code, renewalResponse.Body.String())
 	}
 	evidenceBatch := model.WorkerEvidenceBatch{SchemaVersion: 1, ID: "batch", WorkerID: "worker", JobID: "job", ScanID: "scan",
 		Sequence: 1, Final: true, CollectedAt: now, Observations: []model.ServiceObservation{{ID: "observation", Address: "192.0.2.10", Port: 443, ObservedAt: now}},

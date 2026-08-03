@@ -54,6 +54,12 @@ type WorkerJobLease struct {
 	ExpiresAt time.Time       `json:"lease_expires_at"`
 }
 
+type WorkerJobLeaseRenewal struct {
+	JobID      string    `json:"job_id"`
+	LeaseToken string    `json:"lease_token"`
+	ExpiresAt  time.Time `json:"lease_expires_at,omitempty"`
+}
+
 type WorkerJobResultOutcome string
 
 const (

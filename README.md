@@ -329,6 +329,17 @@ worker without revoking its identity. These audited controls block both new job
 assignment and pending-job leases while allowing heartbeats, active-job evidence,
 and completion delivery to continue.
 
+Reusable scan policies explicitly select local server execution or remote worker
+execution; existing and newly created policies default to local. Remote policies
+may require a worker site and never fall back to local execution. Once assigned,
+a job remains bound to that worker unless the server issues a signed reassignment
+after its lease has expired.
+
+An active worker can renew its authenticated lease before expiration using the
+same one-time lease credential and mTLS identity. Renewals never move the job,
+never revive an expired lease, never shorten an existing lease, and cannot extend
+past the expiration carried in the signed job.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

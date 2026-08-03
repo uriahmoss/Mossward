@@ -35,3 +35,16 @@ func TestReusablePolicyRejectsExcessiveRateLimit(t *testing.T) {
 		t.Fatalf("excessive rate limit was accepted: %v", err)
 	}
 }
+
+func TestReusablePolicyRejectsUnknownExecutionModeAndInvalidSite(t *testing.T) {
+	api := API{}
+	policy := model.ReusableScanPolicy{Name: "Remote", GroupIDs: []string{"group"}, ExecutionMode: "automatic"}
+	if err := api.prepareReusableScanPolicy(&policy); err == nil || !strings.Contains(err.Error(), "local or remote") {
+		t.Fatalf("unknown execution mode was accepted: %v", err)
+	}
+	policy.ExecutionMode = model.ScanExecutionRemote
+	policy.WorkerSiteID = "Invalid Site"
+	if err := api.prepareReusableScanPolicy(&policy); err == nil || !strings.Contains(err.Error(), "remote worker site") {
+		t.Fatalf("invalid worker site was accepted: %v", err)
+	}
+}
