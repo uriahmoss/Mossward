@@ -38,6 +38,7 @@ type memoryEndpointStore struct {
 	workerResult    model.WorkerJobResultReceipt
 	leasedWorkerJob model.SignedWorkerJob
 	workerEvidence  []model.SignedWorkerEvidenceBatch
+	dispatchEnabled bool
 }
 
 func (s *memoryEndpointStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentToken, _ model.AuditEvent) error {
@@ -80,6 +81,20 @@ func (s *memoryEndpointStore) RevokeScannerWorker(id, reason string, revokedAt t
 		return store.ErrNotFound
 	}
 	s.worker.Status, s.worker.RevocationReason, s.worker.RevokedAt = model.EndpointRevoked, reason, &revokedAt
+	return nil
+}
+func (s *memoryEndpointStore) ScannerWorkerDispatchSettings() (model.WorkerDispatchSettings, error) {
+	return model.WorkerDispatchSettings{Enabled: s.dispatchEnabled}, nil
+}
+func (s *memoryEndpointStore) SetScannerWorkerDispatch(enabled bool, _ model.AuditEvent) error {
+	s.dispatchEnabled = enabled
+	return nil
+}
+func (s *memoryEndpointStore) SetScannerWorkerDispatchForWorker(id string, enabled bool, _ model.AuditEvent) error {
+	if id != s.worker.ID {
+		return store.ErrNotFound
+	}
+	s.worker.DispatchEnabled = enabled
 	return nil
 }
 func (s *memoryEndpointStore) LeaseScannerWorkerJob(id string, hash []byte, _, _ time.Time) (model.SignedWorkerJob, error) {

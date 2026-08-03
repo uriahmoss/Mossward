@@ -321,6 +321,11 @@ a worker enrollment token. Jobs without a site use normal load-aware selection;
 jobs with a site are dispatched only to workers carrying that exact identifier,
 with no implicit cross-site fallback.
 
+Administrators can pause all new scanner-worker dispatch or pause an individual
+worker without revoking its identity. These audited controls block both new job
+assignment and pending-job leases while allowing heartbeats, active-job evidence,
+and completion delivery to continue.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

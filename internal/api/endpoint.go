@@ -15,9 +15,61 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/agent/enroll", a.enrollAgent)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/revoke", a.revokeEndpoint)
 	mux.HandleFunc("GET /api/admin/scanner-workers", a.listScannerWorkers)
+	mux.HandleFunc("GET /api/admin/scanner-worker-dispatch", a.scannerWorkerDispatchSettings)
+	mux.HandleFunc("PUT /api/admin/scanner-worker-dispatch", a.updateScannerWorkerDispatch)
+	mux.HandleFunc("PUT /api/admin/scanner-workers/{id}/dispatch", a.updateScannerWorkerDispatchForWorker)
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) scannerWorkerDispatchSettings(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	settings, err := a.agentIdentity.WorkerDispatchSettings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read scanner-worker dispatch settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (a *API) updateScannerWorkerDispatch(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	var request model.WorkerDispatchSettings
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	if err := a.agentIdentity.SetWorkerDispatch(request.Enabled, actor.ID, requestIP(r)); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not update scanner-worker dispatch")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (a *API) updateScannerWorkerDispatchForWorker(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	var request model.WorkerDispatchSettings
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	err := a.agentIdentity.SetWorkerDispatchForWorker(r.PathValue("id"), request.Enabled, actor.ID, requestIP(r))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "active scanner worker not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not update scanner-worker dispatch")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) listScannerWorkers(w http.ResponseWriter, r *http.Request) {

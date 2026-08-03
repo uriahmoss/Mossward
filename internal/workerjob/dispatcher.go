@@ -13,10 +13,12 @@ import (
 const assignmentHeartbeatFreshness = 5 * time.Minute
 
 var ErrNoEligibleWorker = errors.New("no eligible scanner worker has sufficient capacity")
+var ErrDispatchDisabled = errors.New("scanner-worker job dispatch is disabled")
 
 type DispatchStore interface {
 	ListScannerWorkers() ([]model.ScannerWorker, error)
 	ScannerWorkerJobLoads(time.Time) (map[string]model.WorkerJobLoad, error)
+	ScannerWorkerDispatchSettings() (model.WorkerDispatchSettings, error)
 	CreateScannerWorkerJob(model.SignedWorkerJob, time.Time) error
 	ScannerWorkerJobResumeCandidate(string, time.Time) (model.WorkerJobResumeCandidate, error)
 	ReassignScannerWorkerJob(string, model.SignedWorkerJob, time.Time) error
@@ -40,6 +42,9 @@ func (d *Dispatcher) Dispatch(job model.WorkerJob) (model.SignedWorkerJob, error
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
+	if err := d.requireDispatchEnabled(); err != nil {
+		return model.SignedWorkerJob{}, err
+	}
 	workers, err := d.store.ListScannerWorkers()
 	if err != nil {
 		return model.SignedWorkerJob{}, err
@@ -69,6 +74,9 @@ func (d *Dispatcher) ReassignExpired(jobID string) (model.SignedWorkerJob, error
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	now := d.now()
+	if err := d.requireDispatchEnabled(); err != nil {
+		return model.SignedWorkerJob{}, err
+	}
 	candidate, err := d.store.ScannerWorkerJobResumeCandidate(jobID, now)
 	if err != nil {
 		return model.SignedWorkerJob{}, err
@@ -102,6 +110,17 @@ func (d *Dispatcher) ReassignExpired(jobID string) (model.SignedWorkerJob, error
 	slog.Info("Scanner-worker job safely reassigned", "job_id", job.ID, "scan_id", job.ScanID,
 		"previous_worker_id", previousWorkerID, "worker_id", worker.ID, "completed_checkpoints", len(candidate.Completed))
 	return envelope, nil
+}
+
+func (d *Dispatcher) requireDispatchEnabled() error {
+	settings, err := d.store.ScannerWorkerDispatchSettings()
+	if err != nil {
+		return err
+	}
+	if !settings.Enabled {
+		return ErrDispatchDisabled
+	}
+	return nil
 }
 
 type workerCandidate struct {
@@ -153,7 +172,7 @@ func selectWorkerExcluding(job model.WorkerJob, workers []model.ScannerWorker, l
 }
 
 func workerAvailableForAssignment(worker model.ScannerWorker, job model.WorkerJob, remaining int, now time.Time) bool {
-	if worker.Status != model.EndpointActive || worker.Health != model.WorkerHealthHealthy || worker.LastSeenAt == nil {
+	if worker.Status != model.EndpointActive || !worker.DispatchEnabled || worker.Health != model.WorkerHealthHealthy || worker.LastSeenAt == nil {
 		return false
 	}
 	if now.Sub(*worker.LastSeenAt) > assignmentHeartbeatFreshness || !now.Before(worker.ExpiresAt) {

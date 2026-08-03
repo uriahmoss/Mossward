@@ -23,7 +23,7 @@ func (s *SQLiteStore) LeaseScannerWorkerJob(workerID string, tokenHash []byte, n
 		return model.SignedWorkerJob{}, fmt.Errorf("release expired scanner-worker job leases: %w", err)
 	}
 	var id, encoded string
-	err = tx.QueryRow(`SELECT id,signed_envelope FROM scanner_worker_jobs WHERE worker_id=? AND status='pending' AND expires_at>? ORDER BY created_at,id LIMIT 1`, workerID, formatTime(now)).Scan(&id, &encoded)
+	err = tx.QueryRow(`SELECT j.id,j.signed_envelope FROM scanner_worker_jobs j JOIN scanner_workers w ON w.id=j.worker_id JOIN scanner_worker_dispatch_settings d ON d.id=1 WHERE j.worker_id=? AND j.status='pending' AND j.expires_at>? AND w.dispatch_enabled=1 AND d.enabled=1 ORDER BY j.created_at,j.id LIMIT 1`, workerID, formatTime(now)).Scan(&id, &encoded)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.SignedWorkerJob{}, ErrNotFound
 	}

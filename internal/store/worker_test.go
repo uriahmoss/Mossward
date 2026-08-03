@@ -36,8 +36,23 @@ func TestScannerWorkerEnrollmentTokenIsScopedAndSingleUse(t *testing.T) {
 		t.Fatalf("worker enrollment token replay accepted: %v", err)
 	}
 	workers, err := repository.ListScannerWorkers()
-	if err != nil || len(workers) != 1 || workers[0].SiteID != token.SiteID || workers[0].AllowedPorts[1] != 443 {
+	if err != nil || len(workers) != 1 || workers[0].SiteID != token.SiteID || workers[0].AllowedPorts[1] != 443 || !workers[0].DispatchEnabled {
 		t.Fatalf("scanner-worker inventory missing: %#v %v", workers, err)
+	}
+	settings, err := repository.ScannerWorkerDispatchSettings()
+	if err != nil || !settings.Enabled {
+		t.Fatalf("scanner-worker dispatch did not default enabled: %#v %v", settings, err)
+	}
+	if err := repository.SetScannerWorkerDispatch(false, event); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.SetScannerWorkerDispatchForWorker(worker.ID, false, event); err != nil {
+		t.Fatal(err)
+	}
+	settings, err = repository.ScannerWorkerDispatchSettings()
+	workers, workersErr := repository.ListScannerWorkers()
+	if err != nil || workersErr != nil || settings.Enabled || workers[0].DispatchEnabled {
+		t.Fatalf("scanner-worker dispatch controls were not persisted: settings=%#v workers=%#v errors=%v %v", settings, workers, err, workersErr)
 	}
 	heartbeat := model.WorkerHeartbeat{SchemaVersion: 1, SoftwareVersion: "1.0.0", OperatingSystem: "linux",
 		Architecture: "amd64", Capabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect},

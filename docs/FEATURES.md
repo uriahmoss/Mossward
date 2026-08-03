@@ -239,7 +239,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Signed evidence batches and persistent target-and-port checkpoints
 - [x] Encrypted bounded outbox, backpressure, retry jitter, and load-aware dispatch
 - [x] Safe checkpoint-based failover after explicit lease expiration
-- [ ] Per-worker and global job-dispatch kill switches
+- [x] Per-worker and global job-dispatch kill switches
 - [ ] Constrained worker scan runtime using only declared targets, ports, and checks
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [ ] Dead-letter quarantine for repeatedly failing jobs

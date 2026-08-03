@@ -112,7 +112,7 @@ func (s *SQLiteStore) ScannerWorkerBySerial(serial string) (model.ScannerWorker,
 	return worker, err
 }
 
-const workerSelect = `SELECT id,name,site_id,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,software_version,operating_system,architecture,capabilities,available_concurrency,health,health_message FROM scanner_workers`
+const workerSelect = `SELECT id,name,site_id,status,certificate_serial,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at,last_seen_at,revoked_at,revocation_reason,software_version,operating_system,architecture,capabilities,available_concurrency,health,health_message,dispatch_enabled FROM scanner_workers`
 
 func (s *SQLiteStore) RecordScannerWorkerHeartbeat(id string, heartbeat model.WorkerHeartbeat, seenAt time.Time) error {
 	capabilities, err := json.Marshal(heartbeat.Capabilities)
@@ -159,7 +159,7 @@ func scanWorker(row workerScanner) (model.ScannerWorker, error) {
 	if err := row.Scan(&worker.ID, &worker.Name, &worker.SiteID, &worker.Status, &worker.CertificateSerial, &cidrs, &ports,
 		&worker.MaxConcurrent, &worker.RateLimitPerSecond, &enrolledAt, &expiresAt, &lastSeen, &revokedAt,
 		&worker.RevocationReason, &worker.SoftwareVersion, &worker.OperatingSystem, &worker.Architecture,
-		&capabilities, &worker.AvailableConcurrency, &worker.Health, &worker.HealthMessage); err != nil {
+		&capabilities, &worker.AvailableConcurrency, &worker.Health, &worker.HealthMessage, &worker.DispatchEnabled); err != nil {
 		return worker, err
 	}
 	if err := json.Unmarshal([]byte(cidrs), &worker.AllowedCIDRs); err != nil {
@@ -176,4 +176,47 @@ func scanWorker(row workerScanner) (model.ScannerWorker, error) {
 	worker.LastSeenAt = parseNullableTime(lastSeen)
 	worker.RevokedAt = parseNullableTime(revokedAt)
 	return worker, nil
+}
+
+func (s *SQLiteStore) ScannerWorkerDispatchSettings() (model.WorkerDispatchSettings, error) {
+	var settings model.WorkerDispatchSettings
+	if err := s.db.QueryRow(`SELECT enabled FROM scanner_worker_dispatch_settings WHERE id=1`).Scan(&settings.Enabled); err != nil {
+		return settings, fmt.Errorf("read scanner-worker dispatch settings: %w", err)
+	}
+	return settings, nil
+}
+
+func (s *SQLiteStore) SetScannerWorkerDispatch(enabled bool, event model.AuditEvent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin scanner-worker dispatch update: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`UPDATE scanner_worker_dispatch_settings SET enabled=? WHERE id=1`, enabled); err != nil {
+		return fmt.Errorf("update scanner-worker dispatch: %w", err)
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *SQLiteStore) SetScannerWorkerDispatchForWorker(id string, enabled bool, event model.AuditEvent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin scanner-worker dispatch update: %w", err)
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE scanner_workers SET dispatch_enabled=? WHERE id=? AND status='active'`, enabled, id)
+	if err != nil {
+		return fmt.Errorf("update scanner-worker dispatch state: %w", err)
+	}
+	changed, _ := result.RowsAffected()
+	if changed != 1 {
+		return ErrNotFound
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
 }

@@ -8,6 +8,7 @@ import (
 	"net/netip"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -35,6 +36,9 @@ type WorkerStore interface {
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
 	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
+	ScannerWorkerDispatchSettings() (model.WorkerDispatchSettings, error)
+	SetScannerWorkerDispatch(bool, model.AuditEvent) error
+	SetScannerWorkerDispatchForWorker(string, bool, model.AuditEvent) error
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)
 	CompleteScannerWorkerJob(model.WorkerJobResultReceipt, []byte, time.Time) error
 	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
@@ -147,7 +151,7 @@ func (s *Service) EnrollWorker(token, csrPEM, sourceIP string) (WorkerEnrollment
 		return WorkerEnrollmentResult{}, err
 	}
 	worker := model.ScannerWorker{ID: id, Name: enrollment.Name, Status: model.EndpointActive,
-		SiteID:            enrollment.SiteID,
+		SiteID: enrollment.SiteID, DispatchEnabled: true,
 		CertificateSerial: serial, CertificatePEM: certificatePEM, AllowedCIDRs: enrollment.AllowedCIDRs,
 		AllowedPorts: enrollment.AllowedPorts, MaxConcurrent: enrollment.MaxConcurrent,
 		RateLimitPerSecond: enrollment.RateLimitPerSecond, EnrolledAt: now, ExpiresAt: expiresAt}
@@ -260,4 +264,27 @@ func (s *Service) RevokeScannerWorker(id, reason, actorID, sourceIP string) erro
 	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "scanner_worker.revoked",
 		Severity: model.AuditWarning, TargetType: "scanner_worker", TargetID: id, SourceIP: sourceIP, Details: "{}"}
 	return s.workerStore.RevokeScannerWorker(id, reason, now, event)
+}
+
+func (s *Service) WorkerDispatchSettings() (model.WorkerDispatchSettings, error) {
+	if s.workerStore == nil {
+		return model.WorkerDispatchSettings{}, errors.New("scanner-worker identity storage is unavailable")
+	}
+	return s.workerStore.ScannerWorkerDispatchSettings()
+}
+
+func (s *Service) SetWorkerDispatch(enabled bool, actorID, sourceIP string) error {
+	now := s.now()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "scanner_worker.dispatch.updated",
+		Severity: model.AuditWarning, TargetType: "scanner_worker_fleet", TargetID: "global", SourceIP: sourceIP,
+		Details: `{"enabled":` + strconv.FormatBool(enabled) + `}`}
+	return s.workerStore.SetScannerWorkerDispatch(enabled, event)
+}
+
+func (s *Service) SetWorkerDispatchForWorker(id string, enabled bool, actorID, sourceIP string) error {
+	now := s.now()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "scanner_worker.dispatch.updated",
+		Severity: model.AuditWarning, TargetType: "scanner_worker", TargetID: id, SourceIP: sourceIP,
+		Details: `{"enabled":` + strconv.FormatBool(enabled) + `}`}
+	return s.workerStore.SetScannerWorkerDispatchForWorker(id, enabled, event)
 }

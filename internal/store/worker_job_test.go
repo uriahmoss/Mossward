@@ -171,6 +171,34 @@ func TestScannerWorkerJobLeaseIsBoundAndReclaimedAfterExpiry(t *testing.T) {
 	}
 }
 
+func TestScannerWorkerJobLeaseHonorsDispatchKillSwitches(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := repository.db.Exec(`INSERT INTO scanner_workers(id,name,status,certificate_serial,certificate_pem,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at) VALUES('worker','Worker','active','serial','certificate','["192.0.2.0/24"]','[443]',4,10,?,?)`, formatTime(now), formatTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	job := model.WorkerJob{SchemaVersion: 1, ID: "controlled-job", WorkerID: "worker", ScanID: "scan", IssuedAt: now,
+		ExpiresAt: now.Add(5 * time.Minute), Targets: []model.Target{{Name: "host", Address: "192.0.2.10"}}, Ports: []int{443}, Status: model.WorkerJobPending}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.db.Exec(`UPDATE scanner_worker_dispatch_settings SET enabled=0 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("worker", []byte("lease"), now, now.Add(time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("global dispatch kill switch allowed a lease: %v", err)
+	}
+	if _, err := repository.db.Exec(`UPDATE scanner_worker_dispatch_settings SET enabled=1 WHERE id=1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.db.Exec(`UPDATE scanner_workers SET dispatch_enabled=0 WHERE id='worker'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("worker", []byte("lease"), now, now.Add(time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("per-worker dispatch kill switch allowed a lease: %v", err)
+	}
+}
+
 func TestScannerWorkerJobReassignmentPreservesCheckpointsAndRejectsOldWorker(t *testing.T) {
 	repository := openTestStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

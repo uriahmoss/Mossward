@@ -113,6 +113,9 @@ type Repository interface {
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
 	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
+	ScannerWorkerDispatchSettings() (model.WorkerDispatchSettings, error)
+	SetScannerWorkerDispatch(bool, model.AuditEvent) error
+	SetScannerWorkerDispatchForWorker(string, bool, model.AuditEvent) error
 	CreateScannerWorkerJob(model.SignedWorkerJob, time.Time) error
 	ScannerWorkerJob(string) (model.SignedWorkerJob, error)
 	LeaseScannerWorkerJob(string, []byte, time.Time, time.Time) (model.SignedWorkerJob, error)

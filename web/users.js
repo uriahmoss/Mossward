@@ -78,15 +78,34 @@ document.querySelector("#endpoint-enrollment-form").addEventListener("submit", a
 });
 
 async function loadScannerWorkers() {
-  const response = await fetch("/api/admin/scanner-workers");
+  const [response, dispatchResponse] = await Promise.all([
+    fetch("/api/admin/scanner-workers"), fetch("/api/admin/scanner-worker-dispatch")]);
   if (response.status === 503) {
     document.querySelector("#workers-list").textContent = "Scanner-worker identity is not enabled on this server.";
     return;
   }
-  if (!response.ok) { return; }
+  if (!response.ok || !dispatchResponse.ok) { return; }
   const workers = await response.json();
-  document.querySelector("#workers-list").innerHTML = workers.length ? workers.map((worker) => `<article class="session-row"><div><strong>${escapeHTML(worker.name)}</strong><span>${escapeHTML(worker.status)} · site ${escapeHTML(worker.site_id || "any")} · ${worker.allowed_cidrs.map(escapeHTML).join(", ")} · ${worker.allowed_ports.length} ports · assigned concurrency ${worker.max_concurrent} · available ${worker.available_concurrency} · ${worker.rate_limit_per_second ? `${worker.rate_limit_per_second} checks/sec` : "unlimited rate"} · ${escapeHTML(worker.software_version || "version unknown")} on ${escapeHTML(worker.operating_system || "unknown OS")}/${escapeHTML(worker.architecture || "unknown architecture")} · capabilities: ${(worker.capabilities || []).map(escapeHTML).join(", ") || "not reported"} · certificate expires ${new Date(worker.expires_at).toLocaleString()}${worker.last_seen_at ? ` · last seen ${new Date(worker.last_seen_at).toLocaleString()}` : " · never connected"}${worker.alerts?.length ? ` · ${worker.alerts.map((alert) => escapeHTML(alert.message)).join("; ")}` : ""}${worker.revocation_reason ? ` · ${escapeHTML(worker.revocation_reason)}` : ""}</span></div>${worker.status === "active" ? `<button class="worker-revoke compact-button" data-id="${worker.id}">Revoke</button>` : ""}</article>`).join("") : "No scanner workers enrolled.";
+  const dispatch = await dispatchResponse.json();
+  document.querySelector("#worker-dispatch-enabled").checked = dispatch.enabled;
+  document.querySelector("#workers-list").innerHTML = workers.length ? workers.map((worker) => `<article class="session-row"><div><strong>${escapeHTML(worker.name)}</strong><span>${escapeHTML(worker.status)} · dispatch ${worker.dispatch_enabled ? "enabled" : "paused"} · site ${escapeHTML(worker.site_id || "any")} · ${worker.allowed_cidrs.map(escapeHTML).join(", ")} · ${worker.allowed_ports.length} ports · assigned concurrency ${worker.max_concurrent} · available ${worker.available_concurrency} · ${worker.rate_limit_per_second ? `${worker.rate_limit_per_second} checks/sec` : "unlimited rate"} · ${escapeHTML(worker.software_version || "version unknown")} on ${escapeHTML(worker.operating_system || "unknown OS")}/${escapeHTML(worker.architecture || "unknown architecture")} · capabilities: ${(worker.capabilities || []).map(escapeHTML).join(", ") || "not reported"} · certificate expires ${new Date(worker.expires_at).toLocaleString()}${worker.last_seen_at ? ` · last seen ${new Date(worker.last_seen_at).toLocaleString()}` : " · never connected"}${worker.alerts?.length ? ` · ${worker.alerts.map((alert) => escapeHTML(alert.message)).join("; ")}` : ""}${worker.revocation_reason ? ` · ${escapeHTML(worker.revocation_reason)}` : ""}</span></div>${worker.status === "active" ? `<button class="worker-dispatch compact-button" data-id="${worker.id}" data-enabled="${worker.dispatch_enabled}">${worker.dispatch_enabled ? "Pause jobs" : "Allow jobs"}</button><button class="worker-revoke compact-button" data-id="${worker.id}">Revoke</button>` : ""}</article>`).join("") : "No scanner workers enrolled.";
+  document.querySelectorAll(".worker-dispatch").forEach((button) => button.addEventListener("click", () => setScannerWorkerDispatch(button.dataset.id, button.dataset.enabled !== "true")));
   document.querySelectorAll(".worker-revoke").forEach((button) => button.addEventListener("click", () => revokeScannerWorker(button.dataset.id)));
+}
+
+document.querySelector("#worker-dispatch-form").addEventListener("submit", async (event) => {
+  event.preventDefault(); usersError.textContent = "";
+  const enabled = document.querySelector("#worker-dispatch-enabled").checked;
+  const response = await secureFetch("/api/admin/scanner-worker-dispatch", {method: "PUT", headers: csrfHeaders, body: JSON.stringify({enabled})});
+  if (!response.ok) { const result = await response.json(); usersError.textContent = result.error; return; }
+  await loadScannerWorkers();
+});
+
+async function setScannerWorkerDispatch(id, enabled) {
+  usersError.textContent = "";
+  const response = await secureFetch(`/api/admin/scanner-workers/${encodeURIComponent(id)}/dispatch`, {method: "PUT", headers: csrfHeaders, body: JSON.stringify({enabled})});
+  if (!response.ok) { const result = await response.json(); usersError.textContent = result.error; return; }
+  await loadScannerWorkers();
 }
 
 document.querySelector("#worker-enrollment-form").addEventListener("submit", async (event) => {

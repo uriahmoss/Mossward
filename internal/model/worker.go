@@ -23,9 +23,14 @@ type ScannerWorker struct {
 	AvailableConcurrency int                `json:"available_concurrency"`
 	Health               WorkerHealth       `json:"health,omitempty"`
 	HealthMessage        string             `json:"health_message,omitempty"`
+	DispatchEnabled      bool               `json:"dispatch_enabled"`
 	RevokedAt            *time.Time         `json:"revoked_at,omitempty"`
 	RevocationReason     string             `json:"revocation_reason,omitempty"`
 	Alerts               []EndpointAlert    `json:"alerts"`
+}
+
+type WorkerDispatchSettings struct {
+	Enabled bool `json:"enabled"`
 }
 
 type WorkerCapability string

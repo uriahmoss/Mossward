@@ -10,10 +10,18 @@ import (
 )
 
 type dispatchMemoryStore struct {
-	mu        sync.Mutex
-	workers   []model.ScannerWorker
-	jobs      []model.SignedWorkerJob
-	candidate model.WorkerJobResumeCandidate
+	mu              sync.Mutex
+	workers         []model.ScannerWorker
+	jobs            []model.SignedWorkerJob
+	candidate       model.WorkerJobResumeCandidate
+	dispatchEnabled *bool
+}
+
+func (s *dispatchMemoryStore) ScannerWorkerDispatchSettings() (model.WorkerDispatchSettings, error) {
+	if s.dispatchEnabled == nil {
+		return model.WorkerDispatchSettings{Enabled: true}, nil
+	}
+	return model.WorkerDispatchSettings{Enabled: *s.dispatchEnabled}, nil
 }
 
 func (s *dispatchMemoryStore) ScannerWorkerJobResumeCandidate(string, time.Time) (model.WorkerJobResumeCandidate, error) {
@@ -108,6 +116,29 @@ func TestDispatcherRejectsWorkersWithoutCapacityOrScope(t *testing.T) {
 	}
 }
 
+func TestDispatcherHonorsGlobalAndPerWorkerKillSwitches(t *testing.T) {
+	now := time.Now().UTC()
+	enabled := false
+	repository := &dispatchMemoryStore{workers: []model.ScannerWorker{workerSelectionFixture("worker", now)}, dispatchEnabled: &enabled}
+	signer, err := LoadOrCreateSigner(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, err := NewDispatcher(repository, signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher.now = func() time.Time { return now }
+	if _, err := dispatcher.Dispatch(dispatchJobFixture("global-stop", now)); !errors.Is(err, ErrDispatchDisabled) {
+		t.Fatalf("global dispatch kill switch was ignored: %v", err)
+	}
+	enabled = true
+	repository.workers[0].DispatchEnabled = false
+	if _, err := dispatcher.Dispatch(dispatchJobFixture("worker-stop", now)); !errors.Is(err, ErrNoEligibleWorker) {
+		t.Fatalf("per-worker dispatch kill switch was ignored: %v", err)
+	}
+}
+
 func TestDispatcherEnforcesStrictSiteAffinity(t *testing.T) {
 	now := time.Now().UTC()
 	local := workerSelectionFixture("local", now)
@@ -172,7 +203,8 @@ func TestDispatcherSafelyReassignsExpiredJobToDifferentWorker(t *testing.T) {
 
 func workerSelectionFixture(id string, now time.Time) model.ScannerWorker {
 	return model.ScannerWorker{ID: id, Status: model.EndpointActive, ExpiresAt: now.Add(time.Hour), LastSeenAt: timePointer(now),
-		AllowedCIDRs: []string{"192.0.2.0/24"}, AllowedPorts: []int{443}, MaxConcurrent: 4, AvailableConcurrency: 4,
+		DispatchEnabled: true,
+		AllowedCIDRs:    []string{"192.0.2.0/24"}, AllowedPorts: []int{443}, MaxConcurrent: 4, AvailableConcurrency: 4,
 		RateLimitPerSecond: 10, Health: model.WorkerHealthHealthy,
 		Capabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect}}
 }
