@@ -37,14 +37,24 @@ var serviceNames = map[int]string{
 var versionPattern = regexp.MustCompile(`(?i)([A-Za-z][A-Za-z0-9._-]*)[/ ]([0-9][0-9A-Za-z._-]*)`)
 
 type Inspector struct {
-	timeout time.Duration
+	timeout     time.Duration
+	dialContext func(context.Context, string, int) (net.Conn, error)
 }
 
 func New(timeout time.Duration) *Inspector {
-	return &Inspector{timeout: timeout}
+	inspector := &Inspector{timeout: timeout}
+	inspector.dialContext = inspector.networkDial
+	return inspector
 }
 
 func (i *Inspector) Inspect(ctx context.Context, target model.Target, port int) (model.ServiceObservation, []model.Finding, bool) {
+	return i.InspectScoped(ctx, target, port, []model.WorkerCapability{
+		model.WorkerCapabilityServiceIdentification, model.WorkerCapabilityHTTP,
+		model.WorkerCapabilityTLS, model.WorkerCapabilitySSH,
+	})
+}
+
+func (i *Inspector) InspectScoped(ctx context.Context, target model.Target, port int, capabilities []model.WorkerCapability) (model.ServiceObservation, []model.Finding, bool) {
 	if !i.reachable(ctx, target.Address, port) {
 		return model.ServiceObservation{}, nil, false
 	}
@@ -60,28 +70,66 @@ func (i *Inspector) Inspect(ctx context.Context, target model.Target, port int) 
 		ObservedAt: time.Now().UTC(),
 	}
 	findings := exposedServiceFindings(target, port, observation.Protocol)
-
+	allowed := map[model.WorkerCapability]bool{}
+	for _, capability := range capabilities {
+		allowed[capability] = true
+	}
 	switch port {
 	case 80, 8080:
-		observation, findings = i.inspectProtocols(ctx, target, port, observation, findings, false)
+		if allowed[model.WorkerCapabilityHTTP] {
+			observation, findings = i.inspectHTTPOrFallback(ctx, target, port, observation, findings, false, allowed[model.WorkerCapabilityTLS])
+		} else if allowed[model.WorkerCapabilityServiceIdentification] {
+			observation, findings = i.inspectBanner(ctx, target, port, observation, findings)
+		}
 	case 443, 8443:
-		observation, findings = i.inspectProtocols(ctx, target, port, observation, findings, true)
+		if allowed[model.WorkerCapabilityHTTP] {
+			observation, findings = i.inspectHTTPOrFallback(ctx, target, port, observation, findings, true, allowed[model.WorkerCapabilityTLS])
+		} else if allowed[model.WorkerCapabilityTLS] {
+			if detected, checks, ok := i.inspectTLS(ctx, target, port); ok {
+				observation, findings = detected, append(findings, checks...)
+			}
+		} else if allowed[model.WorkerCapabilityServiceIdentification] {
+			observation, findings = i.inspectBanner(ctx, target, port, observation, findings)
+		}
 	case 22:
-		observation, findings = i.inspectSSH(ctx, target, port, observation, findings)
+		if allowed[model.WorkerCapabilitySSH] || allowed[model.WorkerCapabilityServiceIdentification] {
+			observation, findings = i.inspectSSH(ctx, target, port, observation, findings)
+		}
 	default:
-		observation, findings = i.inspectUnknown(ctx, target, port, observation, findings)
+		if allowed[model.WorkerCapabilityServiceIdentification] {
+			observation, findings = i.inspectBanner(ctx, target, port, observation, findings)
+		}
+		if observation.Confidence == "low" && allowed[model.WorkerCapabilityTLS] {
+			if detected, checks, ok := i.inspectTLS(ctx, target, port); ok {
+				observation, findings = detected, append(findings, checks...)
+			}
+		}
+		if observation.Confidence == "low" && allowed[model.WorkerCapabilityHTTP] {
+			observation, findings = i.inspectHTTPOrFallback(ctx, target, port, observation, findings, false, false)
+		}
 	}
 	return observation, findings, true
 }
 
-func (i *Inspector) inspectProtocols(ctx context.Context, target model.Target, port int, fallback model.ServiceObservation, findings []model.Finding, secure bool) (model.ServiceObservation, []model.Finding) {
-	if observation, checks, ok := i.inspectHTTP(ctx, target, port, secure); ok {
+func (i *Inspector) inspectHTTPOrFallback(ctx context.Context, target model.Target, port int, fallback model.ServiceObservation, findings []model.Finding, secure, inspectTLSConfiguration bool) (model.ServiceObservation, []model.Finding) {
+	if observation, checks, ok := i.inspectHTTP(ctx, target, port, secure, inspectTLSConfiguration); ok {
 		return observation, append(findings, checks...)
 	}
-	if observation, checks, ok := i.inspectTLS(ctx, target, port); ok {
-		return observation, append(findings, checks...)
+	if inspectTLSConfiguration {
+		if observation, checks, ok := i.inspectTLS(ctx, target, port); ok {
+			return observation, append(findings, checks...)
+		}
 	}
 	return fallback, findings
+}
+
+func (i *Inspector) inspectBanner(ctx context.Context, target model.Target, port int, observation model.ServiceObservation, findings []model.Finding) (model.ServiceObservation, []model.Finding) {
+	banner := i.readBanner(ctx, target.Address, port)
+	if banner == "" {
+		return observation, findings
+	}
+	observation = observationFromBanner(observation, banner)
+	return observation, appendDisclosureFinding(findings, observation, target, banner)
 }
 
 func (i *Inspector) inspectSSH(ctx context.Context, target model.Target, port int, observation model.ServiceObservation, findings []model.Finding) (model.ServiceObservation, []model.Finding) {
@@ -105,7 +153,7 @@ func (i *Inspector) inspectUnknown(ctx context.Context, target model.Target, por
 	if detected, checks, ok := i.inspectTLS(ctx, target, port); ok {
 		return detected, append(findings, checks...)
 	}
-	if detected, checks, ok := i.inspectHTTP(ctx, target, port, false); ok {
+	if detected, checks, ok := i.inspectHTTP(ctx, target, port, false, false); ok {
 		return detected, append(findings, checks...)
 	}
 	return observation, findings
@@ -139,7 +187,7 @@ func (i *Inspector) reachable(ctx context.Context, address string, port int) boo
 	return true
 }
 
-func (i *Inspector) inspectHTTP(ctx context.Context, target model.Target, port int, secure bool) (model.ServiceObservation, []model.Finding, bool) {
+func (i *Inspector) inspectHTTP(ctx context.Context, target model.Target, port int, secure, inspectTLSConfiguration bool) (model.ServiceObservation, []model.Finding, bool) {
 	scheme := "http"
 	if secure {
 		scheme = "https"
@@ -220,7 +268,7 @@ func (i *Inspector) inspectHTTP(ctx context.Context, target model.Target, port i
 	if observation.Version != "" {
 		findings = append(findings, disclosureFinding(target, port, scheme, response.Header.Get("Server")))
 	}
-	if secure && response.TLS != nil {
+	if secure && inspectTLSConfiguration && response.TLS != nil {
 		tlsMetadata, tlsFindings := evaluateTLS(target, port, response.TLS)
 		for key, value := range tlsMetadata {
 			observation.Metadata[key] = value
@@ -314,6 +362,10 @@ func (i *Inspector) readBanner(ctx context.Context, address string, port int) st
 }
 
 func (i *Inspector) dial(ctx context.Context, address string, port int) (net.Conn, error) {
+	return i.dialContext(ctx, address, port)
+}
+
+func (i *Inspector) networkDial(ctx context.Context, address string, port int) (net.Conn, error) {
 	dialCtx, cancel := context.WithTimeout(ctx, i.timeout)
 	defer cancel()
 	dialer := net.Dialer{}

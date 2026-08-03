@@ -1,9 +1,11 @@
 package probe
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"net"
 	"net/http"
 	"strings"
 	"testing"
@@ -92,6 +94,25 @@ func TestExposedServiceFinding(t *testing.T) {
 	findings := exposedServiceFindings(target, 6379, "redis")
 	if len(findings) != 1 || findings[0].Severity != "high" || !strings.Contains(findings[0].CheckID, "redis") {
 		t.Fatalf("unexpected Redis exposure finding: %#v", findings)
+	}
+}
+
+func TestScopedInspectionDoesNotExpandBeyondTCPReachability(t *testing.T) {
+	inspector := New(100 * time.Millisecond)
+	connections := 0
+	inspector.dialContext = func(context.Context, string, int) (net.Conn, error) {
+		connections++
+		client, server := net.Pipe()
+		_ = server.Close()
+		return client, nil
+	}
+	observation, _, reachable := inspector.InspectScoped(context.Background(),
+		model.Target{Name: "local", Address: "127.0.0.1"}, 8443, []model.WorkerCapability{model.WorkerCapabilityTCPConnect})
+	if !reachable || observation.Confidence != "low" || observation.Product != "" || observation.Version != "" {
+		t.Fatalf("TCP-only inspection performed undeclared service identification: %#v", observation)
+	}
+	if connections != 1 {
+		t.Fatalf("TCP-only inspection opened %d connections instead of one reachability check", connections)
 	}
 }
 

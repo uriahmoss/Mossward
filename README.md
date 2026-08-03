@@ -262,22 +262,25 @@ that an endpoint collector is available.
 Scanner workers can now poll the control plane over their existing outbound
 mTLS connection. The server leases only jobs explicitly assigned to the
 authenticated worker, stores only a hash of the short-lived lease credential,
-and safely makes abandoned jobs available again after lease expiration. Worker
-scan execution remains disabled until its dedicated runtime slice is
-implemented and verified.
+and safely makes abandoned jobs available again after lease expiration.
 
 The control plane also accepts bounded completion receipts for actively leased
 jobs. Each receipt is bound to the authenticated worker and one-time lease,
 records a unique result identifier and outcome, and atomically consumes the
-lease so duplicate submissions cannot change completed job state. Signed
-Worker-side scan execution is still disabled.
+lease so duplicate submissions cannot change completed job state.
 
-The future scanner-worker runtime now has an owner-only persistent replay
-ledger foundation. A worker must verify a job's Ed25519 signature, identity,
+The scanner-worker runtime has an owner-only persistent replay ledger. A worker
+must verify a job's Ed25519 signature, identity,
 validity window, assigned networks, ports, resource limits, and capabilities
 before atomically recording the job ID. Previously recorded IDs remain blocked
-after process restarts, and the ledger is claimed before any future executor is
-allowed to act.
+after process restarts, and the ledger is claimed before the executor acts.
+
+The constrained executor runs only the target, port, concurrency, rate, and
+inspection capabilities declared by the verified job. It skips signed resume
+checkpoints, stops at job expiration or cancellation, and emits bounded,
+sequential evidence with a checkpoint for every attempted target-and-port pair.
+Packaging this executor into an independently deployed worker process and wiring
+the complete poll-to-upload loop remain part of the next integration slice.
 
 Scanner-worker evidence can be transferred in bounded, certificate-signed
 batches over the authenticated worker channel. Each batch carries immutable
