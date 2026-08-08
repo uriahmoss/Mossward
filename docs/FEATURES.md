@@ -334,7 +334,7 @@ failure and health states.
 
 ### 6. Endpoint extension framework
 
-- [ ] Versioned module interface and capability declarations
+- [x] Versioned module interface and capability declarations
 - [ ] Signed manifests, package checksums, and trusted-publisher policy
 - [ ] Declarative inventory and configuration-check modules
 - [ ] Isolated low-privilege native-module host for OS-integrated detectors

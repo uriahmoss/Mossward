@@ -16,6 +16,8 @@ Endpoint-agent enrollment and outbound-only operation are documented in
 [`docs/ENDPOINT_AGENT.md`](docs/ENDPOINT_AGENT.md).
 The signed endpoint-agent update contract is documented in
 [`docs/AGENT_UPDATES.md`](docs/AGENT_UPDATES.md).
+The endpoint module contract and its detection-only capability vocabulary are
+documented in [`docs/AGENT_MODULES.md`](docs/AGENT_MODULES.md).
 
 The signed, non-executable check envelope is documented in
 [`docs/DECLARATIVE_CHECKS.md`](docs/DECLARATIVE_CHECKS.md). Its bounded HTTP
