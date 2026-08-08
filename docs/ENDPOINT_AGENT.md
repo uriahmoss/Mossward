@@ -37,6 +37,15 @@ interface. On the endpoint, run:
 mossward-agent enroll --config /etc/mossward/agent.json --token TOKEN
 ```
 
+For service installations, avoid exposing the token in the process list. Pipe
+it from a root-only file into the unprivileged agent account:
+
+```sh
+sudo cat /root/mossward-enrollment-token | sudo -u mossward-agent \
+  /usr/local/bin/mossward-agent enroll \
+  --config /etc/mossward-agent/agent.json --token-stdin
+```
+
 The agent generates its private key locally. Only a certificate signing request
 and the enrollment token leave the endpoint. The private key, issued
 certificate, private CA chain, and identity metadata are written to the state
@@ -63,7 +72,52 @@ prevents the server from expanding an endpoint's locally approved collection
 boundary. Collector execution and evidence submission remain separate roadmap
 slices.
 
-Service-unit packaging and queued endpoint telemetry are separate roadmap
-slices. Until service packages are added, use the operating system's service
-manager with a dedicated, least-privileged account and an explicit absolute
-configuration path.
+## Logging and diagnostics
+
+The agent writes operational flow at info level, recoverable check-in and
+certificate-renewal failures at warning level, and fatal startup failures at
+error level. The systemd unit sends stdout and stderr to journald without
+creating a separate sensitive log file:
+
+```sh
+sudo journalctl -u mossward-agent.service --since today
+```
+
+Run a read-only diagnostic report when troubleshooting:
+
+```sh
+mossward-agent diagnose --config /etc/mossward-agent/agent.json
+mossward-agent diagnose --config /etc/mossward-agent/agent.json --offline --json
+```
+
+Diagnostics check state-directory permissions, private-key protection, the
+certificate/key pair, private CA trust, certificate validity, and an optional
+TLS 1.3 mutual-authentication handshake. The command never prints private keys,
+enrollment tokens, or certificate contents. `--offline` performs only local
+checks, while `--json` produces a machine-readable support report. An unhealthy
+report exits nonzero for monitoring and automation.
+
+Queued endpoint telemetry remains a separate roadmap slice. Linux deployments
+can use the signed release workflow and hardened systemd unit below.
+
+## Signed Linux release
+
+The Linux release workflow builds a static `amd64` or `arm64` archive and signs
+the complete archive with a Sigstore bundle. The signing key is never stored in
+this repository. Set `MOSSWARD_COSIGN_KEY` to an external Cosign key, hardware
+token, or KMS URI and run:
+
+```sh
+scripts/package-linux-agent.sh 0.1.0 amd64 dist
+scripts/verify-linux-agent.sh \
+  dist/mossward-agent_0.1.0_linux_amd64.tar.gz \
+  dist/mossward-agent_0.1.0_linux_amd64.tar.gz.sigstore.json \
+  /trusted/mossward-release.pub
+```
+
+Verify the archive before extracting or installing it. The included installer
+creates a dedicated unprivileged account, protected configuration and state
+directories, and a hardened systemd unit. It deliberately leaves the service
+stopped until enrollment succeeds. Release-signing automation must use a
+protected CI identity, hardware-backed key, or KMS rather than a filesystem key
+committed with the source.

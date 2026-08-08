@@ -1,0 +1,40 @@
+[Unit]
+Description=Mossward Endpoint Detection Agent
+Documentation=https://localhost/
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=mossward-agent
+Group=mossward-agent
+ExecStart=/usr/local/bin/mossward-agent run --config /etc/mossward-agent/agent.json
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+UMask=0077
+StateDirectory=mossward-agent
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/mossward-agent
+ReadOnlyPaths=/etc/mossward-agent
+
+[Install]
+WantedBy=multi-user.target
