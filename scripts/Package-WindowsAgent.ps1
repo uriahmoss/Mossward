@@ -23,7 +23,8 @@ try {
     $env:CGO_ENABLED = '0'
     $env:GOOS = 'windows'
     $env:GOARCH = $Architecture
-    & go build -trimpath -ldflags '-s -w -buildid=' -o $binary ./cmd/mossward-agent
+    $linkerFlags = "-s -w -buildid= -X mossward/internal/agentapp.Version=$Version"
+    & go build -trimpath -ldflags $linkerFlags -o $binary ./cmd/mossward-agent
     if ($LASTEXITCODE -ne 0) { throw 'Windows endpoint-agent build failed.' }
 
     & $SignTool sign /fd SHA256 /sha1 $CertificateThumbprint /tr $TimestampUrl /td SHA256 $binary

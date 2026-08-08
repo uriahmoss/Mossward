@@ -82,3 +82,27 @@ func TestTransactionRejectsPathInjectionAndUnknownFields(t *testing.T) {
 		t.Fatal("unknown transaction field was accepted")
 	}
 }
+
+func TestConfirmHealthyCommitsOnlyMatchingVersionBeforeDeadline(t *testing.T) {
+	now := time.Date(2026, 8, 8, 12, 0, 0, 0, time.UTC)
+	previous := KnownGood{Version: "1.2.2", SHA256: strings.Repeat("a", 64), Size: 1024, File: "known-good-1.2.2"}
+	transaction, err := NewTransaction(previous, validManifest(now), now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction.State = TransactionAwaitingHealth
+	directory := filepath.Join(t.TempDir(), "updates")
+	if err := SaveTransaction(directory, transaction); err != nil {
+		t.Fatal(err)
+	}
+	if err := ConfirmHealthy(directory, "wrong-version", now.Add(time.Second)); err == nil {
+		t.Fatal("mismatched running version committed the update")
+	}
+	if err := ConfirmHealthy(directory, transaction.TargetVersion, now.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := LoadTransaction(directory)
+	if err != nil || loaded.State != TransactionCommitted {
+		t.Fatalf("committed transaction = %#v, error = %v", loaded, err)
+	}
+}

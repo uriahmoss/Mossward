@@ -69,3 +69,7 @@ func (c Config) Validate() error {
 func (c Config) CheckInInterval() time.Duration {
 	return time.Duration(c.CheckInIntervalSeconds) * time.Second
 }
+
+func (c Config) UpdateStateDirectory() string {
+	return filepath.Join(c.StateDirectory, "updates")
+}

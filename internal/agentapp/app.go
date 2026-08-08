@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"mossward/internal/agentupdate"
 	"mossward/internal/model"
 )
 
@@ -24,6 +25,8 @@ const (
 	certificateRenewalLead = 30 * 24 * time.Hour
 	maximumRetryExponent   = 8
 )
+
+var Version = "development"
 
 type App struct {
 	client      *http.Client
@@ -111,6 +114,9 @@ func (a *App) checkIn(ctx context.Context) error {
 	}
 	effective := effectiveCollectors(a.config.CollectorAllowlist, result.AllowedCollectors)
 	slog.Info("Endpoint collector policy received", "server_allowed", len(result.AllowedCollectors), "effective", len(effective))
+	if err := agentupdate.ConfirmHealthy(a.config.UpdateStateDirectory(), Version, time.Now().UTC()); err != nil {
+		return fmt.Errorf("confirm endpoint-agent update health: %w", err)
+	}
 	return nil
 }
 

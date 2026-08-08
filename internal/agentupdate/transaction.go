@@ -26,6 +26,7 @@ const (
 	TransactionAwaitingHealth TransactionState = "awaiting_health"
 	TransactionCommitted      TransactionState = "committed"
 	TransactionRollback       TransactionState = "rollback_required"
+	TransactionRolledBack     TransactionState = "rolled_back"
 )
 
 type KnownGood struct {
@@ -107,7 +108,7 @@ func NewTransaction(previous KnownGood, manifest Manifest, now time.Time) (Trans
 }
 
 func (t Transaction) Validate() error {
-	validState := t.State == TransactionPrepared || t.State == TransactionAwaitingHealth || t.State == TransactionCommitted || t.State == TransactionRollback
+	validState := t.State == TransactionPrepared || t.State == TransactionAwaitingHealth || t.State == TransactionCommitted || t.State == TransactionRollback || t.State == TransactionRolledBack
 	previousDigest, previousErr := hex.DecodeString(t.Previous.SHA256)
 	targetDigest, targetErr := hex.DecodeString(t.TargetSHA256)
 	if t.SchemaVersion != transactionSchemaVersion || !validState || !versionPattern.MatchString(t.Previous.Version) ||
@@ -122,6 +123,29 @@ func (t Transaction) Validate() error {
 
 func (t Transaction) RequiresRollback(now time.Time) bool {
 	return t.State == TransactionRollback || (t.State == TransactionAwaitingHealth && !now.Before(t.HealthDeadline))
+}
+
+func ConfirmHealthy(directory, runningVersion string, now time.Time) error {
+	transaction, err := LoadTransaction(directory)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if transaction.State != TransactionAwaitingHealth {
+		return nil
+	}
+	if transaction.TargetVersion != runningVersion {
+		return errors.New("running endpoint-agent version does not match the pending update")
+	}
+	if !now.Before(transaction.HealthDeadline) {
+		transaction.State = TransactionRollback
+		_ = SaveTransaction(directory, transaction)
+		return errors.New("endpoint-agent health confirmation missed its deadline")
+	}
+	transaction.State = TransactionCommitted
+	return SaveTransaction(directory, transaction)
 }
 
 func SaveTransaction(directory string, transaction Transaction) error {

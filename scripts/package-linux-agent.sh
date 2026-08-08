@@ -24,7 +24,7 @@ staging=$(mktemp -d)
 trap 'rm -rf "$staging"' EXIT HUP INT TERM
 mkdir -p "$output_directory" "$staging/mossward-agent"
 
-CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go build -trimpath -ldflags='-s -w -buildid=' -o "$staging/mossward-agent/mossward-agent" ./cmd/mossward-agent
+CGO_ENABLED=0 GOOS=linux GOARCH="$architecture" go build -trimpath -ldflags="-s -w -buildid= -X mossward/internal/agentapp.Version=$version" -o "$staging/mossward-agent/mossward-agent" ./cmd/mossward-agent
 cp deploy/linux/mossward-agent.service "$staging/mossward-agent/"
 cp deploy/linux/install-mossward-agent.sh "$staging/mossward-agent/"
 cp config/mossward-agent.json.example "$staging/mossward-agent/agent.json.example"

@@ -51,5 +51,11 @@ Windows activation intentionally refuses in-process replacement and will use a
 separate stopped-service update helper. The remaining implementation will add
 that helper, require successful health confirmation, and roll back
 automatically on startup or health failure.
+
+After activation, the replacement must complete an authenticated server
+check-in before its signed health deadline. A matching embedded release version
+then commits the transaction. On Unix, startup after a missed deadline restores
+and reverifies the known-good executable through the same atomic replacement
+path, marks the rollback complete, and requests one final service restart.
 It will not accept scripts, command lines, additional payloads, or peer-provided
 updates.
