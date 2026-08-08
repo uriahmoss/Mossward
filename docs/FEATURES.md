@@ -246,6 +246,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Manual and scheduled remote policies create signed worker-bound jobs
 - [x] Exact-retry idempotency with altered-payload replay rejection
 - [x] Worker poll, execute, lease-renew, encrypted-outbox, and upload loop
+- [x] Project accepted remote observations, findings, checkpoints, CVEs, and worker provenance into scans and assets
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [ ] Dead-letter quarantine for repeatedly failing jobs
 - [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers

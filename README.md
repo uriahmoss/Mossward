@@ -353,6 +353,9 @@ job, executes it, renews its active lease, and queues evidence before completion
 Messages retain insertion order and are deleted only after a successful server
 response. Exact evidence and completion retries are acknowledged idempotently,
 while an accepted identifier reused with changed content remains a replay error.
+Accepted remote evidence is projected into the originating scan using the same
+observations, findings, CVE matching, checkpoints, and asset history as local
+execution. Asset evidence retains the scanner-worker identity as its source.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides

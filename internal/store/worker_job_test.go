@@ -46,6 +46,11 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 	}
 	job := model.WorkerJob{SchemaVersion: 1, ID: "result-job", WorkerID: "worker", ScanID: "scan", IssuedAt: now,
 		ExpiresAt: now.Add(5 * time.Minute), Targets: []model.Target{{Name: "host", Address: "192.0.2.10"}}, Ports: []int{443}, Status: model.WorkerJobPending}
+	scan := model.Scan{ID: job.ScanID, Name: "Remote scan", Targets: job.Targets, Ports: job.Ports, Status: model.StatusQueued,
+		TotalChecks: 1, CreatedAt: now}
+	if err := repository.Save(scan); err != nil {
+		t.Fatal(err)
+	}
 	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
 		t.Fatal(err)
 	}
@@ -62,6 +67,10 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 	}
 	finalBatch := model.SignedWorkerEvidenceBatch{CertificateSerial: "serial", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
 		ID: "result-final", WorkerID: "worker", JobID: job.ID, ScanID: job.ScanID, Sequence: 1, Final: true, CollectedAt: now,
+		Observations: []model.ServiceObservation{{ID: "remote-observation", Target: "host", Address: "192.0.2.10", Port: 443,
+			Protocol: "https", Product: "nginx", Version: "1.2.3", Confidence: "high", Evidence: "TLS service", ObservedAt: now}},
+		Findings: []model.Finding{{ID: "remote-finding", CheckID: "tls.test", Target: "host", Address: "192.0.2.10",
+			Port: 443, Service: "https", Severity: "info", Title: "Remote finding", Evidence: "checked", ObservedAt: now}},
 		Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.10", Port: 443, CompletedAt: now}}}}
 	if err := repository.RecordScannerWorkerEvidenceBatch(finalBatch, now); err != nil {
 		t.Fatal(err)
@@ -89,6 +98,17 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 	}
 	if status != model.WorkerJobCompleted || resultID != "result" || outcome != string(model.WorkerJobResultSucceeded) || completedAt != formatTime(receipt.CompletedAt) || storedHash != nil {
 		t.Fatalf("unexpected completed worker-job state: status=%s result=%s outcome=%s completed=%s hash=%x", status, resultID, outcome, completedAt, storedHash)
+	}
+	projected, err := repository.Get(scan.ID)
+	if err != nil || projected.Status != model.StatusCompleted || projected.DoneChecks != 1 || len(projected.Observations) != 1 || len(projected.Findings) != 1 {
+		t.Fatalf("remote result was not projected into the scan: %#v %v", projected, err)
+	}
+	var sourceID string
+	if err := repository.db.QueryRow(`SELECT source_id FROM asset_service_events WHERE observation_id='remote-observation'`).Scan(&sourceID); err != nil {
+		t.Fatal(err)
+	}
+	if sourceID != "scanner-worker/worker" {
+		t.Fatalf("remote evidence provenance was not retained: %q", sourceID)
 	}
 }
 

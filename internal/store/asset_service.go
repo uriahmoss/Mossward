@@ -28,15 +28,19 @@ func updateAssetServiceHistory(tx *sql.Tx, scan model.Scan) error {
 			}
 		}
 	}
+	sourceID, err := scannerEvidenceSourceID(tx, scan.ID)
+	if err != nil {
+		return err
+	}
 	for _, observation := range scan.Observations {
-		if err := recordAssetServiceObservation(tx, scan, observation, checkedAt); err != nil {
+		if err := recordAssetServiceObservation(tx, scan, observation, checkedAt, sourceID); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func recordAssetServiceObservation(tx *sql.Tx, scan model.Scan, observation model.ServiceObservation, checkedAt time.Time) error {
+func recordAssetServiceObservation(tx *sql.Tx, scan model.Scan, observation model.ServiceObservation, checkedAt time.Time, sourceID string) error {
 	assetID, err := lookupAssetID(tx, `SELECT asset_id FROM asset_addresses WHERE address=?`, observation.Address)
 	if err != nil {
 		return err
@@ -62,7 +66,7 @@ func recordAssetServiceObservation(tx *sql.Tx, scan model.Scan, observation mode
 	if collectedAt.IsZero() {
 		collectedAt = checkedAt
 	}
-	result, err := tx.Exec(`INSERT INTO asset_service_events(observation_id,asset_id,scan_id,address,port,protocol,product,version,confidence,observed_at,finding_ids,cve_ids,source_type,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(observation_id) DO NOTHING`, observation.ID, assetID, scan.ID, observation.Address, observation.Port, observation.Protocol, observation.Product, observation.Version, observation.Confidence, formatTime(collectedAt), findingsJSON, cvesJSON, model.EvidenceSourceScanner, localScannerSourceID)
+	result, err := tx.Exec(`INSERT INTO asset_service_events(observation_id,asset_id,scan_id,address,port,protocol,product,version,confidence,observed_at,finding_ids,cve_ids,source_type,source_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(observation_id) DO NOTHING`, observation.ID, assetID, scan.ID, observation.Address, observation.Port, observation.Protocol, observation.Product, observation.Version, observation.Confidence, formatTime(collectedAt), findingsJSON, cvesJSON, model.EvidenceSourceScanner, sourceID)
 	if err != nil {
 		return fmt.Errorf("record asset service event: %w", err)
 	}
@@ -80,12 +84,24 @@ func recordAssetServiceObservation(tx *sql.Tx, scan model.Scan, observation mode
 	}
 	evidence := model.AssetEvidence{ID: "scanner:" + observation.ID, AssetID: assetID, ScanID: scan.ID, Address: observation.Address,
 		Summary: fmt.Sprintf("%s service observed on port %d", observation.Protocol, observation.Port),
-		EvidenceProvenance: model.EvidenceProvenance{SourceType: model.EvidenceSourceScanner, SourceID: localScannerSourceID,
+		EvidenceProvenance: model.EvidenceProvenance{SourceType: model.EvidenceSourceScanner, SourceID: sourceID,
 			RecordType: "service_observation", RecordID: observation.ID, CollectedAt: collectedAt}}
 	if err := insertAssetEvidence(tx, evidence); err != nil {
 		return err
 	}
 	return nil
+}
+
+func scannerEvidenceSourceID(tx *sql.Tx, scanID string) (string, error) {
+	var workerID string
+	err := tx.QueryRow(`SELECT worker_id FROM scanner_worker_jobs WHERE scan_id=? ORDER BY created_at DESC LIMIT 1`, scanID).Scan(&workerID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return localScannerSourceID, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("resolve scanner evidence source: %w", err)
+	}
+	return "scanner-worker/" + workerID, nil
 }
 
 func (s *SQLiteStore) AssetDetail(id string, now time.Time) (model.AssetDetail, error) {

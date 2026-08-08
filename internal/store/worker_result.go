@@ -29,6 +29,12 @@ func (s *SQLiteStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultRece
 	err = tx.QueryRow(`SELECT id,worker_id,result_outcome,completed_at FROM scanner_worker_jobs WHERE result_id=?`, receipt.ResultID).Scan(&existingJobID, &existingWorkerID, &existingOutcome, &existingCompletedAt)
 	if err == nil {
 		if existingJobID == receipt.JobID && existingWorkerID == receipt.WorkerID && existingOutcome == string(receipt.Outcome) && existingCompletedAt == formatTime(receipt.CompletedAt) {
+			if err := tx.Rollback(); err != nil {
+				return fmt.Errorf("close scanner-worker retry transaction: %w", err)
+			}
+			if err := s.projectScannerWorkerResult(receipt); err != nil {
+				return err
+			}
 			return ErrWorkerResultAlreadyAccepted
 		}
 		return ErrWorkerResultReplay
@@ -47,7 +53,10 @@ func (s *SQLiteStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultRece
 	if changed != 1 {
 		return ErrInvalidWorkerJobLease
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit scanner-worker job completion: %w", err)
+	}
+	return s.projectScannerWorkerResult(receipt)
 }
 
 func workerJobCheckpointsComplete(tx *sql.Tx, jobID string) (bool, error) {
