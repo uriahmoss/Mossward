@@ -121,3 +121,25 @@ directories, and a hardened systemd unit. It deliberately leaves the service
 stopped until enrollment succeeds. Release-signing automation must use a
 protected CI identity, hardware-backed key, or KMS rather than a filesystem key
 committed with the source.
+
+## Signed Windows release
+
+Windows release packaging cross-builds the endpoint executable, applies a
+SHA-256 Authenticode signature, obtains an RFC 3161 SHA-256 timestamp, and
+verifies the result before creating the archive. The signing certificate is
+selected from the Windows certificate store by thumbprint, allowing a hardware
+provider or managed signing service to protect the private key.
+
+```powershell
+.\scripts\Package-WindowsAgent.ps1 `
+  -Version 0.1.0 -Architecture amd64 `
+  -SignTool 'C:\Program Files (x86)\Windows Kits\10\bin\signtool.exe' `
+  -CertificateThumbprint 'REPLACE_WITH_40_HEX_CHARACTERS' `
+  -TimestampUrl 'https://timestamp.example.com'
+```
+
+The installer refuses unsigned or invalidly signed executables and locks the
+installation and state directories to Administrators and SYSTEM. Native
+Windows Service lifecycle and Event Log integration are the next part of this
+slice; the current installer deliberately does not register a console process
+as a service.
