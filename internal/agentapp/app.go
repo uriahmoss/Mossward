@@ -3,6 +3,7 @@ package agentapp
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/json"
@@ -35,6 +36,8 @@ type App struct {
 	interval    time.Duration
 	config      Config
 	certificate *x509.Certificate
+	updateKeyID string
+	updateKey   ed25519.PublicKey
 }
 
 func New(config Config) (*App, error) {
@@ -46,6 +49,10 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	updateKeyID, updateKey, err := config.UpdateTrust()
+	if err != nil {
+		return nil, err
+	}
 	base := strings.TrimRight(config.EndpointURL, "/")
 	return &App{
 		client:      identityClient(certificate, roots),
@@ -54,6 +61,8 @@ func New(config Config) (*App, error) {
 		interval:    config.CheckInInterval(),
 		config:      config,
 		certificate: leaf,
+		updateKeyID: updateKeyID,
+		updateKey:   updateKey,
 	}, nil
 }
 
@@ -68,6 +77,9 @@ func (a *App) Run(ctx context.Context) error {
 		}
 
 		err := a.checkIn(ctx)
+		if errors.Is(err, agentupdate.ErrRestartRequired) {
+			return err
+		}
 		delay := a.interval
 		if err != nil && !errors.Is(err, context.Canceled) {
 			failures++
@@ -116,6 +128,9 @@ func (a *App) checkIn(ctx context.Context) error {
 	slog.Info("Endpoint collector policy received", "server_allowed", len(result.AllowedCollectors), "effective", len(effective))
 	if err := agentupdate.ConfirmHealthy(a.config.UpdateStateDirectory(), Version, time.Now().UTC()); err != nil {
 		return fmt.Errorf("confirm endpoint-agent update health: %w", err)
+	}
+	if err := a.applyUpdateOffer(ctx, result.UpdateEnvelope); err != nil {
+		return err
 	}
 	return nil
 }

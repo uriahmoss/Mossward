@@ -3,12 +3,8 @@
 package agentupdate
 
 import (
-	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 )
@@ -41,7 +37,7 @@ func Activate(executable, candidate, stateDirectory string, transaction Transact
 		staged.Close()
 		return err
 	}
-	if err := copyVerifiedCandidate(staged, candidate, transaction); err != nil {
+	if err := copyVerifiedCandidate(staged, candidate, transaction.TargetSize, transaction.TargetSHA256); err != nil {
 		staged.Close()
 		return err
 	}
@@ -64,24 +60,6 @@ func Activate(executable, candidate, stateDirectory string, transaction Transact
 		return fmt.Errorf("sync endpoint-agent installation directory: %w", err)
 	}
 	return ErrRestartRequired
-}
-
-func copyVerifiedCandidate(destination *os.File, candidate string, transaction Transaction) error {
-	source, err := os.Open(candidate)
-	if err != nil {
-		return err
-	}
-	defer source.Close()
-	hash := sha256.New()
-	written, err := io.Copy(io.MultiWriter(destination, hash), io.LimitReader(source, transaction.TargetSize+1))
-	if err != nil || written != transaction.TargetSize {
-		return errors.New("candidate changed or could not be copied during activation")
-	}
-	expected, _ := hex.DecodeString(transaction.TargetSHA256)
-	if subtle.ConstantTimeCompare(hash.Sum(nil), expected) != 1 {
-		return errors.New("candidate digest changed before activation")
-	}
-	return nil
 }
 
 func syncDirectory(path string) error {

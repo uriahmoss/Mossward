@@ -47,10 +47,33 @@ same-filesystem atomic rename and directory synchronization. The running
 process continues on its original inode and exits with a restart-required
 result so the service manager can launch the replacement.
 
-Windows activation intentionally refuses in-process replacement and will use a
-separate stopped-service update helper. The remaining implementation will add
-that helper, require successful health confirmation, and roll back
-automatically on startup or health failure.
+Windows activation prepares and reverifies a fixed `.pending` executable beside
+the installation and requires a separately signed helper. That helper stops
+only the fixed `MosswardAgent` service, replaces the executable with a
+write-through Windows move, restarts it, and monitors the transaction journal.
+If the service cannot start or misses its health deadline, the helper stops it,
+reverifies and restores the known-good executable, records the rollback, and
+starts the service again.
+
+If the helper or host is interrupted, Windows service startup reopens the
+transaction journal. A still-pending file relaunches the fixed helper from the
+ACL-protected installation directory. If replacement already occurred, the
+running executable must match the signed target before normal check-in resumes.
+Expired or explicitly rollback-required transactions relaunch the helper for
+known-good recovery, while committed and completed rollback records are not
+repeated.
+
+Update processing is disabled by default on every endpoint. A local
+administrator must enable it and pin an exact release key identifier and
+Ed25519 public key. A server offer is ignored while disabled; when enabled, the
+agent verifies the offer against that local trust pin, requires an exact
+platform match and a version newer than the embedded running version, then
+passes it through verified staging and transactional activation. The server
+cannot replace or expand the locally pinned update authority.
+
+Server-side release import, administrative approval, endpoint assignment, and
+delivery are not implemented yet. Consequently, the current server sends no
+update offers even when an endpoint has locally enabled the capability.
 
 After activation, the replacement must complete an authenticated server
 check-in before its signed health deadline. A matching embedded release version

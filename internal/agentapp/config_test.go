@@ -1,6 +1,8 @@
 package agentapp
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,6 +21,20 @@ func TestLoadConfigAppliesSafeDefaults(t *testing.T) {
 	}
 	if config.CheckInIntervalSeconds != 60 {
 		t.Fatalf("interval = %d", config.CheckInIntervalSeconds)
+	}
+}
+
+func TestUpdateTrustIsExplicitAndUsesEd25519PublicKey(t *testing.T) {
+	config := Config{ServerURL: "https://mossward.example.test", EndpointURL: "https://agents.example.test",
+		StateDirectory: t.TempDir(), CheckInIntervalSeconds: 60, UpdateSigningKeyID: "release"}
+	if err := config.Validate(); err == nil {
+		t.Fatal("update trust was accepted while updates were disabled")
+	}
+	config.UpdateEnabled = true
+	config.UpdateSigningPublicKey = base64.RawStdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize))
+	keyID, key, err := config.UpdateTrust()
+	if err != nil || keyID != "release" || len(key) != ed25519.PublicKeySize {
+		t.Fatalf("update trust = %q, %d bytes, error = %v", keyID, len(key), err)
 	}
 }
 func TestConfigRejectsInboundOrInsecureOrigins(t *testing.T) {

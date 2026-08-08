@@ -1,6 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$Binary,
+    [Parameter(Mandatory = $true)][string]$Updater,
     [Parameter(Mandatory = $true)][string]$Configuration,
     [string]$InstallDirectory = "$env:ProgramFiles\Mossward Agent",
     [string]$DataDirectory = "$env:ProgramData\Mossward\Agent"
@@ -13,14 +14,20 @@ $configurationPath = Join-Path $DataDirectory 'agent.json'
 if (-not ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     throw 'Run this installer from an elevated PowerShell session.'
 }
+if (-not (Test-Path -LiteralPath $Binary -PathType Leaf)) { throw "Agent binary not found: $Binary" }
+if (-not (Test-Path -LiteralPath $Updater -PathType Leaf)) { throw "Agent updater not found: $Updater" }
 if ((Get-AuthenticodeSignature -LiteralPath $Binary).Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
     throw 'The Mossward endpoint-agent Authenticode signature is not valid.'
+}
+if ((Get-AuthenticodeSignature -LiteralPath $Updater).Status -ne [System.Management.Automation.SignatureStatus]::Valid) {
+    throw 'The Mossward endpoint-agent updater Authenticode signature is not valid.'
 }
 if (-not (Test-Path -LiteralPath $Configuration -PathType Leaf)) { throw "Configuration not found: $Configuration" }
 
 New-Item -ItemType Directory -Path $InstallDirectory -Force | Out-Null
 New-Item -ItemType Directory -Path $DataDirectory -Force | Out-Null
 Copy-Item -LiteralPath $Binary -Destination $binaryPath -Force
+Copy-Item -LiteralPath $Updater -Destination (Join-Path $InstallDirectory 'mossward-agent-updater.exe') -Force
 Copy-Item -LiteralPath $Configuration -Destination $configurationPath -Force
 & icacls.exe $InstallDirectory /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Could not secure the agent installation directory.' }

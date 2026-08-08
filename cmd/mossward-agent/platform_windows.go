@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 
 	"mossward/internal/agentapp"
+	"mossward/internal/agentupdate"
 )
 
 const (
@@ -60,6 +61,17 @@ type agentWindowsService struct {
 
 func (service *agentWindowsService) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {
 	status <- svc.Status{State: svc.StartPending}
+	executable, err := os.Executable()
+	if err != nil {
+		slog.Error("Resolve Mossward endpoint-agent executable", "error", err)
+		return false, 1
+	}
+	if err := agentupdate.Recover(executable, service.config.UpdateStateDirectory(), time.Now().UTC()); err != nil {
+		if !errors.Is(err, agentupdate.ErrRestartRequired) {
+			slog.Error("Recover Mossward endpoint-agent update", "error", err)
+		}
+		return false, 1
+	}
 	app, err := agentapp.New(service.config)
 	if err != nil {
 		slog.Error("Mossward endpoint agent initialization failed", "error", err)

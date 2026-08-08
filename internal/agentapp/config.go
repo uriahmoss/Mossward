@@ -1,6 +1,8 @@
 package agentapp
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,6 +23,9 @@ type Config struct {
 	StateDirectory         string        `json:"state_directory"`
 	CheckInIntervalSeconds int           `json:"check_in_interval_seconds"`
 	CollectorAllowlist     []CollectorID `json:"collector_allowlist,omitempty"`
+	UpdateEnabled          bool          `json:"update_enabled,omitempty"`
+	UpdateSigningKeyID     string        `json:"update_signing_key_id,omitempty"`
+	UpdateSigningPublicKey string        `json:"update_signing_public_key,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -63,6 +68,9 @@ func (c Config) Validate() error {
 	if err := validateCollectorAllowlist(c.CollectorAllowlist); err != nil {
 		return err
 	}
+	if _, _, err := c.UpdateTrust(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -72,4 +80,21 @@ func (c Config) CheckInInterval() time.Duration {
 
 func (c Config) UpdateStateDirectory() string {
 	return filepath.Join(c.StateDirectory, "updates")
+}
+
+func (c Config) UpdateTrust() (string, ed25519.PublicKey, error) {
+	if !c.UpdateEnabled {
+		if c.UpdateSigningKeyID != "" || c.UpdateSigningPublicKey != "" {
+			return "", nil, errors.New("endpoint-agent update trust requires update_enabled")
+		}
+		return "", nil, nil
+	}
+	if strings.TrimSpace(c.UpdateSigningKeyID) == "" {
+		return "", nil, errors.New("endpoint-agent update signing key ID is required")
+	}
+	decoded, err := base64.RawStdEncoding.DecodeString(c.UpdateSigningPublicKey)
+	if err != nil || len(decoded) != ed25519.PublicKeySize {
+		return "", nil, errors.New("endpoint-agent update signing public key is invalid")
+	}
+	return c.UpdateSigningKeyID, ed25519.PublicKey(decoded), nil
 }

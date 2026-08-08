@@ -23,6 +23,10 @@ an administrator-controlled location and adjust these fields:
   identifiers are `operating_system`, `installed_software`,
   `listening_services`, and `security_posture`. Unknown or duplicate values
   prevent startup; values are never interpreted as commands or paths.
+- `update_enabled` defaults to false. Enabling it also requires
+  `update_signing_key_id` and a base64, unpadded Ed25519 public key in
+  `update_signing_public_key`. This local trust pin is required in addition to
+  server authorization and cannot be enabled remotely.
 
 On Windows, use absolute drive-letter paths such as
 `C:\\ProgramData\\Mossward\\Agent`. Restrict the configuration and state
@@ -143,6 +147,20 @@ installation and state directories to Administrators, SYSTEM, and the isolated
 `NT SERVICE\MosswardAgent` virtual account, and registers a native automatic
 Windows Service. It deliberately leaves the service stopped until enrollment
 succeeds.
+
+After extracting the verified release archive, install both signed executables:
+
+```powershell
+.\Install-MosswardAgent.ps1 `
+  -Binary .\mossward-agent.exe `
+  -Updater .\mossward-agent-updater.exe `
+  -Configuration .\agent.json
+```
+
+The separately signed updater is intentionally narrow: it can stop and start
+only the `MosswardAgent` service and accepts only a previously verified update
+transaction. It monitors the new service through its health deadline and
+restores the known-good executable if startup or authenticated check-in fails.
 
 Service lifecycle and troubleshooting commands are built into the same signed
 agent executable:

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type EndpointStatus string
 type CollectorID string
@@ -37,10 +40,11 @@ type AgentCheckIn struct {
 }
 
 type AgentCheckInResponse struct {
-	Status            string        `json:"status"`
-	EndpointID        string        `json:"endpoint_id"`
-	ServerTime        time.Time     `json:"server_time"`
-	AllowedCollectors []CollectorID `json:"allowed_collectors"`
+	Status            string          `json:"status"`
+	EndpointID        string          `json:"endpoint_id"`
+	ServerTime        time.Time       `json:"server_time"`
+	AllowedCollectors []CollectorID   `json:"allowed_collectors"`
+	UpdateEnvelope    json.RawMessage `json:"update_envelope,omitempty"`
 }
 
 type EndpointAlert struct {

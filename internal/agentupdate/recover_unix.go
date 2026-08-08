@@ -36,8 +36,7 @@ func Recover(executable, stateDirectory string, now time.Time) error {
 		staged.Close()
 		return err
 	}
-	rollback := Transaction{TargetSize: transaction.Previous.Size, TargetSHA256: transaction.Previous.SHA256}
-	if err := copyVerifiedCandidate(staged, knownGoodPath, rollback); err != nil {
+	if err := copyVerifiedCandidate(staged, knownGoodPath, transaction.Previous.Size, transaction.Previous.SHA256); err != nil {
 		staged.Close()
 		return fmt.Errorf("verify known-good endpoint agent: %w", err)
 	}
