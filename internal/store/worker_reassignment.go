@@ -16,13 +16,23 @@ func (s *SQLiteStore) ScannerWorkerJobResumeCandidate(jobID string, now time.Tim
 		return model.WorkerJobResumeCandidate{}, fmt.Errorf("begin scanner-worker resume lookup: %w", err)
 	}
 	defer tx.Rollback()
-	var encoded string
-	err = tx.QueryRow(`SELECT signed_envelope FROM scanner_worker_jobs WHERE id=? AND status='leased' AND lease_expires_at<=? AND expires_at>?`, jobID, formatTime(now), formatTime(now)).Scan(&encoded)
+	var encoded, workerID string
+	var leaseAttempts int
+	err = tx.QueryRow(`SELECT signed_envelope,worker_id,lease_attempt FROM scanner_worker_jobs WHERE id=? AND status='leased' AND lease_expires_at<=? AND expires_at>?`, jobID, formatTime(now), formatTime(now)).Scan(&encoded, &workerID, &leaseAttempts)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.WorkerJobResumeCandidate{}, ErrWorkerJobNotResumable
 	}
 	if err != nil {
 		return model.WorkerJobResumeCandidate{}, fmt.Errorf("read scanner-worker resume candidate: %w", err)
+	}
+	if leaseAttempts >= maximumWorkerLeaseAttempts {
+		if err := quarantineRepeatedWorkerJobs(tx, workerID, now); err != nil {
+			return model.WorkerJobResumeCandidate{}, err
+		}
+		if err := tx.Commit(); err != nil {
+			return model.WorkerJobResumeCandidate{}, fmt.Errorf("commit scanner-worker resume quarantine: %w", err)
+		}
+		return model.WorkerJobResumeCandidate{}, ErrWorkerJobQuarantined
 	}
 	var envelope model.SignedWorkerJob
 	if err := json.Unmarshal([]byte(encoded), &envelope); err != nil {

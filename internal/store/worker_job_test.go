@@ -311,3 +311,41 @@ func TestScannerWorkerJobReassignmentPreservesCheckpointsAndRejectsOldWorker(t *
 		t.Fatalf("assignment history was not preserved: count=%d err=%v", assignments, err)
 	}
 }
+
+func TestScannerWorkerJobIsQuarantinedAfterRepeatedExpiredLeases(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if _, err := repository.db.Exec(`INSERT INTO scanner_workers(id,name,status,certificate_serial,certificate_pem,allowed_cidrs,allowed_ports,max_concurrent,rate_limit_per_second,enrolled_at,expires_at) VALUES('worker','Worker','active','serial','certificate','["192.0.2.0/24"]','[443]',4,10,?,?)`, formatTime(now), formatTime(now.Add(time.Hour))); err != nil {
+		t.Fatal(err)
+	}
+	job := model.WorkerJob{SchemaVersion: 1, ID: "dead-letter-job", WorkerID: "worker", ScanID: "dead-letter-scan", IssuedAt: now,
+		ExpiresAt: now.Add(time.Hour), Targets: []model.Target{{Name: "host", Address: "192.0.2.30"}}, Ports: []int{443}, Status: model.WorkerJobPending}
+	if err := repository.Save(model.Scan{ID: job.ScanID, Name: "Remote scan", Targets: job.Targets, Ports: job.Ports,
+		Status: model.StatusQueued, TotalChecks: 1, CreatedAt: now}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
+		t.Fatal(err)
+	}
+	leaseAt := now
+	for attempt := 1; attempt <= maximumWorkerLeaseAttempts; attempt++ {
+		if _, err := repository.LeaseScannerWorkerJob("worker", []byte{byte(attempt)}, leaseAt, leaseAt.Add(time.Second)); err != nil {
+			t.Fatalf("lease attempt %d failed: %v", attempt, err)
+		}
+		leaseAt = leaseAt.Add(2 * time.Second)
+	}
+	if _, err := repository.ScannerWorkerJobResumeCandidate(job.ID, leaseAt); !errors.Is(err, ErrWorkerJobQuarantined) {
+		t.Fatalf("repeatedly failing job was offered for reassignment: %v", err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("worker", []byte("extra"), leaseAt, leaseAt.Add(time.Second)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("quarantined job was leased again: %v", err)
+	}
+	deadLetters, err := repository.ListScannerWorkerDeadLetters()
+	if err != nil || len(deadLetters) != 1 || deadLetters[0].JobID != job.ID || deadLetters[0].FailureCount != maximumWorkerLeaseAttempts {
+		t.Fatalf("unexpected scanner-worker dead letters: %#v %v", deadLetters, err)
+	}
+	projected, err := repository.Get(job.ScanID)
+	if err != nil || projected.Status != model.StatusFailed || projected.Error != workerLeaseFailureReason || projected.CompletedAt == nil {
+		t.Fatalf("quarantined scan was not failed visibly: %#v %v", projected, err)
+	}
+}

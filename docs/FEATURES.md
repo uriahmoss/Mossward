@@ -248,7 +248,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Worker poll, execute, lease-renew, encrypted-outbox, and upload loop
 - [x] Project accepted remote observations, findings, checkpoints, CVEs, and worker provenance into scans and assets
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
-- [ ] Dead-letter quarantine for repeatedly failing jobs
+- [x] Dead-letter quarantine for repeatedly failing jobs
 - [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers
 
 Do failover before enabling execution so interrupted work cannot silently duplicate

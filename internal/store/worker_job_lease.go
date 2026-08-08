@@ -16,6 +16,9 @@ func (s *SQLiteStore) LeaseScannerWorkerJob(workerID string, tokenHash []byte, n
 		return model.SignedWorkerJob{}, fmt.Errorf("begin scanner-worker job lease: %w", err)
 	}
 	defer tx.Rollback()
+	if err := quarantineRepeatedWorkerJobs(tx, workerID, now); err != nil {
+		return model.SignedWorkerJob{}, err
+	}
 	if _, err := tx.Exec(`UPDATE scanner_worker_jobs SET status='expired',lease_token_hash=NULL,lease_expires_at=NULL WHERE worker_id=? AND status IN ('pending','leased') AND expires_at<=?`, workerID, formatTime(now)); err != nil {
 		return model.SignedWorkerJob{}, fmt.Errorf("expire scanner-worker jobs: %w", err)
 	}
@@ -25,6 +28,9 @@ func (s *SQLiteStore) LeaseScannerWorkerJob(workerID string, tokenHash []byte, n
 	var id, encoded string
 	err = tx.QueryRow(`SELECT j.id,j.signed_envelope FROM scanner_worker_jobs j JOIN scanner_workers w ON w.id=j.worker_id JOIN scanner_worker_dispatch_settings d ON d.id=1 WHERE j.worker_id=? AND j.status='pending' AND j.expires_at>? AND w.dispatch_enabled=1 AND d.enabled=1 ORDER BY j.created_at,j.id LIMIT 1`, workerID, formatTime(now)).Scan(&id, &encoded)
 	if errors.Is(err, sql.ErrNoRows) {
+		if err := tx.Commit(); err != nil {
+			return model.SignedWorkerJob{}, fmt.Errorf("commit scanner-worker lease maintenance: %w", err)
+		}
 		return model.SignedWorkerJob{}, ErrNotFound
 	}
 	if err != nil {

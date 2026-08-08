@@ -24,6 +24,7 @@ var ErrWorkerEvidenceReplay = errors.New("scanner-worker evidence batch was alre
 var ErrWorkerEvidenceAlreadyAccepted = errors.New("scanner-worker evidence batch retry was already accepted")
 var ErrWorkerEvidenceSequence = errors.New("scanner-worker evidence batch sequence is invalid")
 var ErrWorkerJobNotResumable = errors.New("scanner-worker job is not ready for safe reassignment")
+var ErrWorkerJobQuarantined = errors.New("scanner-worker job was quarantined after repeated failures")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -128,5 +129,6 @@ type Repository interface {
 	ScannerWorkerJobLoads(time.Time) (map[string]model.WorkerJobLoad, error)
 	ScannerWorkerJobResumeCandidate(string, time.Time) (model.WorkerJobResumeCandidate, error)
 	ReassignScannerWorkerJob(string, model.SignedWorkerJob, time.Time) error
+	ListScannerWorkerDeadLetters() ([]model.WorkerJobDeadLetter, error)
 	Close() error
 }

@@ -90,3 +90,12 @@ type WorkerJobLoad struct {
 	ActiveJobs          int `json:"active_jobs"`
 	ReservedConcurrency int `json:"reserved_concurrency"`
 }
+
+type WorkerJobDeadLetter struct {
+	JobID         string    `json:"job_id"`
+	ScanID        string    `json:"scan_id"`
+	WorkerID      string    `json:"worker_id"`
+	FailureCount  int       `json:"failure_count"`
+	Reason        string    `json:"reason"`
+	QuarantinedAt time.Time `json:"quarantined_at"`
+}

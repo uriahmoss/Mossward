@@ -356,6 +356,9 @@ while an accepted identifier reused with changed content remains a replay error.
 Accepted remote evidence is projected into the originating scan using the same
 observations, findings, CVE matching, checkpoints, and asset history as local
 execution. Asset evidence retains the scanner-worker identity as its source.
+Jobs that exhaust three lease attempts enter durable dead-letter quarantine.
+They cannot be leased or reassigned again, their scans visibly fail, and their
+failure count, reason, worker, and quarantine time remain available for review.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
