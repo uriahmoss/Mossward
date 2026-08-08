@@ -27,7 +27,21 @@ type ScannerWorker struct {
 	RevokedAt            *time.Time         `json:"revoked_at,omitempty"`
 	RevocationReason     string             `json:"revocation_reason,omitempty"`
 	Alerts               []EndpointAlert    `json:"alerts"`
+	FleetState           WorkerFleetState   `json:"fleet_state"`
+	ActiveJobs           int                `json:"active_jobs"`
+	ReservedConcurrency  int                `json:"reserved_concurrency"`
 }
+
+type WorkerFleetState string
+
+const (
+	WorkerFleetHealthy    WorkerFleetState = "healthy"
+	WorkerFleetDegraded   WorkerFleetState = "degraded"
+	WorkerFleetOffline    WorkerFleetState = "offline"
+	WorkerFleetOutdated   WorkerFleetState = "outdated"
+	WorkerFleetOverloaded WorkerFleetState = "overloaded"
+	WorkerFleetRevoked    WorkerFleetState = "revoked"
+)
 
 type WorkerDispatchSettings struct {
 	Enabled bool `json:"enabled"`

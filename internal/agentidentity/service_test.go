@@ -62,6 +62,9 @@ func (s *memoryEndpointStore) ConsumeWorkerEnrollmentToken(hash []byte, worker m
 func (s *memoryEndpointStore) ListScannerWorkers() ([]model.ScannerWorker, error) {
 	return []model.ScannerWorker{s.worker}, nil
 }
+func (s *memoryEndpointStore) ScannerWorkerJobLoads(time.Time) (map[string]model.WorkerJobLoad, error) {
+	return map[string]model.WorkerJobLoad{}, nil
+}
 func (s *memoryEndpointStore) ScannerWorkerBySerial(serial string) (model.ScannerWorker, error) {
 	if serial != s.worker.CertificateSerial {
 		return model.ScannerWorker{}, store.ErrNotFound
@@ -329,10 +332,40 @@ func TestScannerWorkerHeartbeatValidationAndOfflineAlert(t *testing.T) {
 		t.Fatal("scanner worker exceeded its assigned concurrency")
 	}
 	now := time.Now().UTC()
-	worker := model.ScannerWorker{Status: model.EndpointActive, ExpiresAt: now.Add(60 * 24 * time.Hour), Health: model.WorkerHealthHealthy}
+	worker := model.ScannerWorker{Status: model.EndpointActive, ExpiresAt: now.Add(60 * 24 * time.Hour),
+		SoftwareVersion: minimumSupportedWorkerVersion, Health: model.WorkerHealthHealthy}
 	alerts := scannerWorkerAlerts(worker, now)
 	if len(alerts) != 1 || alerts[0].Code != "worker_offline" {
 		t.Fatalf("missing offline scanner-worker alert: %#v", alerts)
+	}
+}
+
+func TestScannerWorkerFleetStatePrecedenceAndVersions(t *testing.T) {
+	now := time.Now().UTC()
+	lastSeen := now.Add(-time.Minute)
+	worker := model.ScannerWorker{Status: model.EndpointActive, ExpiresAt: now.Add(time.Hour), LastSeenAt: &lastSeen,
+		SoftwareVersion: minimumSupportedWorkerVersion, Health: model.WorkerHealthHealthy, AvailableConcurrency: 1}
+	if state := scannerWorkerFleetState(worker, now); state != model.WorkerFleetHealthy {
+		t.Fatalf("healthy worker classified as %s", state)
+	}
+	worker.SoftwareVersion = "0.9.9"
+	if state := scannerWorkerFleetState(worker, now); state != model.WorkerFleetOutdated {
+		t.Fatalf("outdated worker classified as %s", state)
+	}
+	worker.SoftwareVersion, worker.ActiveJobs, worker.AvailableConcurrency = "1.1.0", 1, 0
+	if state := scannerWorkerFleetState(worker, now); state != model.WorkerFleetOverloaded {
+		t.Fatalf("overloaded worker classified as %s", state)
+	}
+	worker.LastSeenAt = nil
+	if state := scannerWorkerFleetState(worker, now); state != model.WorkerFleetOffline {
+		t.Fatalf("offline worker classified as %s", state)
+	}
+	worker.Status = model.EndpointRevoked
+	if state := scannerWorkerFleetState(worker, now); state != model.WorkerFleetRevoked {
+		t.Fatalf("revoked worker classified as %s", state)
+	}
+	if !workerVersionBefore("invalid", minimumSupportedWorkerVersion) || workerVersionBefore("1.2.0", minimumSupportedWorkerVersion) {
+		t.Fatal("worker semantic version comparison is unsafe")
 	}
 }
 

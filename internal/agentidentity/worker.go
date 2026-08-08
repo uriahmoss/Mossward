@@ -17,13 +17,14 @@ import (
 )
 
 const (
-	maximumWorkerConcurrency = 256
-	maximumWorkerRate        = 1000
-	workerHeartbeatSchema    = 1
-	workerHeartbeatTextLimit = 200
-	workerHealthMessageLimit = 500
-	workerOfflineAfter       = 5 * time.Minute
-	workerSiteIDLimit        = 64
+	maximumWorkerConcurrency      = 256
+	maximumWorkerRate             = 1000
+	workerHeartbeatSchema         = 1
+	workerHeartbeatTextLimit      = 200
+	workerHealthMessageLimit      = 500
+	workerOfflineAfter            = 5 * time.Minute
+	workerSiteIDLimit             = 64
+	minimumSupportedWorkerVersion = "1.0.0"
 )
 
 var workerSiteIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
@@ -33,6 +34,7 @@ type WorkerStore interface {
 	WorkerEnrollmentToken([]byte, time.Time) (model.WorkerEnrollmentToken, error)
 	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error
 	ListScannerWorkers() ([]model.ScannerWorker, error)
+	ScannerWorkerJobLoads(time.Time) (map[string]model.WorkerJobLoad, error)
 	ScannerWorkerBySerial(string) (model.ScannerWorker, error)
 	RecordScannerWorkerHeartbeat(string, model.WorkerHeartbeat, time.Time) error
 	RevokeScannerWorker(string, string, time.Time, model.AuditEvent) error
@@ -173,10 +175,68 @@ func (s *Service) ScannerWorkers() ([]model.ScannerWorker, error) {
 	if err != nil {
 		return nil, err
 	}
+	now := s.now()
+	loads, err := s.workerStore.ScannerWorkerJobLoads(now)
+	if err != nil {
+		return nil, err
+	}
 	for index := range workers {
-		workers[index].Alerts = scannerWorkerAlerts(workers[index], s.now())
+		load := loads[workers[index].ID]
+		workers[index].ActiveJobs = load.ActiveJobs
+		workers[index].ReservedConcurrency = load.ReservedConcurrency
+		workers[index].Alerts = scannerWorkerAlerts(workers[index], now)
+		workers[index].FleetState = scannerWorkerFleetState(workers[index], now)
 	}
 	return workers, nil
+}
+
+func scannerWorkerFleetState(worker model.ScannerWorker, now time.Time) model.WorkerFleetState {
+	if worker.Status == model.EndpointRevoked || !now.Before(worker.ExpiresAt) {
+		return model.WorkerFleetRevoked
+	}
+	if worker.LastSeenAt == nil || now.Sub(*worker.LastSeenAt) >= workerOfflineAfter {
+		return model.WorkerFleetOffline
+	}
+	if workerVersionBefore(worker.SoftwareVersion, minimumSupportedWorkerVersion) {
+		return model.WorkerFleetOutdated
+	}
+	if worker.ActiveJobs > 0 && worker.AvailableConcurrency == 0 {
+		return model.WorkerFleetOverloaded
+	}
+	if worker.Health == model.WorkerHealthDegraded {
+		return model.WorkerFleetDegraded
+	}
+	return model.WorkerFleetHealthy
+}
+
+func workerVersionBefore(current, minimum string) bool {
+	currentParts, ok := parseWorkerVersion(current)
+	if !ok {
+		return true
+	}
+	minimumParts, _ := parseWorkerVersion(minimum)
+	for index := range currentParts {
+		if currentParts[index] != minimumParts[index] {
+			return currentParts[index] < minimumParts[index]
+		}
+	}
+	return false
+}
+
+func parseWorkerVersion(value string) ([3]int, bool) {
+	var result [3]int
+	parts := strings.Split(strings.TrimPrefix(strings.TrimSpace(value), "v"), ".")
+	if len(parts) != len(result) {
+		return result, false
+	}
+	for index, part := range parts {
+		parsed, err := strconv.Atoi(part)
+		if err != nil || parsed < 0 {
+			return result, false
+		}
+		result[index] = parsed
+	}
+	return result, true
 }
 
 func scannerWorkerAlerts(worker model.ScannerWorker, now time.Time) []model.EndpointAlert {
@@ -192,6 +252,12 @@ func scannerWorkerAlerts(worker model.ScannerWorker, now time.Time) []model.Endp
 	}
 	if worker.LastSeenAt == nil || now.Sub(*worker.LastSeenAt) >= workerOfflineAfter {
 		alerts = append(alerts, model.EndpointAlert{Code: "worker_offline", Severity: "warning", Message: "Scanner worker has not checked in within 5 minutes"})
+	}
+	if workerVersionBefore(worker.SoftwareVersion, minimumSupportedWorkerVersion) {
+		alerts = append(alerts, model.EndpointAlert{Code: "worker_outdated", Severity: "warning", Message: "Scanner worker is below the minimum supported version " + minimumSupportedWorkerVersion})
+	}
+	if worker.ActiveJobs > 0 && worker.AvailableConcurrency == 0 {
+		alerts = append(alerts, model.EndpointAlert{Code: "worker_overloaded", Severity: "warning", Message: "Scanner worker has active jobs and no available concurrency"})
 	}
 	if worker.Health == model.WorkerHealthDegraded {
 		alerts = append(alerts, model.EndpointAlert{Code: "worker_degraded", Severity: "warning", Message: worker.HealthMessage})

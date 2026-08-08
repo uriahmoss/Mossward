@@ -359,6 +359,9 @@ execution. Asset evidence retains the scanner-worker identity as its source.
 Jobs that exhaust three lease attempts enter durable dead-letter quarantine.
 They cannot be leased or reassigned again, their scans visibly fail, and their
 failure count, reason, worker, and quarantine time remain available for review.
+The administrator worker inventory derives a fleet state for healthy, degraded,
+offline, outdated, overloaded, and revoked workers and shows active workload and
+reserved concurrency alongside heartbeat and certificate alerts.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides

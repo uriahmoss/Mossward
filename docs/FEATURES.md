@@ -249,7 +249,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Project accepted remote observations, findings, checkpoints, CVEs, and worker provenance into scans and assets
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [x] Dead-letter quarantine for repeatedly failing jobs
-- [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers
+- [x] Fleet health visibility for offline, outdated, revoked, and overloaded workers
 
 Do failover before enabling execution so interrupted work cannot silently duplicate
 checks. Add kill switches before the runtime so administrators can stop dispatch
