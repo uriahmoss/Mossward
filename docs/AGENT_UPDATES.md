@@ -72,8 +72,12 @@ passes it through verified staging and transactional activation. The server
 cannot replace or expand the locally pinned update authority.
 
 Server-side release import, administrative approval, endpoint assignment, and
-delivery are not implemented yet. Consequently, the current server sends no
-update offers even when an endpoint has locally enabled the capability.
+delivery are separate controls. The server catalog stores immutable
+version/platform releases as staged, with audited transitions to approved and
+revoked. An administrator with recent MFA verification can assign an approved
+release to a checked-in endpoint. The server enforces an exact platform match
+and returns the signed envelope only to that authenticated endpoint. Reporting
+the assigned version on a later check-in records the installation as complete.
 
 After activation, the replacement must complete an authenticated server
 check-in before its signed health deadline. A matching embedded release version

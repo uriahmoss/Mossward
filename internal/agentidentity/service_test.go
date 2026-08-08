@@ -193,6 +193,17 @@ func (s *memoryEndpointStore) MarkEndpointSeen(id string, seenAt time.Time) erro
 	s.lastSeen = &seenAt
 	return nil
 }
+func (s *memoryEndpointStore) RecordEndpointCheckIn(id string, checkIn model.AgentCheckIn, seenAt time.Time) error {
+	if id != s.endpoint.ID {
+		return errors.New("unknown endpoint")
+	}
+	s.lastSeen = &seenAt
+	s.endpoint.SoftwareVersion = checkIn.SoftwareVersion
+	s.endpoint.OperatingSystem = checkIn.OperatingSystem
+	s.endpoint.Architecture = checkIn.Architecture
+	return nil
+}
+func (s *memoryEndpointStore) AgentUpdateOffer(string, time.Time) ([]byte, error) { return nil, nil }
 func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []model.CollectorID, _ model.AuditEvent) error {
 	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
 		return store.ErrNotFound
@@ -244,7 +255,7 @@ func TestEnrollmentAndMTLSIdentity(t *testing.T) {
 		t.Fatalf("verify enrolled endpoint: %v", err)
 	}
 	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/agent/v1/check-in",
-		strings.NewReader(`{"schema_version":1,"supported_collectors":[]}`))
+		strings.NewReader(`{"schema_version":1,"software_version":"development","operating_system":"linux","architecture":"amd64","supported_collectors":[]}`))
 	request.TLS = &connection
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)

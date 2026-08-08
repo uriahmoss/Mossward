@@ -330,7 +330,7 @@ failure and health states.
 - [x] Read-only collector allowlist
 - [x] Signed Linux endpoint agent
 - [x] Signed Windows endpoint agent
-- [ ] Signed, rollback-capable updates
+- [x] Signed, rollback-capable updates
 
 ### 6. Endpoint extension framework
 

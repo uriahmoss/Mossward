@@ -98,7 +98,8 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) checkIn(ctx context.Context) error {
-	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SupportedCollectors: supportedCollectorIDs()})
+	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
+		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs()})
 	if err != nil {
 		return err
 	}

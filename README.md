@@ -206,6 +206,8 @@ Environment variables:
 | `MOSSWARD_AGENT_LISTEN` | Empty | Dedicated TLS 1.3 mTLS endpoint API listener |
 | `MOSSWARD_AGENT_SERVER_NAMES` | Empty | Names permitted on the endpoint API server certificate |
 | `MOSSWARD_AGENT_PKI_DIR` | `data/agent-pki` | Owner-only private endpoint PKI directory |
+| `MOSSWARD_AGENT_UPDATE_KEY_ID` | Empty | Out-of-band trusted endpoint-agent release key identifier |
+| `MOSSWARD_AGENT_UPDATE_PUBLIC_KEY` | Empty | Unpadded base64 Ed25519 release-verification public key |
 | `MOSSWARD_DATABASE_FILE` | `data/mossward.db` | SQLite database path |
 | `MOSSWARD_DATA_FILE` | `data/scans.json` | Legacy JSON path used only for one-time import |
 | `MOSSWARD_IDENTITY_KEY_FILE` | `data/identity.key` | Owner-only AES-256 key used to encrypt identity-provider and MFA secrets |
@@ -236,6 +238,11 @@ so machine-specific policy does not enter source control.
 - `POST /api/admin/agent-enrollment-tokens`
 - `POST /api/admin/endpoints/{id}/revoke`
 - `PUT /api/admin/endpoints/{id}/collectors`
+- `GET /api/admin/agent-updates`
+- `POST /api/admin/agent-updates`
+- `POST /api/admin/agent-updates/{id}/approve`
+- `POST /api/admin/agent-updates/{id}/revoke`
+- `PUT /api/admin/endpoints/{id}/update`
 - `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`

@@ -31,11 +31,17 @@ type Endpoint struct {
 	RevokedAt         *time.Time      `json:"revoked_at,omitempty"`
 	RevocationReason  string          `json:"revocation_reason,omitempty"`
 	AllowedCollectors []CollectorID   `json:"allowed_collectors"`
+	SoftwareVersion   string          `json:"software_version,omitempty"`
+	OperatingSystem   string          `json:"operating_system,omitempty"`
+	Architecture      string          `json:"architecture,omitempty"`
 	Alerts            []EndpointAlert `json:"alerts"`
 }
 
 type AgentCheckIn struct {
 	SchemaVersion       int           `json:"schema_version"`
+	SoftwareVersion     string        `json:"software_version"`
+	OperatingSystem     string        `json:"operating_system"`
+	Architecture        string        `json:"architecture"`
 	SupportedCollectors []CollectorID `json:"supported_collectors"`
 }
 

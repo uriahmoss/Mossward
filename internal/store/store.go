@@ -118,9 +118,17 @@ type Repository interface {
 	ListEndpoints() ([]model.Endpoint, error)
 	EndpointBySerial(string) (model.Endpoint, error)
 	MarkEndpointSeen(string, time.Time) error
+	RecordEndpointCheckIn(string, model.AgentCheckIn, time.Time) error
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
+	CreateAgentUpdateRelease(model.AgentUpdateRelease, model.AuditEvent) error
+	ListAgentUpdateReleases() ([]model.AgentUpdateRelease, error)
+	AgentUpdateEnvelope(string) ([]byte, error)
+	ApproveAgentUpdateRelease(string, string, time.Time, model.AuditEvent) error
+	RevokeAgentUpdateRelease(string, string, string, time.Time, model.AuditEvent) error
+	AssignAgentUpdate(string, string, string, time.Time, model.AuditEvent) error
+	AgentUpdateOffer(string, time.Time) ([]byte, error)
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error
 	WorkerEnrollmentToken([]byte, time.Time) (model.WorkerEnrollmentToken, error)
 	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error

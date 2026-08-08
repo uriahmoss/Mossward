@@ -87,7 +87,7 @@ func (s *SQLiteStore) ConsumeAgentEnrollmentToken(hash []byte, endpoint model.En
 }
 
 func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors
+	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, software_version, operating_system, architecture
 		FROM endpoints ORDER BY name, enrolled_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
@@ -105,7 +105,7 @@ func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
 }
 
 func (s *SQLiteStore) EndpointBySerial(serial string) (model.Endpoint, error) {
-	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors
+	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, software_version, operating_system, architecture
 		FROM endpoints WHERE certificate_serial=?`, serial)
 	endpoint, err := scanEndpoint(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -165,6 +165,30 @@ func (s *SQLiteStore) MarkEndpointSeen(id string, seenAt time.Time) error {
 	return err
 }
 
+func (s *SQLiteStore) RecordEndpointCheckIn(id string, heartbeat model.AgentCheckIn, seenAt time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE endpoints SET last_seen_at=?,software_version=?,operating_system=?,architecture=? WHERE id=? AND status='active'`,
+		formatTime(seenAt), heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture, id)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrNotFound
+	}
+	_, err = tx.Exec(`UPDATE agent_update_assignments SET status='installed',installed_at=?
+		WHERE endpoint_id=? AND status IN ('assigned','offered') AND release_id IN
+		(SELECT id FROM agent_update_releases WHERE version=?)`, formatTime(seenAt), id, heartbeat.SoftwareVersion)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (s *SQLiteStore) SetEndpointCollectors(id string, collectors []model.CollectorID, event model.AuditEvent) error {
 	encoded, err := json.Marshal(collectors)
 	if err != nil {
@@ -199,7 +223,8 @@ func scanEndpoint(row endpointScanner) (model.Endpoint, error) {
 	var lastSeen, renewedAt, revokedAt sql.NullString
 	var allowedCollectors string
 	if err := row.Scan(&endpoint.ID, &endpoint.Name, &endpoint.Status, &endpoint.CertificateSerial, &enrolledAt, &expiresAt,
-		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors); err != nil {
+		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors,
+		&endpoint.SoftwareVersion, &endpoint.OperatingSystem, &endpoint.Architecture); err != nil {
 		return model.Endpoint{}, err
 	}
 	if err := json.Unmarshal([]byte(allowedCollectors), &endpoint.AllowedCollectors); err != nil {

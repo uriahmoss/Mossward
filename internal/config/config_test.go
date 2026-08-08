@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/ed25519"
+	"encoding/base64"
 	"strings"
 	"testing"
 )
@@ -10,6 +12,22 @@ func TestLoadRejectsInvalidCIDR(t *testing.T) {
 	_, err := Load()
 	if err == nil || !strings.Contains(err.Error(), "invalid CIDR") {
 		t.Fatalf("expected invalid CIDR error, got %v", err)
+	}
+}
+
+func TestLoadRequiresCompleteAgentUpdateTrust(t *testing.T) {
+	t.Setenv("MOSSWARD_AGENT_UPDATE_KEY_ID", "release")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MOSSWARD_AGENT_UPDATE_PUBLIC_KEY") {
+		t.Fatalf("expected incomplete update trust error, got %v", err)
+	}
+	t.Setenv("MOSSWARD_AGENT_UPDATE_PUBLIC_KEY", base64.RawStdEncoding.EncodeToString(make([]byte, ed25519.PublicKeySize)))
+	config, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyID, key, err := config.AgentUpdateTrust()
+	if err != nil || keyID != "release" || len(key) != ed25519.PublicKeySize {
+		t.Fatalf("update trust = %q, %d bytes, error = %v", keyID, len(key), err)
 	}
 }
 

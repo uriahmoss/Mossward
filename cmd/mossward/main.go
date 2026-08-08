@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mossward/internal/agentidentity"
+	"mossward/internal/agentupdatecatalog"
 	"mossward/internal/api"
 	"mossward/internal/auth"
 	"mossward/internal/config"
@@ -104,6 +105,14 @@ func run(stop <-chan string) error {
 	if err != nil {
 		return err
 	}
+	updateKeyID, updateKey, err := cfg.AgentUpdateTrust()
+	if err != nil {
+		return err
+	}
+	agentUpdates := agentupdatecatalog.New(repository, updateKeyID, updateKey)
+	if agentUpdates != nil {
+		slog.Info("Mossward endpoint-agent release trust loaded", "key_id", updateKeyID)
+	}
 	policyLauncher, err := scanlaunch.New(repository, engine, workerDispatcher)
 	if err != nil {
 		return err
@@ -123,6 +132,7 @@ func run(stop <-chan string) error {
 		options.CertificateStatus = acmeManager.Status
 	}
 	options.AgentIdentity = agentIdentity
+	options.AgentUpdates = agentUpdates
 	options.Notifications = notificationService
 	options.PolicyLauncher = policyLauncher
 	handler := api.New(cfg, repository, engine, identityService, options)

@@ -33,7 +33,8 @@ type EndpointStore interface {
 	ConsumeAgentEnrollmentToken([]byte, model.Endpoint, time.Time, model.AuditEvent) error
 	ListEndpoints() ([]model.Endpoint, error)
 	EndpointBySerial(string) (model.Endpoint, error)
-	MarkEndpointSeen(string, time.Time) error
+	RecordEndpointCheckIn(string, model.AgentCheckIn, time.Time) error
+	AgentUpdateOffer(string, time.Time) ([]byte, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -236,18 +237,36 @@ func (s *Service) Handler() http.Handler {
 			http.Error(w, "invalid endpoint-agent check-in", http.StatusBadRequest)
 			return
 		}
-		if err := validateEndpointCollectors(heartbeat.SupportedCollectors); err != nil {
+		if err := validateEndpointCheckIn(heartbeat); err != nil {
 			http.Error(w, "invalid endpoint-agent capabilities", http.StatusBadRequest)
 			return
 		}
-		if err := s.store.MarkEndpointSeen(endpoint.ID, now); err != nil {
+		if err := s.store.RecordEndpointCheckIn(endpoint.ID, heartbeat, now); err != nil {
 			http.Error(w, "endpoint state unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		updateEnvelope, err := s.store.AgentUpdateOffer(endpoint.ID, now)
+		if err != nil {
+			http.Error(w, "endpoint update state unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(model.AgentCheckInResponse{Status: "accepted", EndpointID: endpoint.ID,
-			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors})
+			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors, UpdateEnvelope: updateEnvelope})
 	})
+}
+
+func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
+	if strings.TrimSpace(checkIn.SoftwareVersion) == "" {
+		return errors.New("endpoint software version is required")
+	}
+	if checkIn.OperatingSystem != "linux" && checkIn.OperatingSystem != "windows" {
+		return errors.New("endpoint operating system is unsupported")
+	}
+	if checkIn.Architecture != "amd64" && checkIn.Architecture != "arm64" {
+		return errors.New("endpoint architecture is unsupported")
+	}
+	return validateEndpointCollectors(checkIn.SupportedCollectors)
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {

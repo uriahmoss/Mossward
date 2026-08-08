@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"mossward/internal/agentidentity"
+	"mossward/internal/agentupdatecatalog"
 	identity "mossward/internal/auth"
 	"mossward/internal/config"
 	"mossward/internal/model"
@@ -32,6 +33,7 @@ type API struct {
 	auth              *identity.Service
 	certificateStatus func() transport.ACMEStatus
 	agentIdentity     *agentidentity.Service
+	agentUpdates      *agentupdatecatalog.Service
 	notifications     *notification.Service
 	policyLauncher    PolicyLauncher
 }
@@ -49,6 +51,7 @@ const (
 type RuntimeOptions struct {
 	CertificateStatus func() transport.ACMEStatus
 	AgentIdentity     *agentidentity.Service
+	AgentUpdates      *agentupdatecatalog.Service
 	Notifications     *notification.Service
 	PolicyLauncher    PolicyLauncher
 }
@@ -59,6 +62,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	if len(options) > 0 {
 		api.certificateStatus = options[0].CertificateStatus
 		api.agentIdentity = options[0].AgentIdentity
+		api.agentUpdates = options[0].AgentUpdates
 		api.notifications = options[0].Notifications
 		api.policyLauncher = options[0].PolicyLauncher
 	}
@@ -67,6 +71,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("GET /api/ready", api.readiness)
 	mux.HandleFunc("GET /api/admin/certificate-status", api.getCertificateStatus)
 	api.registerAgentIdentityRoutes(mux)
+	api.registerAgentUpdateRoutes(mux)
 	api.registerAssetGroupRoutes(mux)
 	api.registerNotificationRoutes(mux)
 	mux.HandleFunc("GET /api/config", api.getConfig)
