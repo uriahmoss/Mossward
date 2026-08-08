@@ -24,10 +24,9 @@ import (
 )
 
 const (
-	maxBannerBytes           = 512
-	maxHTTPBytes             = 64 << 10
-	bannerTimeout            = 500 * time.Millisecond
-	certificateExpiryWarning = 30 * 24 * time.Hour
+	maxBannerBytes = 512
+	maxHTTPBytes   = 64 << 10
+	bannerTimeout  = 500 * time.Millisecond
 )
 
 var serviceNames = map[int]string{
@@ -44,6 +43,17 @@ var builtinHTTPChecks = []checkdefinition.Check{
 		`{"required_headers":["Content-Security-Policy","X-Content-Type-Options","Referrer-Policy"],"remediation":"Configure the application or reverse proxy to return the missing security headers with values appropriate for the application."}`),
 	mustHTTPCheck("http.missing-hsts", "low", "HTTP Strict Transport Security is missing",
 		`{"required_headers":["Strict-Transport-Security"],"remediation":"Configure the HTTPS service to return an appropriate Strict-Transport-Security header."}`),
+}
+
+var builtinTLSChecks = []checkdefinition.Check{
+	mustTLSCheck("tls.certificate-expired", "high", "TLS certificate is outside its validity period",
+		`{"require_current_certificate":true,"remediation":"Replace the certificate with a currently valid certificate and verify automated renewal."}`),
+	mustTLSCheck("tls.certificate-expiring", "medium", "TLS certificate expires soon",
+		`{"minimum_certificate_days_left":30,"remediation":"Renew or replace the certificate before expiration and verify automated renewal."}`),
+	mustTLSCheck("tls.hostname-mismatch", "medium", "TLS certificate does not match the target",
+		`{"require_hostname_match":true,"remediation":"Install a certificate whose subject alternative names include the service hostname or IP address."}`),
+	mustTLSCheck("tls.legacy-protocol", "high", "Legacy TLS protocol accepted",
+		`{"disallow_legacy_protocols":true,"remediation":"Disable TLS 1.0 and TLS 1.1; require TLS 1.2 or newer."}`),
 }
 
 type Inspector struct {
@@ -279,19 +289,11 @@ func (i *Inspector) inspectHTTP(ctx context.Context, target model.Target, port i
 		findings = append(findings, disclosureFinding(target, port, scheme, response.Header.Get("Server")))
 	}
 	if secure && inspectTLSConfiguration && response.TLS != nil {
-		tlsMetadata, tlsFindings := evaluateTLS(target, port, response.TLS)
+		tlsMetadata := tlsMetadata(response.TLS)
 		for key, value := range tlsMetadata {
 			observation.Metadata[key] = value
 		}
-		findings = append(findings, tlsFindings...)
-		if i.supportsLegacyTLS(ctx, target, port) {
-			findings = append(findings, newFinding(
-				"tls.legacy-protocol", target, port, "tls", "high",
-				"Legacy TLS protocol accepted",
-				"The service completed a TLS 1.0 or TLS 1.1 handshake.",
-				"Disable TLS 1.0 and TLS 1.1; require TLS 1.2 or newer.",
-			))
-		}
+		findings = append(findings, tlsConfigurationFindings(target, port, response.TLS, i.supportsLegacyTLS(ctx, target, port))...)
 	}
 	return observation, findings, true
 }
@@ -301,7 +303,7 @@ func (i *Inspector) inspectTLS(ctx context.Context, target model.Target, port in
 	if err != nil {
 		return model.ServiceObservation{}, nil, false
 	}
-	metadata, findings := evaluateTLS(target, port, state)
+	metadata := tlsMetadata(state)
 	observation := model.ServiceObservation{
 		ID:         id(),
 		Target:     target.Name,
@@ -314,14 +316,7 @@ func (i *Inspector) inspectTLS(ctx context.Context, target model.Target, port in
 		Metadata:   metadata,
 		ObservedAt: time.Now().UTC(),
 	}
-	if i.supportsLegacyTLS(ctx, target, port) {
-		findings = append(findings, newFinding(
-			"tls.legacy-protocol", target, port, "tls", "high",
-			"Legacy TLS protocol accepted",
-			"The service completed a TLS 1.0 or TLS 1.1 handshake.",
-			"Disable TLS 1.0 and TLS 1.1; require TLS 1.2 or newer.",
-		))
-	}
+	findings := tlsConfigurationFindings(target, port, state, i.supportsLegacyTLS(ctx, target, port))
 	return observation, findings, true
 }
 
@@ -409,13 +404,13 @@ func mustHTTPCheck(id, severity, title, spec string) checkdefinition.Check {
 	return check
 }
 
-func evaluateTLS(target model.Target, port int, state *tls.ConnectionState) (map[string]string, []model.Finding) {
+func tlsMetadata(state *tls.ConnectionState) map[string]string {
 	metadata := map[string]string{
 		"tls_version":  tlsVersionName(state.Version),
 		"cipher_suite": tls.CipherSuiteName(state.CipherSuite),
 	}
 	if len(state.PeerCertificates) == 0 {
-		return metadata, nil
+		return metadata
 	}
 	certificate := state.PeerCertificates[0]
 	metadata["certificate_subject"] = certificate.Subject.String()
@@ -424,35 +419,40 @@ func evaluateTLS(target model.Target, port int, state *tls.ConnectionState) (map
 	metadata["certificate_not_after"] = certificate.NotAfter.UTC().Format(time.RFC3339)
 	metadata["certificate_dns_names"] = strings.Join(certificate.DNSNames, ", ")
 
-	now := time.Now()
+	return metadata
+}
+
+func tlsConfigurationFindings(target model.Target, port int, state *tls.ConnectionState, legacyAccepted bool) []model.Finding {
+	input := checkdefinition.TLSInput{Version: state.Version, CipherSuite: state.CipherSuite,
+		Hostname: verificationName(target), LegacyProtocolsAccepted: legacyAccepted, ObservedAt: time.Now().UTC()}
+	if len(state.PeerCertificates) > 0 {
+		input.Certificate = state.PeerCertificates[0]
+	}
 	var findings []model.Finding
-	if now.After(certificate.NotAfter) {
-		findings = append(findings, newFinding(
-			"tls.certificate-expired", target, port, "tls", "high",
-			"TLS certificate has expired",
-			fmt.Sprintf("The leaf certificate expired at %s.", certificate.NotAfter.UTC().Format(time.RFC3339)),
-			"Replace the certificate with a valid certificate and verify automated renewal.",
-		))
-	} else if certificate.NotAfter.Sub(now) <= certificateExpiryWarning {
-		findings = append(findings, newFinding(
-			"tls.certificate-expiring", target, port, "tls", "medium",
-			"TLS certificate expires soon",
-			fmt.Sprintf("The leaf certificate expires at %s.", certificate.NotAfter.UTC().Format(time.RFC3339)),
-			"Renew or replace the certificate before expiration and verify automated renewal.",
-		))
-	}
-	verifyName := verificationName(target)
-	if verifyName != "" {
-		if err := certificate.VerifyHostname(verifyName); err != nil {
-			findings = append(findings, newFinding(
-				"tls.hostname-mismatch", target, port, "tls", "medium",
-				"TLS certificate does not match the target",
-				fmt.Sprintf("Certificate identity validation for %q failed: %s.", verifyName, cleanEvidence(err.Error())),
-				"Install a certificate whose subject alternative names include the service hostname or IP address.",
-			))
+	for _, check := range builtinTLSChecks {
+		if check.ID == "tls.hostname-mismatch" && input.Hostname == "" {
+			continue
 		}
+		if check.ID == "tls.certificate-expiring" && input.Certificate != nil && input.ObservedAt.After(input.Certificate.NotAfter) {
+			continue
+		}
+		result, err := checkdefinition.EvaluateTLS(check, input)
+		if err != nil || result.Passed {
+			continue
+		}
+		findings = append(findings, newFinding(check.ID, target, port, "tls", check.Severity,
+			check.Title, result.Evidence+".", result.Remediation))
 	}
-	return metadata, findings
+	return findings
+}
+
+func mustTLSCheck(id, severity, title, spec string) checkdefinition.Check {
+	check := checkdefinition.Check{SchemaVersion: checkdefinition.SchemaVersion, ID: id, Version: "1.0.0", Kind: "tls",
+		Title: title, Severity: severity, Spec: json.RawMessage(spec)}
+	if _, err := checkdefinition.DecodeTLSSpec(check); err != nil {
+		panic(fmt.Sprintf("invalid built-in TLS check %s: %v", id, err))
+	}
+	return check
 }
 
 func exposedServiceFindings(target model.Target, port int, service string) []model.Finding {

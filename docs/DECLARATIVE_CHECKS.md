@@ -52,6 +52,23 @@ rules against the single response already collected by its bounded HTTP probe;
 the format cannot issue additional requests, follow redirects, submit data, or
 execute code.
 
-TLS- and SSH-specific spec schemas are introduced in their respective slices.
+## TLS specifications
+
+TLS checks can evaluate the negotiated protocol and cipher, whether the bounded
+legacy-protocol probes succeeded, and the observed leaf certificate:
+
+- `minimum_version`: `TLS1.0`, `TLS1.1`, `TLS1.2`, or `TLS1.3`
+- `disallow_legacy_protocols`: reject observed TLS 1.0 or TLS 1.1 support
+- `disallowed_cipher_suites`: exact Go/IANA-style cipher-suite names
+- `require_current_certificate`: require the leaf certificate to be within its
+  validity dates; this does not claim public-chain trust
+- `require_hostname_match`: require the leaf certificate to match the target
+- `minimum_certificate_days_left`: warn within a bounded 0–3650 day window
+- `remediation`: guidance included with a failed check
+
+The evaluator uses handshake evidence already gathered by the scanner and
+cannot alter protocol negotiation outside Mossward's fixed TLS probes.
+
+The SSH-specific spec schema is introduced in its respective slice.
 Publisher trust, version activation, rollback, and key rotation remain part of
 the check lifecycle and trust-policy slice.

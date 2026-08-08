@@ -79,7 +79,8 @@ func TestEvaluateTLSDetectsExpiredAndHostnameMismatch(t *testing.T) {
 		Version: tls.VersionTLS13, CipherSuite: tls.TLS_AES_128_GCM_SHA256,
 		PeerCertificates: []*x509.Certificate{certificate},
 	}
-	metadata, findings := evaluateTLS(target, 443, state)
+	metadata := tlsMetadata(state)
+	findings := tlsConfigurationFindings(target, 443, state, false)
 	if metadata["tls_version"] != "TLS 1.3" {
 		t.Fatalf("unexpected TLS metadata: %v", metadata)
 	}

@@ -16,6 +16,8 @@ Server-state protection and disaster recovery are documented in
 The signed, non-executable check envelope is documented in
 [`docs/DECLARATIVE_CHECKS.md`](docs/DECLARATIVE_CHECKS.md). Its bounded HTTP
 rules cover transport, response headers, header values, and status codes.
+Bounded TLS rules cover protocol versions, negotiated ciphers, certificate
+dates and names, and certificate-expiration warning windows.
 
 Administrators can manage database-backed scan scope policies from the Users
 page. Every scan selects an enabled policy, and Mossward enforces that policy's
