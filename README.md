@@ -369,6 +369,8 @@ evidence projection, completion, and checkpoint-based continuation by a replacem
 worker after an expired lease.
 The scan interface separates scan history from new-scan configuration and provides
 linked Overview, Services, CVEs, and Findings result views.
+Scan history, service observations, and CVE matches support URL-persisted search,
+filter, and sorting controls so a configured view can be refreshed or shared.
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides

@@ -7,6 +7,7 @@ const loading = document.querySelector("#detail-loading");
 const errorPanel = document.querySelector("#detail-error");
 const content = document.querySelector("#detail-content");
 let refreshTimer;
+let latestScan;
 const cancelButton = document.querySelector("#cancel-scan");
 
 const escapeHTML = (value) => String(value).replace(
@@ -33,10 +34,41 @@ function formatDuration(scan) {
   return `${minutes} min ${seconds % 60} sec`;
 }
 
+function controlValue(id) { return document.querySelector(id).value; }
+
+function filteredObservations(observations) {
+  const search = controlValue("#service-search").trim().toLowerCase();
+  const protocol = controlValue("#service-protocol");
+  return observations.filter((item) => (!protocol || item.protocol === protocol) && (!search ||
+    `${item.target} ${item.address} ${item.product || ""} ${item.version || ""}`.toLowerCase().includes(search)))
+    .sort((left, right) => {
+      if (controlValue("#service-sort") === "product") return (left.product || left.protocol).localeCompare(right.product || right.protocol);
+      if (controlValue("#service-sort") === "protocol") return left.protocol.localeCompare(right.protocol) || left.port - right.port;
+      if (controlValue("#service-sort") === "newest") return new Date(right.observed_at) - new Date(left.observed_at);
+      return left.address.localeCompare(right.address, undefined, {numeric: true}) || left.port - right.port;
+    });
+}
+
+function filteredCVEs(matches) {
+  const search = controlValue("#cve-search").trim().toLowerCase();
+  const severity = controlValue("#cve-severity");
+  const knownExploited = controlValue("#cve-kev") === "known";
+  return matches.filter((item) => (!severity || item.severity === severity) && (!knownExploited || item.known_exploited) &&
+    (!search || `${item.cve_id} ${item.product} ${item.version} ${item.target} ${item.address}`.toLowerCase().includes(search)))
+    .sort((left, right) => {
+      if (controlValue("#cve-sort") === "newest") return new Date(right.matched_at) - new Date(left.matched_at);
+      if (controlValue("#cve-sort") === "id") return left.cve_id.localeCompare(right.cve_id);
+      if (controlValue("#cve-sort") === "product") return left.product.localeCompare(right.product) || left.cve_id.localeCompare(right.cve_id);
+      return right.cvss_score - left.cvss_score || left.cve_id.localeCompare(right.cve_id);
+    });
+}
+
 function render(scan) {
   const observations = scan.observations || [];
   const findings = scan.findings || [];
   const cveMatches = scan.cve_matches || [];
+  const displayedObservations = filteredObservations(observations);
+  const displayedCVEs = filteredCVEs(cveMatches);
   const total = scan.total_checks || (scan.targets.length * scan.ports.length);
   const done = scan.status === "completed" && !scan.done_checks ? total : scan.done_checks;
   const percent = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
@@ -84,9 +116,9 @@ function render(scan) {
   scanErrorPanel.hidden = activeView !== "overview" || !scan.error;
   document.querySelector("#scan-error").textContent = scan.error || "";
 
-  document.querySelector("#services-summary").textContent = `${observations.length} observed`;
-  document.querySelector("#service-list").innerHTML = observations.length
-    ? observations.map((service) => `
+  document.querySelector("#services-summary").textContent = `${displayedObservations.length} of ${observations.length} observed`;
+  document.querySelector("#service-list").innerHTML = displayedObservations.length
+    ? displayedObservations.map((service) => `
       <article class="service-detail">
         <div class="finding-heading">
           <div>
@@ -108,13 +140,13 @@ function render(scan) {
         ` : ""}
       </article>
     `).join("")
-    : `<div class="no-findings"><span class="empty-icon">○</span><strong>No reachable services observed</strong><span>This area updates while the scan is running.</span></div>`;
+    : `<div class="no-findings"><span class="empty-icon">○</span><strong>No matching service observations</strong><span>Adjust the service search or protocol filter.</span></div>`;
 
   document.querySelector("#findings-summary").textContent = `${findings.length} findings`;
 
-  document.querySelector("#cve-summary").textContent = `${cveMatches.length} matches`;
-  document.querySelector("#cve-list").innerHTML = cveMatches.length
-    ? cveMatches.map((match) => `
+  document.querySelector("#cve-summary").textContent = `${displayedCVEs.length} of ${cveMatches.length} matches`;
+  document.querySelector("#cve-list").innerHTML = displayedCVEs.length
+    ? displayedCVEs.map((match) => `
       <article class="finding-detail">
         <div class="finding-heading">
           <div>
@@ -134,7 +166,7 @@ function render(scan) {
         <a class="intel-link" href="${escapeHTML(match.source_url)}" target="_blank" rel="noopener noreferrer">View authoritative NVD record ↗</a>
       </article>
     `).join("")
-    : `<div class="no-findings"><span class="empty-icon">○</span><strong>No version-qualified CVE matches</strong><span>Mossward only reports a match when both product and version evidence are available.</span></div>`;
+    : `<div class="no-findings"><span class="empty-icon">○</span><strong>No matching CVEs</strong><span>Adjust the CVE search, severity, or exploitation filter.</span></div>`;
   document.querySelector("#finding-list").innerHTML = findings.length
     ? findings.map((finding) => `
       <article class="finding-detail">
@@ -161,12 +193,46 @@ function render(scan) {
 function configureSectionNavigation() {
   document.querySelectorAll("[data-scan-view-link]").forEach((link) => {
     const view = link.dataset.scanViewLink;
-    link.href = `/scan-detail.html?id=${encodeURIComponent(scanID || "")}${view === "overview" ? "" : `&view=${view}`}`;
+    const linkParams = new URLSearchParams(window.location.search);
+    linkParams.set("id", scanID || "");
+    if (view === "overview") linkParams.delete("view"); else linkParams.set("view", view);
+    link.href = `/scan-detail.html?${linkParams}`;
     link.classList.toggle("active", view === activeView);
     if (view === activeView) link.setAttribute("aria-current", "page");
   });
   document.querySelectorAll("[data-scan-view]").forEach((section) => {
     section.hidden = section.dataset.scanView !== activeView;
+  });
+}
+
+function configureResultControls() {
+  const protocols = [...new Set((latestScan?.observations || []).map((item) => item.protocol))].sort();
+  const protocolSelect = document.querySelector("#service-protocol");
+  const currentProtocol = protocolSelect.value || new URLSearchParams(window.location.search).get("service_protocol") || "";
+  protocolSelect.innerHTML = `<option value="">All protocols</option>${protocols.map((protocol) => `<option value="${escapeHTML(protocol)}">${escapeHTML(protocol)}</option>`).join("")}`;
+  protocolSelect.value = currentProtocol;
+}
+
+function updateResultControlURL() {
+  const params = new URLSearchParams(window.location.search);
+  const controls = {service_search: "#service-search", service_protocol: "#service-protocol", service_sort: "#service-sort",
+    cve_search: "#cve-search", cve_severity: "#cve-severity", cve_kev: "#cve-kev", cve_sort: "#cve-sort"};
+  Object.entries(controls).forEach(([name, selector]) => {
+    const value = controlValue(selector);
+    const defaultValue = name === "service_sort" ? "address" : name === "cve_sort" ? "score" : "";
+    if (value && value !== defaultValue) params.set(name, value); else params.delete(name);
+  });
+  window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
+  configureSectionNavigation();
+}
+
+function restoreResultControls() {
+  const params = new URLSearchParams(window.location.search);
+  const controls = {service_search: "#service-search", service_protocol: "#service-protocol", service_sort: "#service-sort",
+    cve_search: "#cve-search", cve_severity: "#cve-severity", cve_kev: "#cve-kev", cve_sort: "#cve-sort"};
+  Object.entries(controls).forEach(([name, selector]) => {
+    const value = params.get(name);
+    if (value) document.querySelector(selector).value = value;
   });
 }
 
@@ -190,6 +256,8 @@ async function loadScan() {
     }
     if (!response.ok) throw new Error("request failed");
     const scan = await response.json();
+    latestScan = scan;
+    configureResultControls();
     loading.hidden = true;
     errorPanel.hidden = true;
     content.hidden = false;
@@ -206,6 +274,11 @@ async function loadScan() {
 }
 
 configureSectionNavigation();
+restoreResultControls();
+document.querySelectorAll(".result-toolbar input, .result-toolbar select").forEach((control) => control.addEventListener("input", () => {
+  updateResultControlURL();
+  if (latestScan) render(latestScan);
+}));
 loadScan();
 
 cancelButton.addEventListener("click", async () => {

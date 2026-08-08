@@ -278,3 +278,35 @@ button:disabled { opacity: .5; cursor: wait; }
 }
 
 [data-scan-view][hidden] { display: none; }
+
+.result-toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.5fr) repeat(3, minmax(140px, .75fr));
+  gap: 12px;
+  margin: 0 0 18px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: #081710;
+}
+
+.result-toolbar label {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.result-toolbar input,
+.result-toolbar select {
+  margin-top: 6px;
+}
+
+@media (max-width: 900px) {
+  .result-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 620px) {
+  .result-toolbar { grid-template-columns: 1fr; }
+}

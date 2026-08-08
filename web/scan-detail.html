@@ -94,6 +94,11 @@
           <div><span class="step-label">Inventory</span><h2>Service observations</h2></div>
           <span id="services-summary" class="policy-pill">0 observed</span>
         </div>
+        <div class="result-toolbar" aria-label="Service result filters">
+          <label>Search<input id="service-search" type="search" placeholder="Target, address, or product"></label>
+          <label>Protocol<select id="service-protocol"><option value="">All protocols</option></select></label>
+          <label>Sort<select id="service-sort"><option value="address">Address and port</option><option value="product">Product</option><option value="protocol">Protocol</option><option value="newest">Newest observed</option></select></label>
+        </div>
         <div id="service-list"></div>
       </section>
 
@@ -101,6 +106,12 @@
         <div class="card-heading">
           <div><span class="step-label">Intelligence</span><h2>CVE matches</h2></div>
           <span id="cve-summary" class="policy-pill">0 matches</span>
+        </div>
+        <div class="result-toolbar" aria-label="CVE result filters">
+          <label>Search<input id="cve-search" type="search" placeholder="CVE, product, or target"></label>
+          <label>Severity<select id="cve-severity"><option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+          <label><span>Exploitation</span><select id="cve-kev"><option value="">All CVEs</option><option value="known">Known exploited</option></select></label>
+          <label>Sort<select id="cve-sort"><option value="score">Highest CVSS</option><option value="newest">Newest match</option><option value="id">CVE identifier</option><option value="product">Product</option></select></label>
         </div>
         <div id="cve-list"></div>
       </section>
