@@ -31,3 +31,47 @@ func TestConfigRejectsInboundOrInsecureOrigins(t *testing.T) {
 		t.Fatal("server URL path was accepted")
 	}
 }
+
+func TestConfigRejectsUnknownOrDuplicateCollectors(t *testing.T) {
+	config := Config{
+		ServerURL:              "https://mossward.example.test",
+		EndpointURL:            "https://agents.example.test",
+		StateDirectory:         t.TempDir(),
+		CheckInIntervalSeconds: 60,
+		CollectorAllowlist:     []CollectorID{"run_shell"},
+	}
+	if err := config.Validate(); err == nil {
+		t.Fatal("unknown collector was accepted")
+	}
+	config.CollectorAllowlist = []CollectorID{CollectorOperatingSystem, CollectorOperatingSystem}
+	if err := config.Validate(); err == nil {
+		t.Fatal("duplicate collector was accepted")
+	}
+}
+
+func TestSupportedCollectorIDsAreStable(t *testing.T) {
+	got := supportedCollectorIDs()
+	want := []CollectorID{
+		CollectorInstalledSoftware,
+		CollectorListeningServices,
+		CollectorOperatingSystem,
+		CollectorSecurityPosture,
+	}
+	if len(got) != len(want) {
+		t.Fatalf("supported collectors = %v", got)
+	}
+	for index := range want {
+		if got[index] != want[index] {
+			t.Fatalf("supported collectors = %v", got)
+		}
+	}
+}
+
+func TestEffectiveCollectorsRequireLocalAndServerPermission(t *testing.T) {
+	local := []CollectorID{CollectorOperatingSystem, CollectorInstalledSoftware}
+	server := []CollectorID{CollectorSecurityPosture, CollectorOperatingSystem}
+	effective := effectiveCollectors(local, server)
+	if len(effective) != 1 || effective[0] != CollectorOperatingSystem {
+		t.Fatalf("effective collectors = %v", effective)
+	}
+}

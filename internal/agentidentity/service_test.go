@@ -193,6 +193,13 @@ func (s *memoryEndpointStore) MarkEndpointSeen(id string, seenAt time.Time) erro
 	s.lastSeen = &seenAt
 	return nil
 }
+func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []model.CollectorID, _ model.AuditEvent) error {
+	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
+		return store.ErrNotFound
+	}
+	s.endpoint.AllowedCollectors = append([]model.CollectorID(nil), collectors...)
+	return nil
+}
 func (s *memoryEndpointStore) RenewEndpointCertificate(oldSerial string, endpoint model.Endpoint, _ model.AuditEvent) error {
 	if oldSerial != s.endpoint.CertificateSerial {
 		return store.ErrEndpointCertificateChanged
@@ -236,7 +243,8 @@ func TestEnrollmentAndMTLSIdentity(t *testing.T) {
 	if err := service.verifyConnection(connection); err != nil {
 		t.Fatalf("verify enrolled endpoint: %v", err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/agent/v1/check-in", nil)
+	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/agent/v1/check-in",
+		strings.NewReader(`{"schema_version":1,"supported_collectors":[]}`))
 	request.TLS = &connection
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)

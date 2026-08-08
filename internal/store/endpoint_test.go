@@ -68,3 +68,30 @@ func TestEndpointCertificateLifecycle(t *testing.T) {
 		t.Fatalf("unexpected revoked endpoint: %#v %v", stored, err)
 	}
 }
+
+func TestEndpointCollectorPolicyDefaultsDenyAndIsAudited(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	_, err := repository.db.Exec(`INSERT INTO endpoints(id,name,status,certificate_serial,certificate_pem,enrolled_at,expires_at)
+		VALUES('endpoint','Endpoint','active','serial','certificate',?,?)`, formatTime(now), formatTime(now.Add(time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := repository.EndpointBySerial("serial")
+	if err != nil || len(endpoint.AllowedCollectors) != 0 {
+		t.Fatalf("default collector policy = %v, error = %v", endpoint.AllowedCollectors, err)
+	}
+	collectors := []model.CollectorID{model.CollectorOperatingSystem, model.CollectorSecurityPosture}
+	event := model.AuditEvent{OccurredAt: now, Action: "endpoint.collectors.updated", Severity: model.AuditWarning}
+	if err := repository.SetEndpointCollectors("endpoint", collectors, event); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err = repository.EndpointBySerial("serial")
+	if err != nil || len(endpoint.AllowedCollectors) != 2 {
+		t.Fatalf("collector policy = %v, error = %v", endpoint.AllowedCollectors, err)
+	}
+	var count int
+	if err := repository.db.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE action='endpoint.collectors.updated'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit event count = %d, error = %v", count, err)
+	}
+}

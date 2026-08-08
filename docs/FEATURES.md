@@ -327,7 +327,7 @@ failure and health states.
 - [x] Explicit enrollment and revocation
 - [x] Mutually authenticated device identity
 - [x] Outbound-only agent communication
-- [ ] Read-only collector allowlist
+- [x] Read-only collector allowlist
 - [ ] Signed Linux endpoint agent
 - [ ] Signed Windows endpoint agent
 - [ ] Signed, rollback-capable updates

@@ -3,5 +3,6 @@
   "endpoint_url": "https://agents.mossward.example.com:9443",
   "enrollment_ca_file": "/etc/mossward/enrollment-ca.pem",
   "state_directory": "/var/lib/mossward-agent",
-  "check_in_interval_seconds": 60
+  "check_in_interval_seconds": 60,
+  "collector_allowlist": []
 }

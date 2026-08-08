@@ -18,6 +18,11 @@ an administrator-controlled location and adjust these fields:
   server's trusted CA bundle.
 - `state_directory` must be an absolute, agent-private directory.
 - `check_in_interval_seconds` defaults to 60 and accepts 15 through 86400.
+- `collector_allowlist` is the endpoint's local ceiling for built-in read-only
+  collectors. It defaults to empty, so collection remains disabled. Supported
+  identifiers are `operating_system`, `installed_software`,
+  `listening_services`, and `security_posture`. Unknown or duplicate values
+  prevent startup; values are never interpreted as commands or paths.
 
 On Windows, use absolute drive-letter paths such as
 `C:\\ProgramData\\Mossward\\Agent`. Restrict the configuration and state
@@ -50,6 +55,13 @@ The process checks in over the dedicated mTLS endpoint, retries failed outbound
 connections with a bounded backoff, and renews its certificate when fewer than
 30 days remain. Revoked endpoint identities are rejected by the server during
 the TLS handshake.
+
+Adding a collector to the local allowlist does not by itself execute it. The
+agent requires both this local permission and the endpoint-specific policy sent
+by the server. Server authorization is empty by default. This intersection
+prevents the server from expanding an endpoint's locally approved collection
+boundary. Collector execution and evidence submission remain separate roadmap
+slices.
 
 Service-unit packaging and queued endpoint telemetry are separate roadmap
 slices. Until service packages are added, use the operating system's service

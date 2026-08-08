@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -86,7 +87,7 @@ func (s *SQLiteStore) ConsumeAgentEnrollmentToken(hash []byte, endpoint model.En
 }
 
 func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason
+	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors
 		FROM endpoints ORDER BY name, enrolled_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
@@ -104,7 +105,7 @@ func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
 }
 
 func (s *SQLiteStore) EndpointBySerial(serial string) (model.Endpoint, error) {
-	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason
+	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors
 		FROM endpoints WHERE certificate_serial=?`, serial)
 	endpoint, err := scanEndpoint(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -164,6 +165,30 @@ func (s *SQLiteStore) MarkEndpointSeen(id string, seenAt time.Time) error {
 	return err
 }
 
+func (s *SQLiteStore) SetEndpointCollectors(id string, collectors []model.CollectorID, event model.AuditEvent) error {
+	encoded, err := json.Marshal(collectors)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE endpoints SET allowed_collectors=? WHERE id=? AND status='active'`, encoded, id)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrNotFound
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 type endpointScanner interface {
 	Scan(...any) error
 }
@@ -172,9 +197,13 @@ func scanEndpoint(row endpointScanner) (model.Endpoint, error) {
 	var endpoint model.Endpoint
 	var enrolledAt, expiresAt string
 	var lastSeen, renewedAt, revokedAt sql.NullString
+	var allowedCollectors string
 	if err := row.Scan(&endpoint.ID, &endpoint.Name, &endpoint.Status, &endpoint.CertificateSerial, &enrolledAt, &expiresAt,
-		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason); err != nil {
+		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors); err != nil {
 		return model.Endpoint{}, err
+	}
+	if err := json.Unmarshal([]byte(allowedCollectors), &endpoint.AllowedCollectors); err != nil {
+		return model.Endpoint{}, fmt.Errorf("decode endpoint collector policy: %w", err)
 	}
 	endpoint.EnrolledAt, _ = parseTime(enrolledAt)
 	endpoint.ExpiresAt, _ = parseTime(expiresAt)

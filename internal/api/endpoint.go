@@ -14,6 +14,7 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/agent-enrollment-tokens", a.createAgentEnrollmentToken)
 	mux.HandleFunc("POST /api/agent/enroll", a.enrollAgent)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/revoke", a.revokeEndpoint)
+	mux.HandleFunc("PUT /api/admin/endpoints/{id}/collectors", a.updateEndpointCollectors)
 	mux.HandleFunc("GET /api/admin/scanner-workers", a.listScannerWorkers)
 	mux.HandleFunc("GET /api/admin/scanner-worker-dispatch", a.scannerWorkerDispatchSettings)
 	mux.HandleFunc("PUT /api/admin/scanner-worker-dispatch", a.updateScannerWorkerDispatch)
@@ -21,6 +22,29 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) updateEndpointCollectors(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	var request struct {
+		Collectors []model.CollectorID `json:"collectors"`
+	}
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	err := a.agentIdentity.SetEndpointCollectors(r.PathValue("id"), request.Collectors, actor.ID, requestIP(r))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "active endpoint not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) scannerWorkerDispatchSettings(w http.ResponseWriter, r *http.Request) {

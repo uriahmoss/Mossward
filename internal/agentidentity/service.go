@@ -34,6 +34,7 @@ type EndpointStore interface {
 	ListEndpoints() ([]model.Endpoint, error)
 	EndpointBySerial(string) (model.Endpoint, error)
 	MarkEndpointSeen(string, time.Time) error
+	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
 }
@@ -228,13 +229,49 @@ func (s *Service) Handler() http.Handler {
 			_ = json.NewEncoder(w).Encode(result)
 			return
 		}
+		var heartbeat model.AgentCheckIn
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&heartbeat); err != nil || heartbeat.SchemaVersion != 1 || decoder.Decode(&struct{}{}) != io.EOF {
+			http.Error(w, "invalid endpoint-agent check-in", http.StatusBadRequest)
+			return
+		}
+		if err := validateEndpointCollectors(heartbeat.SupportedCollectors); err != nil {
+			http.Error(w, "invalid endpoint-agent capabilities", http.StatusBadRequest)
+			return
+		}
 		if err := s.store.MarkEndpointSeen(endpoint.ID, now); err != nil {
 			http.Error(w, "endpoint state unavailable", http.StatusServiceUnavailable)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]any{"status": "accepted", "endpoint_id": endpoint.ID, "server_time": now})
+		_ = json.NewEncoder(w).Encode(model.AgentCheckInResponse{Status: "accepted", EndpointID: endpoint.ID,
+			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors})
 	})
+}
+
+func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {
+	if err := validateEndpointCollectors(collectors); err != nil {
+		return err
+	}
+	event := model.AuditEvent{OccurredAt: s.now(), ActorID: actorID, Action: "endpoint.collectors.updated",
+		Severity: model.AuditWarning, TargetType: "endpoint", TargetID: id, SourceIP: sourceIP, Details: "{}"}
+	return s.store.SetEndpointCollectors(id, collectors, event)
+}
+
+func validateEndpointCollectors(collectors []model.CollectorID) error {
+	allowed := map[model.CollectorID]bool{
+		model.CollectorOperatingSystem: true, model.CollectorInstalledSoftware: true,
+		model.CollectorListeningServices: true, model.CollectorSecurityPosture: true,
+	}
+	seen := map[model.CollectorID]bool{}
+	for _, collector := range collectors {
+		if !allowed[collector] || seen[collector] {
+			return errors.New("endpoint collector policy contains an unsupported or duplicate collector")
+		}
+		seen[collector] = true
+	}
+	return nil
 }
 
 func (s *Service) verifyConnection(connection tls.ConnectionState) error {

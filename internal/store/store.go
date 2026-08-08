@@ -118,6 +118,7 @@ type Repository interface {
 	ListEndpoints() ([]model.Endpoint, error)
 	EndpointBySerial(string) (model.Endpoint, error)
 	MarkEndpointSeen(string, time.Time) error
+	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error

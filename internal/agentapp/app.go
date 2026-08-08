@@ -15,6 +15,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"mossward/internal/model"
 )
 
 const (
@@ -81,10 +83,15 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) checkIn(ctx context.Context) error {
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, a.checkInURL, nil)
+	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SupportedCollectors: supportedCollectorIDs()})
 	if err != nil {
 		return err
 	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, a.checkInURL, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
 	response, err := a.client.Do(request)
 	if err != nil {
 		return err
@@ -93,6 +100,17 @@ func (a *App) checkIn(ctx context.Context) error {
 	if response.StatusCode != http.StatusOK {
 		return fmt.Errorf("endpoint check-in returned status %d", response.StatusCode)
 	}
+	var result model.AgentCheckInResponse
+	decoder := json.NewDecoder(response.Body)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&result); err != nil {
+		return fmt.Errorf("decode endpoint check-in: %w", err)
+	}
+	if err := validateCollectorAllowlist(result.AllowedCollectors); err != nil {
+		return fmt.Errorf("reject endpoint collector policy: %w", err)
+	}
+	effective := effectiveCollectors(a.config.CollectorAllowlist, result.AllowedCollectors)
+	slog.Info("Endpoint collector policy received", "server_allowed", len(result.AllowedCollectors), "effective", len(effective))
 	return nil
 }
 

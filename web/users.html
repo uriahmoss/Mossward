@@ -9,7 +9,7 @@
 <p id="invite-result"></p><p id="users-error" class="error"></p></section>
 <section class="card"><h2>Current users</h2><div id="users-list">Loading users…</div></section>
 <section class="card"><h2>Server certificate</h2><p>Current HTTPS certificate-management state. ACME certificates renew automatically before expiration.</p><div id="certificate-status">Loading certificate status…</div></section>
-<section class="card"><h2>Endpoint enrollment</h2><p>Create a short-lived, single-use token for an endpoint. The endpoint generates its private key locally and submits only a signed certificate request.</p>
+<section class="card"><h2>Endpoint enrollment</h2><p>Create a short-lived, single-use token for an endpoint. The endpoint generates its private key locally and submits only a signed certificate request. Read-only collectors remain disabled until explicitly authorized here and allowed by the endpoint's local configuration.</p>
 <form id="endpoint-enrollment-form"><label for="endpoint-name">Endpoint name</label><input id="endpoint-name" maxlength="200" required><button type="submit">Create enrollment token</button></form>
 <p id="endpoint-token-result"></p><div id="endpoint-enrollments">Loading enrollment tokens…</div><h3>Enrolled endpoints</h3><div id="endpoints-list">Loading endpoints…</div></section>
 <section class="card"><h2>Scanner workers</h2><p>Enroll a designated remote scanner with explicit network, port, concurrency, and traffic-rate limits. Enrollment does not yet enable distributed job execution.</p>

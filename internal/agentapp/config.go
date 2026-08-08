@@ -15,11 +15,12 @@ import (
 const maximumConfigBytes = 1 << 20
 
 type Config struct {
-	ServerURL              string `json:"server_url"`
-	EndpointURL            string `json:"endpoint_url"`
-	EnrollmentCAFile       string `json:"enrollment_ca_file,omitempty"`
-	StateDirectory         string `json:"state_directory"`
-	CheckInIntervalSeconds int    `json:"check_in_interval_seconds"`
+	ServerURL              string        `json:"server_url"`
+	EndpointURL            string        `json:"endpoint_url"`
+	EnrollmentCAFile       string        `json:"enrollment_ca_file,omitempty"`
+	StateDirectory         string        `json:"state_directory"`
+	CheckInIntervalSeconds int           `json:"check_in_interval_seconds"`
+	CollectorAllowlist     []CollectorID `json:"collector_allowlist,omitempty"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -58,6 +59,9 @@ func (c Config) Validate() error {
 	}
 	if c.CheckInIntervalSeconds < 15 || c.CheckInIntervalSeconds > 86400 {
 		return errors.New("endpoint-agent check-in interval must be between 15 and 86400 seconds")
+	}
+	if err := validateCollectorAllowlist(c.CollectorAllowlist); err != nil {
+		return err
 	}
 	return nil
 }

@@ -233,6 +233,7 @@ so machine-specific policy does not enter source control.
 - `GET /api/admin/agent-enrollment-tokens`
 - `POST /api/admin/agent-enrollment-tokens`
 - `POST /api/admin/endpoints/{id}/revoke`
+- `PUT /api/admin/endpoints/{id}/collectors`
 - `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`
