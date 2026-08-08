@@ -25,11 +25,22 @@ var ErrWorkerEvidenceAlreadyAccepted = errors.New("scanner-worker evidence batch
 var ErrWorkerEvidenceSequence = errors.New("scanner-worker evidence batch sequence is invalid")
 var ErrWorkerJobNotResumable = errors.New("scanner-worker job is not ready for safe reassignment")
 var ErrWorkerJobQuarantined = errors.New("scanner-worker job was quarantined after repeated failures")
+var ErrFindingNotFound = errors.New("finding not found")
+var ErrInvalidFindingWorkflow = errors.New("invalid finding workflow update")
 
 type Repository interface {
 	Save(model.Scan) error
 	Get(string) (model.Scan, error)
 	List() ([]model.Scan, error)
+	UpdateFindingWorkflow(string, model.FindingWorkflowUpdate, time.Time, model.AuditEvent) error
+	SaveFindingException(model.FindingException, model.AuditEvent) error
+	ListFindingExceptions() ([]model.FindingException, error)
+	ReviewFindingException(string, model.FindingExceptionStatus, string, time.Time, model.AuditEvent) error
+	EvidenceRetentionSettings() (model.EvidenceRetentionSettings, error)
+	SaveEvidenceRetentionSettings(model.EvidenceRetentionSettings, model.AuditEvent) error
+	PurgeExpiredEvidence(time.Time) (int64, error)
+	DueOpenEndedExceptions(time.Time) ([]model.FindingException, error)
+	MarkExceptionReminded(string, time.Time) error
 	ReconcileInterrupted() error
 	ListAssets() ([]model.Asset, error)
 	UpdateAssetMetadata(string, model.AssetMetadata, model.AuditEvent) error

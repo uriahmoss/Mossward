@@ -18,7 +18,52 @@ type Store interface {
 	SMTPSettings() (model.SMTPSettings, error)
 	SaveSMTPSettings(model.SMTPSettings, model.AuditEvent) error
 	ListUsers() ([]model.User, error)
+	DueOpenEndedExceptions(time.Time) ([]model.FindingException, error)
+	MarkExceptionReminded(string, time.Time) error
 }
+
+func (s *Service) SendRiskReminders(now time.Time) error {
+	items, err := s.store.DueOpenEndedExceptions(now)
+	if err != nil || len(items) == 0 {
+		return err
+	}
+	settings, err := s.store.SMTPSettings()
+	if err != nil || !settings.Enabled {
+		return err
+	}
+	password, err := s.secrets.Decrypt(settings.PasswordCiphertext)
+	if err != nil && len(settings.PasswordCiphertext) > 0 {
+		return err
+	}
+	users, err := s.store.ListUsers()
+	if err != nil {
+		return err
+	}
+	wanted := map[string]bool{}
+	for _, id := range settings.RecipientUserIDs {
+		wanted[id] = true
+	}
+	var recipients []string
+	for _, u := range users {
+		if wanted[u.ID] && u.Role == model.RoleAdministrator && u.Status == model.UserActive {
+			recipients = append(recipients, u.Email)
+		}
+	}
+	if len(recipients) == 0 {
+		return errors.New("no active SMTP recipients")
+	}
+	for _, item := range items {
+		message := []byte("From: " + settings.FromAddress + "\r\nTo: " + strings.Join(recipients, ",") + "\r\nSubject: Mossward open-ended accepted-risk reminder\r\n\r\nFinding: " + item.FindingID + "\r\nReason: " + item.Reason + "\r\n")
+		if err := sendSMTP(settings, string(password), recipients, message); err != nil {
+			return err
+		}
+		if err := s.store.MarkExceptionReminded(item.ID, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type Service struct {
 	store   Store
 	secrets *auth.SecretBox

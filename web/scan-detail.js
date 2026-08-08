@@ -8,6 +8,7 @@ const errorPanel = document.querySelector("#detail-error");
 const content = document.querySelector("#detail-content");
 let refreshTimer;
 let latestScan;
+let assignableUsers = [];
 const cancelButton = document.querySelector("#cancel-scan");
 const resultControls = {
   service_search: {selector: "#service-search", defaultValue: ""},
@@ -255,6 +256,12 @@ function render(scan) {
         </dl>
         <div class="finding-copy"><strong>Evidence</strong><p>${escapeHTML(finding.evidence)}</p></div>
         <div class="finding-copy"><strong>Recommendation</strong><p>${escapeHTML(finding.remediation)}</p></div>
+        <div class="finding-workflow" data-finding-id="${escapeHTML(finding.id)}">
+          <label>Status<select data-workflow-status><option value="open" ${!finding.status||finding.status==='open'?'selected':''}>Open</option><option value="in_progress" ${finding.status==='in_progress'?'selected':''}>In progress</option><option value="resolved" ${finding.status==='resolved'?'selected':''}>Resolved</option></select></label>
+          <label>Assigned to<select data-workflow-assignee><option value="">Unassigned</option>${assignableUsers.map(user=>`<option value="${escapeHTML(user.id)}" ${finding.assigned_to===user.id?'selected':''}>${escapeHTML(user.display_name||user.email)}</option>`).join('')}</select></label>
+          <button class="compact-button" data-save-workflow type="button">Save workflow</button>
+          <button class="compact-button secondary-button" data-request-exception type="button">Request exception</button>
+        </div>
       </article>
     `).join("")
     : findings.length
@@ -353,6 +360,10 @@ document.querySelectorAll(".result-toolbar input, .result-toolbar select").forEa
   if (latestScan) render(latestScan);
 }));
 loadScan();
+fetch('/api/users').then(response=>response.ok?response.json():[]).then(users=>{assignableUsers=users.filter(user=>user.status==='active');if(latestScan)render(latestScan)}).catch(()=>{});
+
+document.querySelector('#finding-list').addEventListener('click',async(event)=>{const button=event.target.closest('[data-save-workflow]');if(!button)return;const panel=button.closest('[data-finding-id]');button.disabled=true;const response=await fetch(`/api/findings/${encodeURIComponent(panel.dataset.findingId)}/workflow`,{method:'PATCH',headers:{'Content-Type':'application/json','X-Mossward-CSRF':'1'},body:JSON.stringify({status:panel.querySelector('[data-workflow-status]').value,assigned_to:panel.querySelector('[data-workflow-assignee]').value})});button.disabled=false;if(response.ok)await loadScan();});
+document.querySelector('#finding-list').addEventListener('click',async(event)=>{const button=event.target.closest('[data-request-exception]');if(!button)return;const reason=window.prompt('Reason for accepting this risk');if(!reason)return;const openEnded=window.confirm('Leave this exception open-ended? Cancel to use a 90-day expiry.');const expiresAt=openEnded?null:new Date(Date.now()+90*86400000).toISOString();const panel=button.closest('[data-finding-id]');const response=await fetch(`/api/findings/${encodeURIComponent(panel.dataset.findingId)}/exceptions`,{method:'POST',headers:{'Content-Type':'application/json','X-Mossward-CSRF':'1'},body:JSON.stringify({reason,expires_at:expiresAt,reminder_days:30})});if(response.ok)window.alert('Exception submitted for administrator approval.');});
 
 cancelButton.addEventListener("click", async () => {
   if (!window.confirm("Cancel this scan? Completed checks and collected evidence will be retained.")) return;

@@ -74,6 +74,8 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("POST /api/scans", api.createScan)
 	mux.HandleFunc("GET /api/scans/{id}", api.getScan)
 	mux.HandleFunc("POST /api/scans/{id}/cancel", api.cancelScan)
+	mux.HandleFunc("PATCH /api/findings/{id}/workflow", api.updateFindingWorkflow)
+	api.registerReportingRoutes(mux)
 	mux.HandleFunc("GET /api/assets", api.listAssets)
 	mux.HandleFunc("GET /api/assets/{id}", api.getAsset)
 	mux.HandleFunc("PATCH /api/assets/{id}", api.updateAsset)

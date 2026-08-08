@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 35
+const schemaVersion = 37
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -303,6 +303,16 @@ func (s *SQLiteStore) migrate() error {
 			return err
 		}
 	}
+	if current < 36 {
+		if err := s.applyFindingWorkflowMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 37 {
+		if err := s.applyReportingMigration(); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -504,11 +514,11 @@ func (s *SQLiteStore) Save(scan model.Scan) error {
 	for index, finding := range scan.Findings {
 		if _, err := tx.Exec(`
 			INSERT INTO findings(
-				id, scan_id, ordinal, check_id, target, address, port, service, severity, title, evidence, remediation, observed_at
-			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				id, scan_id, ordinal, check_id, target, address, port, service, severity, title, evidence, remediation, observed_at,status,assigned_to,workflow_updated_at
+			) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?,''), ?)
 		`, finding.ID, scan.ID, index, finding.CheckID, finding.Target, finding.Address, finding.Port,
 			finding.Service, finding.Severity, finding.Title, finding.Evidence, finding.Remediation,
-			formatTime(finding.ObservedAt)); err != nil {
+			formatTime(finding.ObservedAt), defaultFindingStatus(finding.Status), finding.AssignedTo, formatOptionalTime(finding.WorkflowUpdatedAt)); err != nil {
 			return fmt.Errorf("insert finding: %w", err)
 		}
 	}
@@ -756,7 +766,7 @@ func (s *SQLiteStore) loadObservations(scan *model.Scan) error {
 
 func (s *SQLiteStore) loadFindings(scan *model.Scan) error {
 	rows, err := s.db.Query(`
-		SELECT id, check_id, target, address, port, service, severity, title, evidence, remediation, observed_at
+		SELECT id, check_id, target, address, port, service, severity, title, evidence, remediation, observed_at,status,COALESCE(assigned_to,''),workflow_updated_at
 		FROM findings WHERE scan_id = ? ORDER BY ordinal
 	`, scan.ID)
 	if err != nil {
@@ -767,13 +777,21 @@ func (s *SQLiteStore) loadFindings(scan *model.Scan) error {
 	for rows.Next() {
 		var finding model.Finding
 		var observed string
+		var workflowUpdated sql.NullString
 		if err := rows.Scan(&finding.ID, &finding.CheckID, &finding.Target, &finding.Address, &finding.Port,
 			&finding.Service, &finding.Severity, &finding.Title, &finding.Evidence,
-			&finding.Remediation, &observed); err != nil {
+			&finding.Remediation, &observed, &finding.Status, &finding.AssignedTo, &workflowUpdated); err != nil {
 			return fmt.Errorf("read finding: %w", err)
 		}
 		if finding.ObservedAt, err = parseTime(observed); err != nil {
 			return err
+		}
+		if workflowUpdated.Valid {
+			parsed, parseErr := parseTime(workflowUpdated.String)
+			if parseErr != nil {
+				return parseErr
+			}
+			finding.WorkflowUpdatedAt = &parsed
 		}
 		scan.Findings = append(scan.Findings, finding)
 	}

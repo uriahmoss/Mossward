@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Reports · Mossward</title><link rel="stylesheet" href="/styles.css"></head>
+<body>
+  <header class="site-header"><a class="wordmark" href="/"><span class="wordmark-mark">M</span><span>Mossward</span></a><div class="header-actions"><a class="back-link" href="/">← Home</a></div></header>
+  <main class="detail-shell report-shell">
+    <section class="detail-heading"><div><p class="eyebrow">Reporting and evidence</p><h1>Security posture</h1><p class="hero-copy">Exposure, workflow progress, accepted risk, and retained evidence.</p></div><div class="report-actions"><a class="compact-button" href="/api/reporting/export?format=csv">Export CSV</a><a class="compact-button" href="/api/reporting/export?format=json">Export JSON</a><button class="compact-button" id="print-report">Print report</button></div></section>
+    <section id="report-metrics" class="metric-grid"></section>
+    <section id="retention-panel" class="card retention-panel" hidden><div class="card-heading"><div><span class="step-label">Evidence lifecycle</span><h2>Retention</h2></div></div><div class="retention-controls"><label>Retention days<input id="retention-days" type="number" min="30" max="3650"></label><button id="save-retention" class="compact-button">Save retention</button></div><p class="field-help">Defaults to 365 days. Active approved exceptions preserve their scan evidence.</p></section>
+    <section class="detail-grid"><article class="card"><div class="card-heading"><div><span class="step-label">Trend</span><h2>Findings over time</h2></div></div><div id="trend-list"></div></article><article class="card"><div class="card-heading"><div><span class="step-label">Risk governance</span><h2>Exceptions</h2></div></div><div id="exception-list"></div></article></section>
+  </main>
+  <script src="/reports.js" defer></script>
+</body></html>

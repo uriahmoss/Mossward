@@ -16,18 +16,20 @@ const tickInterval = 30 * time.Second
 
 type AlertSender interface {
 	SendLongRun(model.ReusableScanPolicy, model.Scan) error
+	SendRiskReminders(time.Time) error
 }
 type PolicyLauncher interface {
 	Launch(model.Scan, model.ReusableScanPolicy) error
 }
 type Runner struct {
-	store    store.Repository
-	engine   *scanner.Engine
-	cancel   context.CancelFunc
-	done     chan struct{}
-	now      func() time.Time
-	alerts   AlertSender
-	launcher PolicyLauncher
+	store             store.Repository
+	engine            *scanner.Engine
+	cancel            context.CancelFunc
+	done              chan struct{}
+	now               func() time.Time
+	alerts            AlertSender
+	launcher          PolicyLauncher
+	lastEvidencePurge time.Time
 }
 
 func NewRunner(repository store.Repository, engine *scanner.Engine, alerts AlertSender, launchers ...PolicyLauncher) *Runner {
@@ -64,6 +66,21 @@ func (r *Runner) loop(ctx context.Context) {
 	}
 }
 func (r *Runner) tick() {
+	now := r.now()
+	if r.alerts != nil {
+		if err := r.alerts.SendRiskReminders(now); err != nil {
+			slog.Warn("Could not send accepted-risk reminders", "error", err)
+		}
+	}
+	if r.lastEvidencePurge.IsZero() || now.Sub(r.lastEvidencePurge) >= 24*time.Hour {
+		count, err := r.store.PurgeExpiredEvidence(now)
+		if err != nil {
+			slog.Warn("Could not apply evidence retention", "error", err)
+		} else {
+			slog.Info("Applied evidence retention", "scans_removed", count)
+			r.lastEvidencePurge = now
+		}
+	}
 	policies, err := r.store.ListReusableScanPolicies(true)
 	if err != nil {
 		slog.Error("Could not load scheduled scan policies", "error", err)
@@ -74,7 +91,6 @@ func (r *Runner) tick() {
 		slog.Error("Could not inspect scheduled scans", "error", err)
 		return
 	}
-	now := r.now()
 	for _, policy := range policies {
 		r.process(policy, scans, now)
 	}

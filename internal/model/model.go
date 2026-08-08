@@ -18,17 +18,33 @@ const (
 )
 
 type Finding struct {
-	ID          string    `json:"id"`
-	CheckID     string    `json:"check_id"`
-	Target      string    `json:"target"`
-	Address     string    `json:"address"`
-	Port        int       `json:"port"`
-	Service     string    `json:"service"`
-	Severity    string    `json:"severity"`
-	Title       string    `json:"title"`
-	Evidence    string    `json:"evidence"`
-	Remediation string    `json:"remediation"`
-	ObservedAt  time.Time `json:"observed_at"`
+	ID                string        `json:"id"`
+	CheckID           string        `json:"check_id"`
+	Target            string        `json:"target"`
+	Address           string        `json:"address"`
+	Port              int           `json:"port"`
+	Service           string        `json:"service"`
+	Severity          string        `json:"severity"`
+	Title             string        `json:"title"`
+	Evidence          string        `json:"evidence"`
+	Remediation       string        `json:"remediation"`
+	ObservedAt        time.Time     `json:"observed_at"`
+	Status            FindingStatus `json:"status"`
+	AssignedTo        string        `json:"assigned_to,omitempty"`
+	WorkflowUpdatedAt *time.Time    `json:"workflow_updated_at,omitempty"`
+}
+
+type FindingStatus string
+
+const (
+	FindingOpen       FindingStatus = "open"
+	FindingInProgress FindingStatus = "in_progress"
+	FindingResolved   FindingStatus = "resolved"
+)
+
+type FindingWorkflowUpdate struct {
+	Status     FindingStatus `json:"status"`
+	AssignedTo string        `json:"assigned_to,omitempty"`
 }
 
 type ServiceObservation struct {

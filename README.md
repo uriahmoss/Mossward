@@ -96,6 +96,13 @@ summary, severity distribution, live check progress, approved scope, timing,
 reachable services, CVE matches, evidence, and remediation guidance. Service,
 CVE, and security-finding views provide focused search, filters, and sorting.
 
+The Reports workspace summarizes finding volume, status, severity, trends, and
+accepted risk. Analysts can assign findings and request exceptions;
+administrators approve or reject risk acceptance. Open-ended approvals send
+periodic SMTP reminders. Evidence defaults to 365-day retention, is configurable
+from 30 to 3650 days, and is preserved while a current approved exception
+applies. Reports export as CSV or JSON and include a print-optimized view.
+
 Scan targets may be individual IP addresses, fully qualified domain names,
 CIDR blocks such as `192.168.1.0/24`, or inclusive ranges such as
 `192.168.2.10-192.168.2.25`. IPv4 network and broadcast addresses are omitted

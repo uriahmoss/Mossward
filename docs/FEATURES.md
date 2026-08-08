@@ -314,13 +314,13 @@ failure and health states.
 
 ### 4. Reporting and evidence lifecycle
 
-- [ ] Finding status and assignment
-- [ ] Exceptions and accepted-risk records
-- [ ] Evidence retention and aging
-- [ ] Trend reporting
-- [ ] Executive summaries
-- [ ] CSV and structured-data exports
-- [ ] Printable reports
+- [x] Finding status and assignment
+- [x] Exceptions and accepted-risk records
+- [x] Evidence retention and aging
+- [x] Trend reporting
+- [x] Executive summaries
+- [x] CSV and structured-data exports
+- [x] Printable reports
 
 ### 5. Endpoint-agent core
 

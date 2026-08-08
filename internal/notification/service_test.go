@@ -5,6 +5,7 @@ import (
 	"mossward/internal/model"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 type memoryStore struct {
@@ -18,6 +19,10 @@ func (s *memoryStore) SaveSMTPSettings(value model.SMTPSettings, _ model.AuditEv
 	return nil
 }
 func (s *memoryStore) ListUsers() ([]model.User, error) { return s.users, nil }
+func (s *memoryStore) DueOpenEndedExceptions(time.Time) ([]model.FindingException, error) {
+	return nil, nil
+}
+func (s *memoryStore) MarkExceptionReminded(string, time.Time) error { return nil }
 func TestSMTPPasswordIsEncrypted(t *testing.T) {
 	box, err := auth.LoadOrCreateSecretBox(filepath.Join(t.TempDir(), "identity.key"))
 	if err != nil {
