@@ -87,5 +87,16 @@ credentials, start a session, run commands, or claim visibility into key
 exchange and authentication settings that are absent from the identification
 line.
 
-Publisher trust, version activation, rollback, and key rotation remain part of
-the check lifecycle and trust-policy slice.
+## Lifecycle and publisher trust
+
+Mossward persists explicitly trusted Ed25519 publisher keys and immutable check
+versions in SQLite. A check is imported into `staged` state only after its
+signature verifies against a currently trusted publisher. Activation retires
+the previously active version, maintaining at most one active version per check
+identifier.
+
+Activating a lower semantic version requires an explicit rollback approval.
+Revoked publishers cannot import or activate versions. Existing version numbers
+cannot be replaced with different signed content, and publisher key identifiers
+cannot be rebound to different public keys. These controls preserve an auditable
+line between trust establishment, review, activation, retirement, and rollback.

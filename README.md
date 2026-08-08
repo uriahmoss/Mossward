@@ -20,6 +20,9 @@ Bounded TLS rules cover protocol versions, negotiated ciphers, certificate
 dates and names, and certificate-expiration warning windows.
 Passive SSH rules cover identification protocol versions, software policy, and
 version or comment disclosure without attempting authentication.
+Trusted publisher keys, immutable staged check versions, single-version
+activation, publisher revocation, and explicit rollback approval are persisted
+in SQLite.
 
 Administrators can manage database-backed scan scope policies from the Users
 page. Every scan selects an enabled policy, and Mossward enforces that policy's
