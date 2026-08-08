@@ -362,6 +362,8 @@ failure count, reason, worker, and quarantine time remain available for review.
 The administrator worker inventory derives a fleet state for healthy, degraded,
 offline, outdated, overloaded, and revoked workers and shows active workload and
 reserved concurrency alongside heartbeat and certificate alerts.
+The deployable `mossward-worker` command and its strict configuration are
+documented in [`docs/SCANNER_WORKER.md`](docs/SCANNER_WORKER.md).
 
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides

@@ -28,6 +28,12 @@ func TestTransportPollRenewAndOrderedOutboxDelivery(t *testing.T) {
 	delivered := []string{}
 	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		switch r.URL.Path {
+		case workerCheckInPath:
+			var heartbeat model.WorkerHeartbeat
+			if err := json.NewDecoder(r.Body).Decode(&heartbeat); err != nil || heartbeat.SoftwareVersion != "1.0.0" {
+				return transportTestResponse(http.StatusBadRequest, ""), nil
+			}
+			return transportTestResponse(http.StatusOK, `{}`), nil
 		case workerPollPath:
 			body, _ := json.Marshal(model.WorkerJobLease{Envelope: model.SignedWorkerJob{Job: model.WorkerJob{ID: "job"}}, Token: "token", ExpiresAt: now.Add(time.Minute)})
 			return transportTestResponse(http.StatusOK, string(body)), nil
@@ -49,6 +55,9 @@ func TestTransportPollRenewAndOrderedOutboxDelivery(t *testing.T) {
 	transport, err := NewTransport("https://worker.test", client)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if err := transport.CheckIn(context.Background(), model.WorkerHeartbeat{SchemaVersion: 1, SoftwareVersion: "1.0.0"}); err != nil {
+		t.Fatalf("worker heartbeat failed: %v", err)
 	}
 	lease, err := transport.Poll(context.Background())
 	if err != nil || lease.Envelope.Job.ID != "job" {

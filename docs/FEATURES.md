@@ -247,6 +247,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Exact-retry idempotency with altered-payload replay rejection
 - [x] Worker poll, execute, lease-renew, encrypted-outbox, and upload loop
 - [x] Project accepted remote observations, findings, checkpoints, CVEs, and worker provenance into scans and assets
+- [x] Deployable scanner-worker command with strict mTLS, trust-key, scope, and encrypted-state configuration
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [x] Dead-letter quarantine for repeatedly failing jobs
 - [x] Fleet health visibility for offline, outdated, revoked, and overloaded workers

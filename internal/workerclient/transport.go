@@ -21,6 +21,7 @@ const (
 	workerRenewPath              = "/api/scanner-worker/v1/jobs/lease/renew"
 	workerEvidencePath           = "/api/scanner-worker/v1/jobs/evidence"
 	workerCompletionPath         = "/api/scanner-worker/v1/jobs/result"
+	workerCheckInPath            = "/api/scanner-worker/v1/check-in"
 )
 
 var ErrNoWorkerJob = errors.New("no scanner-worker job is available")
@@ -28,6 +29,23 @@ var ErrNoWorkerJob = errors.New("no scanner-worker job is available")
 type Transport struct {
 	baseURL *url.URL
 	client  *http.Client
+}
+
+func (t *Transport) CheckIn(ctx context.Context, heartbeat model.WorkerHeartbeat) error {
+	payload, err := json.Marshal(heartbeat)
+	if err != nil {
+		return err
+	}
+	response, err := t.request(ctx, workerCheckInPath, payload)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, workerTransportResponseLimit))
+	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
+		return transportResponseError(response)
+	}
+	return nil
 }
 
 type TransportError struct {
