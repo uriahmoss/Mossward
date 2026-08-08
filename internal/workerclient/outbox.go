@@ -176,7 +176,7 @@ func (o *Outbox) Peek() (OutboxMessage, error) {
 	var message OutboxMessage
 	var ciphertext, nonce []byte
 	var createdAt string
-	err := o.db.QueryRow(`SELECT id,kind,ciphertext,nonce,created_at FROM outbox_messages ORDER BY created_at,id LIMIT 1`).Scan(&message.ID, &message.Kind, &ciphertext, &nonce, &createdAt)
+	err := o.db.QueryRow(`SELECT id,kind,ciphertext,nonce,created_at FROM outbox_messages ORDER BY rowid LIMIT 1`).Scan(&message.ID, &message.Kind, &ciphertext, &nonce, &createdAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return message, ErrOutboxEmpty
 	}

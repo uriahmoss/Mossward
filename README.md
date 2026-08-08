@@ -347,6 +347,13 @@ failure is recorded on the scan and never triggers local fallback. Remote jobs
 are valid for at most 24 hours, use a 12-hour default, honor shorter maintenance
 windows, and are assigned only when the worker certificate covers the job.
 
+The worker client runtime drains its encrypted outbox before polling, pauses new
+work when configured queue pressure is reached, verifies and claims each signed
+job, executes it, renews its active lease, and queues evidence before completion.
+Messages retain insertion order and are deleted only after a successful server
+response. Exact evidence and completion retries are acknowledged idempotently,
+while an accepted identifier reused with changed content remains a replay error.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

@@ -25,9 +25,12 @@ func (s *SQLiteStore) CompleteScannerWorkerJob(receipt model.WorkerJobResultRece
 			return ErrInvalidWorkerJobLease
 		}
 	}
-	var existing string
-	err = tx.QueryRow(`SELECT id FROM scanner_worker_jobs WHERE result_id=?`, receipt.ResultID).Scan(&existing)
+	var existingJobID, existingWorkerID, existingOutcome, existingCompletedAt string
+	err = tx.QueryRow(`SELECT id,worker_id,result_outcome,completed_at FROM scanner_worker_jobs WHERE result_id=?`, receipt.ResultID).Scan(&existingJobID, &existingWorkerID, &existingOutcome, &existingCompletedAt)
 	if err == nil {
+		if existingJobID == receipt.JobID && existingWorkerID == receipt.WorkerID && existingOutcome == string(receipt.Outcome) && existingCompletedAt == formatTime(receipt.CompletedAt) {
+			return ErrWorkerResultAlreadyAccepted
+		}
 		return ErrWorkerResultReplay
 	}
 	if !errors.Is(err, sql.ErrNoRows) {

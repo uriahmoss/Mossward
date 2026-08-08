@@ -69,8 +69,13 @@ func TestScannerWorkerResultRejectsReplayAndLeaseReuse(t *testing.T) {
 	if err := repository.CompleteScannerWorkerJob(receipt, tokenHash[:], receipt.AcceptedAt); err != nil {
 		t.Fatalf("valid scanner-worker result was rejected: %v", err)
 	}
-	if err := repository.CompleteScannerWorkerJob(receipt, tokenHash[:], receipt.AcceptedAt); !errors.Is(err, ErrWorkerResultReplay) {
-		t.Fatalf("duplicate scanner-worker result was accepted: %v", err)
+	if err := repository.CompleteScannerWorkerJob(receipt, tokenHash[:], receipt.AcceptedAt); !errors.Is(err, ErrWorkerResultAlreadyAccepted) {
+		t.Fatalf("exact scanner-worker result retry was not idempotent: %v", err)
+	}
+	tampered := receipt
+	tampered.CompletedAt = tampered.CompletedAt.Add(time.Second)
+	if err := repository.CompleteScannerWorkerJob(tampered, tokenHash[:], receipt.AcceptedAt); !errors.Is(err, ErrWorkerResultReplay) {
+		t.Fatalf("changed scanner-worker result reused an accepted ID: %v", err)
 	}
 	receipt.ResultID = "different-result"
 	if err := repository.CompleteScannerWorkerJob(receipt, tokenHash[:], receipt.AcceptedAt); !errors.Is(err, ErrInvalidWorkerJobLease) {
@@ -112,8 +117,13 @@ func TestScannerWorkerEvidenceRequiresContiguousSequence(t *testing.T) {
 	if err != nil || len(checkpoints) != 1 || checkpoints[0].Address != "192.0.2.10" || checkpoints[0].Port != 443 {
 		t.Fatalf("scanner-worker checkpoint did not persist: %#v %v", checkpoints, err)
 	}
-	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceReplay) {
-		t.Fatalf("worker evidence replay was accepted: %v", err)
+	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceAlreadyAccepted) {
+		t.Fatalf("exact worker evidence retry was not idempotent: %v", err)
+	}
+	tamperedEnvelope := envelope
+	tamperedEnvelope.Signature = "changed"
+	if err := repository.RecordScannerWorkerEvidenceBatch(tamperedEnvelope, now); !errors.Is(err, ErrWorkerEvidenceReplay) {
+		t.Fatalf("changed worker evidence reused an accepted ID: %v", err)
 	}
 	envelope.Batch.ID, envelope.Batch.Sequence = "batch-3", 3
 	if err := repository.RecordScannerWorkerEvidenceBatch(envelope, now); !errors.Is(err, ErrWorkerEvidenceSequence) {

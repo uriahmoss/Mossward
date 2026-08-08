@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -118,6 +119,9 @@ func (s *memoryEndpointStore) CompleteScannerWorkerJob(receipt model.WorkerJobRe
 		return store.ErrInvalidWorkerJobLease
 	}
 	if s.workerResult.ResultID == receipt.ResultID {
+		if s.workerResult.JobID == receipt.JobID && s.workerResult.WorkerID == receipt.WorkerID && s.workerResult.Outcome == receipt.Outcome && s.workerResult.CompletedAt.Equal(receipt.CompletedAt) {
+			return store.ErrWorkerResultAlreadyAccepted
+		}
 		return store.ErrWorkerResultReplay
 	}
 	s.workerResult = receipt
@@ -132,6 +136,9 @@ func (s *memoryEndpointStore) ScannerWorkerJob(id string) (model.SignedWorkerJob
 func (s *memoryEndpointStore) RecordScannerWorkerEvidenceBatch(envelope model.SignedWorkerEvidenceBatch, _ time.Time) error {
 	for _, existing := range s.workerEvidence {
 		if existing.Batch.ID == envelope.Batch.ID {
+			if reflect.DeepEqual(existing, envelope) {
+				return store.ErrWorkerEvidenceAlreadyAccepted
+			}
 			return store.ErrWorkerEvidenceReplay
 		}
 	}
@@ -396,6 +403,13 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 	if evidenceResponse.Code != http.StatusAccepted || len(repository.workerEvidence) != 1 {
 		t.Fatalf("scanner-worker evidence was not accepted: %d %s", evidenceResponse.Code, evidenceResponse.Body.String())
 	}
+	evidenceRetry := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/scanner-worker/v1/jobs/evidence", bytes.NewReader(evidenceBody))
+	evidenceRetry.TLS = request.TLS
+	evidenceRetryResponse := httptest.NewRecorder()
+	service.Handler().ServeHTTP(evidenceRetryResponse, evidenceRetry)
+	if evidenceRetryResponse.Code != http.StatusOK || len(repository.workerEvidence) != 1 {
+		t.Fatalf("exact scanner-worker evidence retry was not acknowledged: %d %s", evidenceRetryResponse.Code, evidenceRetryResponse.Body.String())
+	}
 	resultBody, err := json.Marshal(model.WorkerJobResult{SchemaVersion: 1, ID: "result", JobID: "job", LeaseToken: lease.Token,
 		Outcome: model.WorkerJobResultSucceeded, CompletedAt: now})
 	if err != nil {
@@ -412,8 +426,8 @@ func TestScannerWorkerPollLeasesBoundJob(t *testing.T) {
 	replayRequest.TLS = request.TLS
 	replayResponse := httptest.NewRecorder()
 	service.Handler().ServeHTTP(replayResponse, replayRequest)
-	if replayResponse.Code != http.StatusConflict {
-		t.Fatalf("scanner-worker result replay returned %d", replayResponse.Code)
+	if replayResponse.Code != http.StatusOK {
+		t.Fatalf("exact scanner-worker result retry returned %d", replayResponse.Code)
 	}
 	second := httptest.NewRecorder()
 	service.Handler().ServeHTTP(second, request)

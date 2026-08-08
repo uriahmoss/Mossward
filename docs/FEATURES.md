@@ -244,6 +244,8 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Explicit local-or-remote policy execution with no automatic fallback
 - [x] Authenticated active-job lease renewal bounded by the signed job expiration
 - [x] Manual and scheduled remote policies create signed worker-bound jobs
+- [x] Exact-retry idempotency with altered-payload replay rejection
+- [x] Worker poll, execute, lease-renew, encrypted-outbox, and upload loop
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [ ] Dead-letter quarantine for repeatedly failing jobs
 - [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers

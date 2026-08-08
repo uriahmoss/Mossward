@@ -48,6 +48,11 @@ func (s *Service) workerSubmitResult(w http.ResponseWriter, r *http.Request) {
 	receipt := model.WorkerJobResultReceipt{ResultID: result.ID, JobID: result.JobID, WorkerID: worker.ID,
 		Outcome: result.Outcome, CompletedAt: result.CompletedAt, AcceptedAt: now}
 	if err := s.workerStore.CompleteScannerWorkerJob(receipt, tokenHash, now); err != nil {
+		if errors.Is(err, store.ErrWorkerResultAlreadyAccepted) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(receipt)
+			return
+		}
 		if errors.Is(err, store.ErrWorkerResultReplay) {
 			http.Error(w, "scanner-worker result was already submitted", http.StatusConflict)
 			return

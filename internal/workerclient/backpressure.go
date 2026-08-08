@@ -33,7 +33,7 @@ func DefaultBackpressurePolicy() BackpressurePolicy {
 }
 
 func (o *Outbox) Backpressure(policy BackpressurePolicy) (BackpressureState, error) {
-	if policy.PausePollingAtPercent < 1 || policy.CriticalAtPercent <= policy.PausePollingAtPercent || policy.CriticalAtPercent > percentageScale {
+	if err := validateBackpressurePolicy(policy); err != nil {
 		return BackpressureState{}, errors.New("scanner-worker backpressure thresholds are invalid")
 	}
 	stats, err := o.Stats()
@@ -51,6 +51,13 @@ func (o *Outbox) Backpressure(policy BackpressurePolicy) (BackpressureState, err
 	}
 	return BackpressureState{Pressure: pressure, UsagePercent: usage,
 		AcceptNewJobs: pressure == OutboxPressureNormal, ForwardPending: stats.Items > 0}, nil
+}
+
+func validateBackpressurePolicy(policy BackpressurePolicy) error {
+	if policy.PausePollingAtPercent < 1 || policy.CriticalAtPercent <= policy.PausePollingAtPercent || policy.CriticalAtPercent > percentageScale {
+		return errors.New("scanner-worker backpressure thresholds are invalid")
+	}
+	return nil
 }
 
 func maximumPercentage(items, maximumItems int, bytes, maximumBytes int64) int {

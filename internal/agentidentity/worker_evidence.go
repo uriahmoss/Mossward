@@ -38,6 +38,11 @@ func (s *Service) workerSubmitEvidence(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := s.workerStore.RecordScannerWorkerEvidenceBatch(envelope, now); err != nil {
+		if errors.Is(err, store.ErrWorkerEvidenceAlreadyAccepted) {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(map[string]any{"status": "already_accepted", "batch_id": envelope.Batch.ID, "sequence": envelope.Batch.Sequence})
+			return
+		}
 		if errors.Is(err, store.ErrWorkerEvidenceReplay) || errors.Is(err, store.ErrWorkerEvidenceSequence) || errors.Is(err, store.ErrInvalidWorkerJobLease) {
 			http.Error(w, err.Error(), http.StatusConflict)
 			return
