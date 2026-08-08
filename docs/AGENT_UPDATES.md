@@ -33,8 +33,15 @@ size and SHA-256 digest, flushes the candidate before an atomic rename, and
 removes partial files on every failure. The target operating system and
 architecture must exactly match the running agent.
 
-The remaining implementation will preserve exactly one known-good
-binary, perform an atomic platform-specific replacement, require a successful
-health confirmation, and roll back automatically on startup or health failure.
+Before activation, the agent copies the currently running executable into its
+private update state, verifies the complete copy, and records its version,
+SHA-256 digest, exact size, and safe basename. A strict, owner-only transaction
+journal records the target digest, lifecycle state, and health deadline before
+replacement begins. An interrupted agent can therefore distinguish a prepared
+update from one awaiting health confirmation or requiring rollback.
+
+The remaining implementation will perform atomic platform-specific replacement,
+require a successful health confirmation, and roll back automatically on
+startup or health failure.
 It will not accept scripts, command lines, additional payloads, or peer-provided
 updates.
