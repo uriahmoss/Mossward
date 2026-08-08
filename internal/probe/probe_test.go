@@ -46,7 +46,7 @@ func TestExtractTitle(t *testing.T) {
 
 func TestHTTPFindingsIncludeCleartextAndMissingHeaders(t *testing.T) {
 	target := model.Target{Name: "app.internal", Address: "127.0.0.1"}
-	findings := httpFindings(target, 80, false, http.Header{})
+	findings := httpFindings(target, 80, false, http.StatusOK, http.Header{})
 	checks := findingIDs(findings)
 	if !checks["http.cleartext"] || !checks["http.missing-security-headers"] {
 		t.Fatalf("expected cleartext and header findings, got %v", checks)
@@ -61,7 +61,7 @@ func TestHTTPFindingsAcceptCompleteSecureHeaders(t *testing.T) {
 		"Referrer-Policy":           []string{"no-referrer"},
 		"Strict-Transport-Security": []string{"max-age=31536000"},
 	}
-	if findings := httpFindings(target, 443, true, headers); len(findings) != 0 {
+	if findings := httpFindings(target, 443, true, http.StatusOK, headers); len(findings) != 0 {
 		t.Fatalf("expected no header findings, got %#v", findings)
 	}
 }

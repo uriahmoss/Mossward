@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"html"
@@ -14,11 +15,11 @@ import (
 	"net/http"
 	"net/netip"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"mossward/internal/checkdefinition"
 	"mossward/internal/model"
 )
 
@@ -35,6 +36,15 @@ var serviceNames = map[int]string{
 }
 
 var versionPattern = regexp.MustCompile(`(?i)([A-Za-z][A-Za-z0-9._-]*)[/ ]([0-9][0-9A-Za-z._-]*)`)
+
+var builtinHTTPChecks = []checkdefinition.Check{
+	mustHTTPCheck("http.cleartext", "medium", "HTTP service is not encrypted",
+		`{"require_https":true,"remediation":"Redirect HTTP to HTTPS and protect the service with a valid TLS certificate."}`),
+	mustHTTPCheck("http.missing-security-headers", "low", "HTTP security headers are missing",
+		`{"required_headers":["Content-Security-Policy","X-Content-Type-Options","Referrer-Policy"],"remediation":"Configure the application or reverse proxy to return the missing security headers with values appropriate for the application."}`),
+	mustHTTPCheck("http.missing-hsts", "low", "HTTP Strict Transport Security is missing",
+		`{"required_headers":["Strict-Transport-Security"],"remediation":"Configure the HTTPS service to return an appropriate Strict-Transport-Security header."}`),
+}
 
 type Inspector struct {
 	timeout     time.Duration
@@ -264,7 +274,7 @@ func (i *Inspector) inspectHTTP(ctx context.Context, target model.Target, port i
 		observation.Version = version
 	}
 
-	findings := httpFindings(target, port, secure, response.Header)
+	findings := httpFindings(target, port, secure, response.StatusCode, response.Header)
 	if observation.Version != "" {
 		findings = append(findings, disclosureFinding(target, port, scheme, response.Header.Get("Server")))
 	}
@@ -372,37 +382,31 @@ func (i *Inspector) networkDial(ctx context.Context, address string, port int) (
 	return dialer.DialContext(dialCtx, "tcp", net.JoinHostPort(address, strconv.Itoa(port)))
 }
 
-func httpFindings(target model.Target, port int, secure bool, headers http.Header) []model.Finding {
+func httpFindings(target model.Target, port int, secure bool, statusCode int, headers http.Header) []model.Finding {
 	var findings []model.Finding
-	if !secure {
-		findings = append(findings, newFinding(
-			"http.cleartext", target, port, "http", "medium",
-			"HTTP service is not encrypted",
-			"The service responded over cleartext HTTP.",
-			"Redirect HTTP to HTTPS and protect the service with a valid TLS certificate.",
-		))
-	}
-
-	required := []string{"Content-Security-Policy", "X-Content-Type-Options", "Referrer-Policy"}
-	if secure {
-		required = append(required, "Strict-Transport-Security")
-	}
-	var missing []string
-	for _, header := range required {
-		if strings.TrimSpace(headers.Get(header)) == "" {
-			missing = append(missing, header)
+	for _, check := range builtinHTTPChecks {
+		if check.ID == "http.missing-hsts" && !secure {
+			continue
 		}
-	}
-	if len(missing) > 0 {
-		sort.Strings(missing)
-		findings = append(findings, newFinding(
-			"http.missing-security-headers", target, port, protocolName(secure), "low",
-			"HTTP security headers are missing",
-			"Missing response headers: "+strings.Join(missing, ", ")+".",
-			"Configure the application or reverse proxy to return the missing security headers with values appropriate for the application.",
-		))
+		result, err := checkdefinition.EvaluateHTTP(check, checkdefinition.HTTPInput{
+			Secure: secure, StatusCode: statusCode, Headers: headers,
+		})
+		if err != nil || result.Passed {
+			continue
+		}
+		findings = append(findings, newFinding(check.ID, target, port, protocolName(secure), check.Severity,
+			check.Title, result.Evidence+".", result.Remediation))
 	}
 	return findings
+}
+
+func mustHTTPCheck(id, severity, title, spec string) checkdefinition.Check {
+	check := checkdefinition.Check{SchemaVersion: checkdefinition.SchemaVersion, ID: id, Version: "1.0.0", Kind: "http",
+		Title: title, Severity: severity, Spec: json.RawMessage(spec)}
+	if _, err := checkdefinition.DecodeHTTPSpec(check); err != nil {
+		panic(fmt.Sprintf("invalid built-in HTTP check %s: %v", id, err))
+	}
+	return check
 }
 
 func evaluateTLS(target model.Target, port int, state *tls.ConnectionState) (map[string]string, []model.Finding) {

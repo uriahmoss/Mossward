@@ -33,7 +33,25 @@ verify its Ed25519 signature before interpreting `spec`.
 
 Schema version 1 requires namespaced lowercase identifiers, semantic versions,
 a supported kind and severity, a bounded title, and an object-valued spec no
-larger than 64 KiB. Kind-specific spec schemas and execution are introduced in
-the HTTP, TLS, and SSH check slices. Publisher trust, version activation,
-rollback, and key rotation remain part of the check lifecycle and trust-policy
-slice.
+larger than 64 KiB.
+
+## HTTP specifications
+
+HTTP checks can declare the following bounded, read-only response assertions:
+
+- `require_https`: require the observed response to use HTTPS
+- `required_headers`: header names that must have a non-empty value
+- `forbidden_headers`: header names that must not have a value
+- `header_contains`: required case-insensitive fragments by header name
+- `allowed_status_codes`: exact acceptable response status codes
+- `remediation`: guidance included with a failed check
+
+A specification must contain at least one assertion and no more than 32 total
+rules. Header names must be valid HTTP field names. Mossward evaluates these
+rules against the single response already collected by its bounded HTTP probe;
+the format cannot issue additional requests, follow redirects, submit data, or
+execute code.
+
+TLS- and SSH-specific spec schemas are introduced in their respective slices.
+Publisher trust, version activation, rollback, and key rotation remain part of
+the check lifecycle and trust-policy slice.

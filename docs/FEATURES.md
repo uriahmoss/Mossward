@@ -306,7 +306,7 @@ failure and health states.
 ### 3. Declarative checks
 
 - [x] Signed declarative check format
-- [ ] HTTP configuration checks
+- [x] HTTP configuration checks
 - [ ] TLS configuration checks
 - [ ] SSH configuration checks
 - [ ] Check-version lifecycle and trust policy

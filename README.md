@@ -14,7 +14,8 @@ Server-state protection and disaster recovery are documented in
 [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
 
 The signed, non-executable check envelope is documented in
-[`docs/DECLARATIVE_CHECKS.md`](docs/DECLARATIVE_CHECKS.md).
+[`docs/DECLARATIVE_CHECKS.md`](docs/DECLARATIVE_CHECKS.md). Its bounded HTTP
+rules cover transport, response headers, header values, and status codes.
 
 Administrators can manage database-backed scan scope policies from the Users
 page. Every scan selects an enabled policy, and Mossward enforces that policy's
