@@ -18,6 +18,8 @@ The signed, non-executable check envelope is documented in
 rules cover transport, response headers, header values, and status codes.
 Bounded TLS rules cover protocol versions, negotiated ciphers, certificate
 dates and names, and certificate-expiration warning windows.
+Passive SSH rules cover identification protocol versions, software policy, and
+version or comment disclosure without attempting authentication.
 
 Administrators can manage database-backed scan scope policies from the Users
 page. Every scan selects an enabled policy, and Mossward enforces that policy's
@@ -40,6 +42,7 @@ Current non-destructive checks include:
 - Expired or soon-to-expire TLS certificates
 - TLS hostname mismatches
 - TLS 1.0 or TLS 1.1 support
+- Legacy SSH identification and SSH software-version disclosure
 - Reachable SSH, SMB, RDP, PostgreSQL, and Redis services
 - Version-qualified CVE correlation against a locally synchronized NVD dataset
 

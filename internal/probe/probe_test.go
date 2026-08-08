@@ -35,6 +35,19 @@ func TestParseSSHBanner(t *testing.T) {
 	}
 }
 
+func TestSSHConfigurationFindingsUsePassiveIdentification(t *testing.T) {
+	target := model.Target{Name: "admin.internal", Address: "127.0.0.1"}
+	findings := sshConfigurationFindings(target, 22, "SSH-1.99-OpenSSH_7.4 legacy appliance")
+	checks := findingIDs(findings)
+	if !checks["ssh.protocol-version"] || !checks["ssh.version-disclosure"] {
+		t.Fatalf("expected SSH identification findings, got %v", checks)
+	}
+	identification := sshIdentification("SSH-2.0-OpenSSH_9.6p1 Ubuntu")
+	if identification.ProtocolVersion != "2.0" || identification.Software != "OpenSSH" || identification.SoftwareVersion != "9.6p1" || identification.Comment != "Ubuntu" {
+		t.Fatalf("unexpected SSH identification: %#v", identification)
+	}
+}
+
 func TestExtractTitle(t *testing.T) {
 	if title := extractTitle(`<html><title class="site"> Mossward &amp; Test </title></html>`); title != "Mossward & Test" {
 		t.Fatalf("unexpected title: %q", title)

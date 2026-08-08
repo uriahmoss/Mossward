@@ -56,6 +56,13 @@ var builtinTLSChecks = []checkdefinition.Check{
 		`{"disallow_legacy_protocols":true,"remediation":"Disable TLS 1.0 and TLS 1.1; require TLS 1.2 or newer."}`),
 }
 
+var builtinSSHChecks = []checkdefinition.Check{
+	mustSSHCheck("ssh.protocol-version", "high", "Legacy SSH protocol identification observed",
+		`{"allowed_protocol_versions":["2.0"],"remediation":"Configure the SSH service to identify and support SSH protocol 2.0 only."}`),
+	mustSSHCheck("ssh.version-disclosure", "low", "SSH software version is disclosed",
+		`{"forbid_version_disclosure":true,"remediation":"Reduce SSH identification details when the server supports doing so, and keep the service patched."}`),
+}
+
 type Inspector struct {
 	timeout     time.Duration
 	dialContext func(context.Context, string, int) (net.Conn, error)
@@ -161,13 +168,16 @@ func (i *Inspector) inspectSSH(ctx context.Context, target model.Target, port in
 	observation.Confidence = "high"
 	observation.Evidence = banner
 	observation.Product, observation.Version = parseSSHBanner(banner)
-	return observation, appendDisclosureFinding(findings, observation, target, banner)
+	return observation, append(findings, sshConfigurationFindings(target, port, banner)...)
 }
 
 func (i *Inspector) inspectUnknown(ctx context.Context, target model.Target, port int, observation model.ServiceObservation, findings []model.Finding) (model.ServiceObservation, []model.Finding) {
 	banner := i.readBanner(ctx, target.Address, port)
 	if banner != "" {
 		observation = observationFromBanner(observation, banner)
+		if observation.Protocol == "ssh" {
+			return observation, append(findings, sshConfigurationFindings(target, port, banner)...)
+		}
 		return observation, appendDisclosureFinding(findings, observation, target, banner)
 	}
 	if detected, checks, ok := i.inspectTLS(ctx, target, port); ok {
@@ -451,6 +461,39 @@ func mustTLSCheck(id, severity, title, spec string) checkdefinition.Check {
 		Title: title, Severity: severity, Spec: json.RawMessage(spec)}
 	if _, err := checkdefinition.DecodeTLSSpec(check); err != nil {
 		panic(fmt.Sprintf("invalid built-in TLS check %s: %v", id, err))
+	}
+	return check
+}
+
+func sshConfigurationFindings(target model.Target, port int, banner string) []model.Finding {
+	input := sshIdentification(banner)
+	var findings []model.Finding
+	for _, check := range builtinSSHChecks {
+		result, err := checkdefinition.EvaluateSSH(check, input)
+		if err != nil || result.Passed {
+			continue
+		}
+		findings = append(findings, newFinding(check.ID, target, port, "ssh", check.Severity,
+			check.Title, result.Evidence+".", result.Remediation))
+	}
+	return findings
+}
+
+func sshIdentification(banner string) checkdefinition.SSHInput {
+	parts := strings.SplitN(strings.TrimSpace(banner), "-", 3)
+	if len(parts) != 3 || !strings.EqualFold(parts[0], "SSH") {
+		return checkdefinition.SSHInput{}
+	}
+	softwareField, comment, _ := strings.Cut(parts[2], " ")
+	product, version := parseSSHBanner("SSH-" + parts[1] + "-" + softwareField)
+	return checkdefinition.SSHInput{ProtocolVersion: parts[1], Software: product, SoftwareVersion: version, Comment: comment}
+}
+
+func mustSSHCheck(id, severity, title, spec string) checkdefinition.Check {
+	check := checkdefinition.Check{SchemaVersion: checkdefinition.SchemaVersion, ID: id, Version: "1.0.0", Kind: "ssh",
+		Title: title, Severity: severity, Spec: json.RawMessage(spec)}
+	if _, err := checkdefinition.DecodeSSHSpec(check); err != nil {
+		panic(fmt.Sprintf("invalid built-in SSH check %s: %v", id, err))
 	}
 	return check
 }

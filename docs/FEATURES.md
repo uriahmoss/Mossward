@@ -308,7 +308,7 @@ failure and health states.
 - [x] Signed declarative check format
 - [x] HTTP configuration checks
 - [x] TLS configuration checks
-- [ ] SSH configuration checks
+- [x] SSH configuration checks
 - [ ] Check-version lifecycle and trust policy
 - [ ] Separate policy for any future intrusive checks
 

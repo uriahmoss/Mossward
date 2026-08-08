@@ -69,6 +69,23 @@ legacy-protocol probes succeeded, and the observed leaf certificate:
 The evaluator uses handshake evidence already gathered by the scanner and
 cannot alter protocol negotiation outside Mossward's fixed TLS probes.
 
-The SSH-specific spec schema is introduced in its respective slice.
+## SSH specifications
+
+SSH checks evaluate only the server identification line collected by the
+existing bounded banner probe:
+
+- `allowed_protocol_versions`: accepted identification protocol versions
+- `allowed_software`: case-insensitive software allowlist
+- `disallowed_software`: case-insensitive software denylist
+- `forbidden_comment_terms`: prohibited fragments in the identification comment
+- `forbid_version_disclosure`: flag an explicitly disclosed software version
+- `remediation`: guidance included with a failed check
+
+An SSH definition may use an allowlist or a denylist, but not both, and may
+contain at most 32 total rules. This slice does not authenticate, attempt
+credentials, start a session, run commands, or claim visibility into key
+exchange and authentication settings that are absent from the identification
+line.
+
 Publisher trust, version activation, rollback, and key rotation remain part of
 the check lifecycle and trust-policy slice.
