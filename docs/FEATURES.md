@@ -305,7 +305,7 @@ failure and health states.
 
 ### 3. Declarative checks
 
-- [ ] Signed declarative check format
+- [x] Signed declarative check format
 - [ ] HTTP configuration checks
 - [ ] TLS configuration checks
 - [ ] SSH configuration checks
