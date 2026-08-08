@@ -40,6 +40,16 @@
         <a data-scan-view-link="findings" href="#">Findings <span id="findings-nav-count">0</span></a>
       </nav>
 
+      <section id="result-posture" class="result-posture" data-scan-view="overview" data-level="pending">
+        <div class="result-posture-mark" aria-hidden="true">◇</div>
+        <div class="result-posture-copy">
+          <span class="step-label">Result posture</span>
+          <h2 id="result-posture-title">Waiting for scan evidence</h2>
+          <p id="result-posture-description">Mossward will summarize elevated findings after evidence arrives.</p>
+        </div>
+        <div id="severity-breakdown" class="severity-breakdown" aria-label="Severity breakdown"></div>
+      </section>
+
       <section class="progress-panel" data-scan-view="overview">
         <div class="progress-copy">
           <div>
@@ -58,6 +68,7 @@
         <div class="metric-card"><span>Checks complete</span><strong id="check-count">0</strong></div>
         <div class="metric-card"><span>Reachable services</span><strong id="finding-count">0</strong></div>
         <div class="metric-card"><span>Security findings</span><strong id="issue-count">0</strong></div>
+        <div class="metric-card"><span>CVE matches</span><strong id="cve-count">0</strong></div>
       </section>
 
       <div id="scan-error-panel" class="scan-error-panel" data-scan-view="overview" hidden>

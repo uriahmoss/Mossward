@@ -76,8 +76,9 @@ When upgrading from a JSON-backed Mossward version, existing
 `data/scans.json` history is imported automatically on first startup and
 preserved as `data/scans.json.imported`.
 
-Recent scans link to a dedicated detail view with live check progress, approved
-scope, timing, reachable services, evidence, and remediation guidance.
+Recent scans link to a dedicated, responsive detail view with a result-posture
+summary, severity distribution, live check progress, approved scope, timing,
+reachable services, CVE matches, evidence, and remediation guidance.
 
 Scan targets may be individual IP addresses, fully qualified domain names,
 CIDR blocks such as `192.168.1.0/24`, or inclusive ranges such as

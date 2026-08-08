@@ -299,7 +299,7 @@ failure and health states.
 - [x] Split the scan experience into focused linked pages or sections instead
       of one oversized page
 - [x] Add scan-result sorting and configurable filters
-- [ ] Redesign the overall scan-results presentation for clearer hierarchy,
+- [x] Redesign the overall scan-results presentation for clearer hierarchy,
       readability, and responsive use
 - [ ] Add findings-specific sorting and filtering controls
 

@@ -44,8 +44,15 @@ function renderScans() {
   scans.className = items.length ? "" : "empty-state";
   scans.innerHTML = items.length ? items.map((scan) => `
     <a class="scan-item scan-item-link" href="/scan-detail.html?id=${encodeURIComponent(scan.id)}">
-      <div class="scan-row"><strong>${escapeHTML(scan.name)}</strong><span class="status">${escapeHTML(scan.status)} →</span></div>
-      <div class="scan-meta">${scan.targets.map((target) => escapeHTML(target.name === target.address ? target.name : `${target.name} (${target.address})`)).join(", ")} · ${scan.ports.length} ports · ${(scan.observations || []).length} services · ${(scan.findings || []).length} findings</div>
+      <div class="scan-row"><strong>${escapeHTML(scan.name)}</strong><span class="status" data-status="${escapeHTML(scan.status)}">${escapeHTML(scan.status)} →</span></div>
+      <div class="scan-targets">${scan.targets.map((target) => escapeHTML(target.name === target.address ? target.name : `${target.name} (${target.address})`)).join(", ")}</div>
+      <div class="scan-facts" aria-label="Scan result summary">
+        <span>${scan.targets.length} targets</span>
+        <span>${scan.ports.length} ports</span>
+        <span>${(scan.observations || []).length} services</span>
+        <span>${(scan.findings || []).length} findings</span>
+        <span>${(scan.cve_matches || []).length} CVEs</span>
+      </div>
       ${scan.error ? `<div class="error">${escapeHTML(scan.error)}</div>` : ""}
     </a>`).join("") : `<span class="empty-icon">○</span><strong>No matching scans</strong><span>Adjust the search or status filter, or start a new scan.</span>`;
 }

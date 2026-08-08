@@ -63,6 +63,45 @@ function filteredCVEs(matches) {
     });
 }
 
+function severityCounts(findings, cveMatches) {
+  const counts = {critical: 0, high: 0, medium: 0, low: 0, info: 0};
+  [...findings, ...cveMatches].forEach((item) => {
+    const severity = String(item.severity || "info").toLowerCase();
+    counts[severity] = (counts[severity] || 0) + 1;
+  });
+  return counts;
+}
+
+function renderResultPosture(scan, findings, cveMatches) {
+  const counts = severityCounts(findings, cveMatches);
+  const panel = document.querySelector("#result-posture");
+  let level = "clear";
+  let title = "No elevated findings observed";
+  let description = "Review service evidence and informational checks before treating the scan as complete assurance.";
+  if (["queued", "running", "paused"].includes(scan.status)) {
+    level = "pending";
+    title = "Results are still developing";
+    description = "This summary can change until every authorized check has completed.";
+  } else if (counts.critical || counts.high) {
+    level = counts.critical ? "critical" : "high";
+    title = "Immediate review recommended";
+    description = `${counts.critical} critical and ${counts.high} high-severity results require attention.`;
+  } else if (counts.medium) {
+    level = "medium";
+    title = "Review recommended";
+    description = `${counts.medium} medium-severity ${counts.medium === 1 ? "result requires" : "results require"} review.`;
+  } else if (scan.status !== "completed") {
+    level = "stopped";
+    title = "Scan ended before completion";
+    description = "Retained evidence may represent only part of the authorized scope.";
+  }
+  panel.dataset.level = level;
+  document.querySelector("#result-posture-title").textContent = title;
+  document.querySelector("#result-posture-description").textContent = description;
+  document.querySelector("#severity-breakdown").innerHTML = ["critical", "high", "medium", "low", "info"]
+    .map((severity) => `<span data-severity="${severity}"><strong>${counts[severity]}</strong>${severity}</span>`).join("");
+}
+
 function render(scan) {
   const observations = scan.observations || [];
   const findings = scan.findings || [];
@@ -93,9 +132,11 @@ function render(scan) {
   document.querySelector("#check-count").textContent = `${done}/${total}`;
   document.querySelector("#finding-count").textContent = observations.length;
   document.querySelector("#issue-count").textContent = findings.length;
+  document.querySelector("#cve-count").textContent = cveMatches.length;
   document.querySelector("#services-nav-count").textContent = observations.length;
   document.querySelector("#cves-nav-count").textContent = cveMatches.length;
   document.querySelector("#findings-nav-count").textContent = findings.length;
+  renderResultPosture(scan, findings, cveMatches);
 
   document.querySelector("#created-at").textContent = formatDate(scan.created_at);
   document.querySelector("#started-at").textContent = formatDate(scan.started_at);
