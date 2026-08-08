@@ -14,6 +14,8 @@ Server-state protection and disaster recovery are documented in
 [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
 Endpoint-agent enrollment and outbound-only operation are documented in
 [`docs/ENDPOINT_AGENT.md`](docs/ENDPOINT_AGENT.md).
+The signed endpoint-agent update contract is documented in
+[`docs/AGENT_UPDATES.md`](docs/AGENT_UPDATES.md).
 
 The signed, non-executable check envelope is documented in
 [`docs/DECLARATIVE_CHECKS.md`](docs/DECLARATIVE_CHECKS.md). Its bounded HTTP
