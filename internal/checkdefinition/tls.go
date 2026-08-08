@@ -68,6 +68,9 @@ func DecodeTLSSpec(check Check) (TLSSpec, error) {
 }
 
 func EvaluateTLS(check Check, input TLSInput) (TLSResult, error) {
+	if err := requireObservational(check); err != nil {
+		return TLSResult{}, err
+	}
 	spec, err := DecodeTLSSpec(check)
 	if err != nil {
 		return TLSResult{}, err

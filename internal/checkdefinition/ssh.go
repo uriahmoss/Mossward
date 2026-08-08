@@ -55,6 +55,9 @@ func DecodeSSHSpec(check Check) (SSHSpec, error) {
 }
 
 func EvaluateSSH(check Check, input SSHInput) (SSHResult, error) {
+	if err := requireObservational(check); err != nil {
+		return SSHResult{}, err
+	}
 	spec, err := DecodeSSHSpec(check)
 	if err != nil {
 		return SSHResult{}, err

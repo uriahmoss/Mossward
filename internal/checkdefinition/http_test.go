@@ -40,6 +40,14 @@ func TestEvaluateHTTPPassesCompliantResponse(t *testing.T) {
 	}
 }
 
+func TestObservationalEvaluatorRejectsIntrusiveCheck(t *testing.T) {
+	check := httpCheck(`{"require_https":true,"remediation":"Use HTTPS."}`)
+	check.ExecutionClass = ExecutionIntrusive
+	if _, err := EvaluateHTTP(check, HTTPInput{}); err == nil {
+		t.Fatal("HTTP evaluator accepted an intrusive check")
+	}
+}
+
 func TestDecodeHTTPSpecRejectsUnknownUnsafeAndExcessiveRules(t *testing.T) {
 	tests := []string{
 		`{"unknown":true,"remediation":"Fix it."}`,

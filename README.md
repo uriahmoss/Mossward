@@ -23,6 +23,9 @@ version or comment disclosure without attempting authentication.
 Trusted publisher keys, immutable staged check versions, single-version
 activation, publisher revocation, and explicit rollback approval are persisted
 in SQLite.
+Future intrusive checks remain disabled behind a separate persisted allowlist
+and exact-version, time-limited approval gate; Mossward currently includes no
+intrusive executor.
 
 Administrators can manage database-backed scan scope policies from the Users
 page. Every scan selects an enabled policy, and Mossward enforces that policy's

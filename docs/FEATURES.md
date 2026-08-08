@@ -310,7 +310,7 @@ failure and health states.
 - [x] TLS configuration checks
 - [x] SSH configuration checks
 - [x] Check-version lifecycle and trust policy
-- [ ] Separate policy for any future intrusive checks
+- [x] Separate policy for any future intrusive checks
 
 ### 4. Reporting and evidence lifecycle
 

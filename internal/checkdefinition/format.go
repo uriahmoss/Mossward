@@ -24,15 +24,21 @@ var (
 )
 
 type Check struct {
-	SchemaVersion int             `json:"schema_version"`
-	ID            string          `json:"id"`
-	Version       string          `json:"version"`
-	Kind          string          `json:"kind"`
-	Title         string          `json:"title"`
-	Description   string          `json:"description,omitempty"`
-	Severity      string          `json:"severity"`
-	Spec          json.RawMessage `json:"spec"`
+	SchemaVersion  int             `json:"schema_version"`
+	ID             string          `json:"id"`
+	Version        string          `json:"version"`
+	Kind           string          `json:"kind"`
+	Title          string          `json:"title"`
+	Description    string          `json:"description,omitempty"`
+	Severity       string          `json:"severity"`
+	ExecutionClass string          `json:"execution_class,omitempty"`
+	Spec           json.RawMessage `json:"spec"`
 }
+
+const (
+	ExecutionObservational = "observational"
+	ExecutionIntrusive     = "intrusive"
+)
 
 type SignedCheck struct {
 	Algorithm string `json:"algorithm"`
@@ -76,6 +82,9 @@ func Validate(check Check) error {
 	if !validSeverities[check.Severity] {
 		return errors.New("declarative-check severity is unsupported")
 	}
+	if check.ExecutionClass != "" && check.ExecutionClass != ExecutionObservational && check.ExecutionClass != ExecutionIntrusive {
+		return errors.New("declarative-check execution class is unsupported")
+	}
 	title := strings.TrimSpace(check.Title)
 	if title == "" || len(title) > maxTitleBytes {
 		return fmt.Errorf("declarative-check title must contain 1 to %d bytes", maxTitleBytes)
@@ -89,6 +98,15 @@ func Validate(check Check) error {
 	}
 	if len(canonical) == 0 || canonical[0] != '{' {
 		return errors.New("declarative-check spec must be a JSON object")
+	}
+	return nil
+}
+
+func IsIntrusive(check Check) bool { return check.ExecutionClass == ExecutionIntrusive }
+
+func requireObservational(check Check) error {
+	if IsIntrusive(check) {
+		return errors.New("intrusive declarative check cannot run in an observational evaluator")
 	}
 	return nil
 }

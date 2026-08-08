@@ -100,3 +100,17 @@ Revoked publishers cannot import or activate versions. Existing version numbers
 cannot be replaced with different signed content, and publisher key identifiers
 cannot be rebound to different public keys. These controls preserve an auditable
 line between trust establishment, review, activation, retirement, and rollback.
+
+## Intrusive-check boundary
+
+Schema version 1 treats a missing `execution_class` as `observational` for
+compatibility. A definition may explicitly declare `intrusive`, but the current
+HTTP, TLS, and SSH evaluators reject that class and Mossward ships no intrusive
+executor.
+
+Any future intrusive executor must pass a separate, SQLite-backed policy gate.
+That gate defaults disabled and requires both an exact check-ID allowlist entry
+and a current administrator approval bound to the exact check ID and version.
+An expired, future-dated, mismatched, or anonymous approval is rejected. This
+policy does not enable intrusive functionality; it establishes the mandatory
+authorization boundary before such functionality could be considered later.

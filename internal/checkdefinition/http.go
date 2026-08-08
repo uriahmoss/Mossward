@@ -59,6 +59,9 @@ func DecodeHTTPSpec(check Check) (HTTPSpec, error) {
 }
 
 func EvaluateHTTP(check Check, input HTTPInput) (HTTPResult, error) {
+	if err := requireObservational(check); err != nil {
+		return HTTPResult{}, err
+	}
 	spec, err := DecodeHTTPSpec(check)
 	if err != nil {
 		return HTTPResult{}, err
