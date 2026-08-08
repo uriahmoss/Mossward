@@ -132,6 +132,12 @@
           <div><span class="step-label">Checks</span><h2>Security findings</h2></div>
           <span id="findings-summary" class="policy-pill">0 findings</span>
         </div>
+        <div class="result-toolbar" aria-label="Security finding filters">
+          <label>Search<input id="finding-search" type="search" placeholder="Title, check, service, or target"></label>
+          <label>Severity<select id="finding-severity"><option value="">All severities</option><option value="critical">Critical</option><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option><option value="info">Info</option></select></label>
+          <label>Service<select id="finding-service"><option value="">All services</option></select></label>
+          <label>Sort<select id="finding-sort"><option value="severity">Highest severity</option><option value="newest">Newest observed</option><option value="title">Title</option><option value="address">Address and port</option></select></label>
+        </div>
         <div id="finding-list"></div>
       </section>
     </div>

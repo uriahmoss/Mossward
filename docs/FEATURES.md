@@ -301,7 +301,7 @@ failure and health states.
 - [x] Add scan-result sorting and configurable filters
 - [x] Redesign the overall scan-results presentation for clearer hierarchy,
       readability, and responsive use
-- [ ] Add findings-specific sorting and filtering controls
+- [x] Add findings-specific sorting and filtering controls
 
 ### 3. Declarative checks
 

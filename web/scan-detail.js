@@ -9,6 +9,20 @@ const content = document.querySelector("#detail-content");
 let refreshTimer;
 let latestScan;
 const cancelButton = document.querySelector("#cancel-scan");
+const resultControls = {
+  service_search: {selector: "#service-search", defaultValue: ""},
+  service_protocol: {selector: "#service-protocol", defaultValue: ""},
+  service_sort: {selector: "#service-sort", defaultValue: "address"},
+  cve_search: {selector: "#cve-search", defaultValue: ""},
+  cve_severity: {selector: "#cve-severity", defaultValue: ""},
+  cve_kev: {selector: "#cve-kev", defaultValue: ""},
+  cve_sort: {selector: "#cve-sort", defaultValue: "score"},
+  finding_search: {selector: "#finding-search", defaultValue: ""},
+  finding_severity: {selector: "#finding-severity", defaultValue: ""},
+  finding_service: {selector: "#finding-service", defaultValue: ""},
+  finding_sort: {selector: "#finding-sort", defaultValue: "severity"},
+};
+const severityRank = {critical: 5, high: 4, medium: 3, low: 2, info: 1};
 
 const escapeHTML = (value) => String(value).replace(
   /[&<>"']/g,
@@ -63,6 +77,20 @@ function filteredCVEs(matches) {
     });
 }
 
+function filteredFindings(findings) {
+  const search = controlValue("#finding-search").trim().toLowerCase();
+  const severity = controlValue("#finding-severity");
+  const service = controlValue("#finding-service");
+  return findings.filter((item) => (!severity || item.severity === severity) && (!service || item.service === service) &&
+    (!search || `${item.title} ${item.check_id} ${item.service} ${item.target} ${item.address}`.toLowerCase().includes(search)))
+    .sort((left, right) => {
+      if (controlValue("#finding-sort") === "newest") return new Date(right.observed_at) - new Date(left.observed_at);
+      if (controlValue("#finding-sort") === "title") return left.title.localeCompare(right.title);
+      if (controlValue("#finding-sort") === "address") return left.address.localeCompare(right.address, undefined, {numeric: true}) || left.port - right.port;
+      return (severityRank[right.severity] || 0) - (severityRank[left.severity] || 0) || left.title.localeCompare(right.title);
+    });
+}
+
 function severityCounts(findings, cveMatches) {
   const counts = {critical: 0, high: 0, medium: 0, low: 0, info: 0};
   [...findings, ...cveMatches].forEach((item) => {
@@ -108,6 +136,7 @@ function render(scan) {
   const cveMatches = scan.cve_matches || [];
   const displayedObservations = filteredObservations(observations);
   const displayedCVEs = filteredCVEs(cveMatches);
+  const displayedFindings = filteredFindings(findings);
   const total = scan.total_checks || (scan.targets.length * scan.ports.length);
   const done = scan.status === "completed" && !scan.done_checks ? total : scan.done_checks;
   const percent = total ? Math.min(100, Math.round((done / total) * 100)) : 0;
@@ -183,7 +212,7 @@ function render(scan) {
     `).join("")
     : `<div class="no-findings"><span class="empty-icon">○</span><strong>No matching service observations</strong><span>Adjust the service search or protocol filter.</span></div>`;
 
-  document.querySelector("#findings-summary").textContent = `${findings.length} findings`;
+  document.querySelector("#findings-summary").textContent = `${displayedFindings.length} of ${findings.length} findings`;
 
   document.querySelector("#cve-summary").textContent = `${displayedCVEs.length} of ${cveMatches.length} matches`;
   document.querySelector("#cve-list").innerHTML = displayedCVEs.length
@@ -208,8 +237,8 @@ function render(scan) {
       </article>
     `).join("")
     : `<div class="no-findings"><span class="empty-icon">○</span><strong>No matching CVEs</strong><span>Adjust the CVE search, severity, or exploitation filter.</span></div>`;
-  document.querySelector("#finding-list").innerHTML = findings.length
-    ? findings.map((finding) => `
+  document.querySelector("#finding-list").innerHTML = displayedFindings.length
+    ? displayedFindings.map((finding) => `
       <article class="finding-detail">
         <div class="finding-heading">
           <div>
@@ -228,7 +257,9 @@ function render(scan) {
         <div class="finding-copy"><strong>Recommendation</strong><p>${escapeHTML(finding.remediation)}</p></div>
       </article>
     `).join("")
-    : `<div class="no-findings"><span class="empty-icon">✓</span><strong>No security findings observed</strong><span>This area updates while the scan is running.</span></div>`;
+    : findings.length
+      ? `<div class="no-findings"><span class="empty-icon">○</span><strong>No matching security findings</strong><span>Adjust the finding search, severity, or service filter.</span></div>`
+      : `<div class="no-findings"><span class="empty-icon">✓</span><strong>No security findings observed</strong><span>This area updates while the scan is running.</span></div>`;
 }
 
 function configureSectionNavigation() {
@@ -252,15 +283,18 @@ function configureResultControls() {
   const currentProtocol = protocolSelect.value || new URLSearchParams(window.location.search).get("service_protocol") || "";
   protocolSelect.innerHTML = `<option value="">All protocols</option>${protocols.map((protocol) => `<option value="${escapeHTML(protocol)}">${escapeHTML(protocol)}</option>`).join("")}`;
   protocolSelect.value = currentProtocol;
+  const services = [...new Set((latestScan?.findings || []).map((item) => item.service).filter(Boolean))].sort();
+  const serviceSelect = document.querySelector("#finding-service");
+  const currentService = serviceSelect.value || new URLSearchParams(window.location.search).get("finding_service") || "";
+  serviceSelect.innerHTML = `<option value="">All services</option>${services.map((service) => `<option value="${escapeHTML(service)}">${escapeHTML(service)}</option>`).join("")}`;
+  serviceSelect.value = currentService;
 }
 
 function updateResultControlURL() {
   const params = new URLSearchParams(window.location.search);
-  const controls = {service_search: "#service-search", service_protocol: "#service-protocol", service_sort: "#service-sort",
-    cve_search: "#cve-search", cve_severity: "#cve-severity", cve_kev: "#cve-kev", cve_sort: "#cve-sort"};
-  Object.entries(controls).forEach(([name, selector]) => {
-    const value = controlValue(selector);
-    const defaultValue = name === "service_sort" ? "address" : name === "cve_sort" ? "score" : "";
+  Object.entries(resultControls).forEach(([name, control]) => {
+    const value = controlValue(control.selector);
+    const {defaultValue} = control;
     if (value && value !== defaultValue) params.set(name, value); else params.delete(name);
   });
   window.history.replaceState(null, "", `${window.location.pathname}?${params}`);
@@ -269,11 +303,9 @@ function updateResultControlURL() {
 
 function restoreResultControls() {
   const params = new URLSearchParams(window.location.search);
-  const controls = {service_search: "#service-search", service_protocol: "#service-protocol", service_sort: "#service-sort",
-    cve_search: "#cve-search", cve_severity: "#cve-severity", cve_kev: "#cve-kev", cve_sort: "#cve-sort"};
-  Object.entries(controls).forEach(([name, selector]) => {
+  Object.entries(resultControls).forEach(([name, control]) => {
     const value = params.get(name);
-    if (value) document.querySelector(selector).value = value;
+    if (value) document.querySelector(control.selector).value = value;
   });
 }
 
