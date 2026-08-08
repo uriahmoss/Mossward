@@ -41,6 +41,7 @@ type Transaction struct {
 	Previous       KnownGood        `json:"previous"`
 	TargetVersion  string           `json:"target_version"`
 	TargetSHA256   string           `json:"target_sha256"`
+	TargetSize     int64            `json:"target_size"`
 	StartedAt      time.Time        `json:"started_at"`
 	HealthDeadline time.Time        `json:"health_deadline"`
 }
@@ -100,7 +101,7 @@ func PreserveKnownGood(executable, directory, version string) (KnownGood, error)
 
 func NewTransaction(previous KnownGood, manifest Manifest, now time.Time) (Transaction, error) {
 	transaction := Transaction{SchemaVersion: transactionSchemaVersion, State: TransactionPrepared, Previous: previous,
-		TargetVersion: manifest.Version, TargetSHA256: manifest.ArtifactSHA256, StartedAt: now.UTC(),
+		TargetVersion: manifest.Version, TargetSHA256: manifest.ArtifactSHA256, TargetSize: manifest.ArtifactSize, StartedAt: now.UTC(),
 		HealthDeadline: now.UTC().Add(time.Duration(manifest.HealthTimeoutSeconds) * time.Second)}
 	return transaction, transaction.Validate()
 }
@@ -112,7 +113,7 @@ func (t Transaction) Validate() error {
 	if t.SchemaVersion != transactionSchemaVersion || !validState || !versionPattern.MatchString(t.Previous.Version) ||
 		!versionPattern.MatchString(t.TargetVersion) || filepath.Base(t.Previous.File) != t.Previous.File ||
 		previousErr != nil || len(previousDigest) != 32 || targetErr != nil || len(targetDigest) != 32 ||
-		t.Previous.Size < 1 || t.Previous.Size > maximumArtifactBytes || !t.HealthDeadline.After(t.StartedAt) ||
+		t.Previous.Size < 1 || t.Previous.Size > maximumArtifactBytes || t.TargetSize < 1 || t.TargetSize > maximumArtifactBytes || !t.HealthDeadline.After(t.StartedAt) ||
 		t.HealthDeadline.Sub(t.StartedAt) > maximumHealthTimeout*time.Second {
 		return errors.New("update transaction is invalid")
 	}

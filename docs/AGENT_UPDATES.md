@@ -40,8 +40,16 @@ journal records the target digest, lifecycle state, and health deadline before
 replacement begins. An interrupted agent can therefore distinguish a prepared
 update from one awaiting health confirmation or requiring rollback.
 
-The remaining implementation will perform atomic platform-specific replacement,
-require a successful health confirmation, and roll back automatically on
-startup or health failure.
+On Linux and other Unix service hosts, activation copies and re-verifies the
+candidate into a temporary file beside the installed executable, preserves its
+executable mode, persists the awaiting-health transaction first, then uses a
+same-filesystem atomic rename and directory synchronization. The running
+process continues on its original inode and exits with a restart-required
+result so the service manager can launch the replacement.
+
+Windows activation intentionally refuses in-process replacement and will use a
+separate stopped-service update helper. The remaining implementation will add
+that helper, require successful health confirmation, and roll back
+automatically on startup or health failure.
 It will not accept scripts, command lines, additional payloads, or peer-provided
 updates.
