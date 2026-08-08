@@ -33,7 +33,14 @@
         <div><span id="scan-status" class="status-badge">—</span><button id="cancel-scan" class="compact-button" type="button" hidden>Cancel scan</button></div>
       </section>
 
-      <section class="progress-panel">
+      <nav class="scan-section-nav" aria-label="Scan result sections">
+        <a data-scan-view-link="overview" href="#">Overview</a>
+        <a data-scan-view-link="services" href="#">Services <span id="services-nav-count">0</span></a>
+        <a data-scan-view-link="cves" href="#">CVEs <span id="cves-nav-count">0</span></a>
+        <a data-scan-view-link="findings" href="#">Findings <span id="findings-nav-count">0</span></a>
+      </nav>
+
+      <section class="progress-panel" data-scan-view="overview">
         <div class="progress-copy">
           <div>
             <span class="step-label">Progress</span>
@@ -46,19 +53,19 @@
         </div>
       </section>
 
-      <section class="metric-grid" aria-label="Scan summary">
+      <section class="metric-grid" data-scan-view="overview" aria-label="Scan summary">
         <div class="metric-card"><span>Targets</span><strong id="target-count">0</strong></div>
         <div class="metric-card"><span>Checks complete</span><strong id="check-count">0</strong></div>
         <div class="metric-card"><span>Reachable services</span><strong id="finding-count">0</strong></div>
         <div class="metric-card"><span>Security findings</span><strong id="issue-count">0</strong></div>
       </section>
 
-      <div id="scan-error-panel" class="scan-error-panel" hidden>
+      <div id="scan-error-panel" class="scan-error-panel" data-scan-view="overview" hidden>
         <span class="step-label">Scan error</span>
         <p id="scan-error"></p>
       </div>
 
-      <section class="detail-grid">
+      <section class="detail-grid" data-scan-view="overview">
         <article class="card">
           <div class="card-heading">
             <div><span class="step-label">Scope</span><h2>Targets and ports</h2></div>
@@ -82,7 +89,7 @@
         </article>
       </section>
 
-      <section class="card findings-panel services-panel">
+      <section class="card findings-panel services-panel" data-scan-view="services">
         <div class="card-heading">
           <div><span class="step-label">Inventory</span><h2>Service observations</h2></div>
           <span id="services-summary" class="policy-pill">0 observed</span>
@@ -90,7 +97,7 @@
         <div id="service-list"></div>
       </section>
 
-      <section class="card findings-panel services-panel">
+      <section class="card findings-panel services-panel" data-scan-view="cves">
         <div class="card-heading">
           <div><span class="step-label">Intelligence</span><h2>CVE matches</h2></div>
           <span id="cve-summary" class="policy-pill">0 matches</span>
@@ -98,7 +105,7 @@
         <div id="cve-list"></div>
       </section>
 
-      <section class="card findings-panel">
+      <section class="card findings-panel" data-scan-view="findings">
         <div class="card-heading">
           <div><span class="step-label">Checks</span><h2>Security findings</h2></div>
           <span id="findings-summary" class="policy-pill">0 findings</span>

@@ -210,7 +210,7 @@ func TestCreateScanRejectsTrailingJSON(t *testing.T) {
 
 func TestWebRoutesServeHomeAndScanner(t *testing.T) {
 	handler, _ := testHandler(t)
-	for _, path := range []string{"/", "/scan.html", "/scan-detail.html", "/account.html", "/users.html", "/setup.html", "/login.html", "/accept-invite.html", "/styles.css", "/home.js", "/scan.js", "/scan-detail.js", "/account.js", "/users.js", "/setup.js", "/login.js", "/accept-invite.js"} {
+	for _, path := range []string{"/", "/scan.html", "/scan-new.html", "/scan-detail.html", "/account.html", "/users.html", "/setup.html", "/login.html", "/accept-invite.html", "/styles.css", "/home.js", "/scan.js", "/scan-new.js", "/scan-detail.js", "/account.js", "/users.js", "/setup.js", "/login.js", "/accept-invite.js"} {
 		request := httptest.NewRequest(http.MethodGet, path, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)

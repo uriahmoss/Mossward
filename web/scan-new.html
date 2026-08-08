@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Run an authorized Mossward network scan">
+  <title>New network scan · Mossward</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="/" aria-label="Mossward home"><span class="wordmark-mark" aria-hidden="true">M</span><span>Mossward</span></a>
+    <div class="header-actions"><a class="back-link" href="/account.html">Account</a><a class="back-link" href="/scan.html">← Network scans</a></div>
+  </header>
+  <main class="scan-shell">
+    <section class="page-heading">
+      <p class="eyebrow">Authorized scanning</p>
+      <h1>New network scan</h1>
+      <p>Check approved targets for reachable TCP services. No payloads or exploits are sent.</p>
+    </section>
+    <nav class="scan-section-nav" aria-label="Scan pages">
+      <a href="/scan.html">Recent scans</a>
+      <a class="active" href="/scan-new.html" aria-current="page">New scan</a>
+    </nav>
+    <section class="card scan-form-card">
+      <div class="card-heading">
+        <div><span class="step-label">Configure</span><h2>Scan scope</h2></div>
+        <span id="policy" class="policy-pill">Loading policy</span>
+      </div>
+      <form id="form">
+        <label for="scope-policy">Scope policy</label>
+        <select id="scope-policy" required><option value="">Loading authorized policies…</option></select>
+        <label for="name">Scan name</label>
+        <input id="name" value="Local network check" maxlength="100">
+        <label for="targets">Targets <span>one per line</span></label>
+        <textarea id="targets" placeholder="127.0.0.1&#10;192.168.1.0/24&#10;192.168.2.10-192.168.2.25" required></textarea>
+        <p class="field-help">Accepts IP addresses, FQDNs, CIDR blocks, and inclusive IP ranges.</p>
+        <label for="ports">Ports <span>comma-separated</span></label>
+        <input id="ports" placeholder="22,80,443">
+        <button id="submit">Start authorized scan <span aria-hidden="true">→</span></button>
+        <div id="error" class="error" role="alert"></div>
+      </form>
+    </section>
+  </main>
+  <script src="/scan-new.js" defer></script>
+</body>
+</html>

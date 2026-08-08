@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="Run an authorized Mossward network scan">
-  <title>Network scan · Mossward</title>
+  <meta name="description" content="Review Mossward network scans">
+  <title>Network scans · Mossward</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -19,43 +19,26 @@
   <main class="scan-shell">
     <section class="page-heading">
       <p class="eyebrow">Feature 01</p>
-      <h1>Network scan</h1>
-      <p>Check authorized targets for reachable TCP services. No payloads or exploits are sent.</p>
+      <h1>Network scans</h1>
+      <p>Review scan activity and open focused result views.</p>
     </section>
 
-    <div class="scan-grid">
-      <section class="card">
-        <div class="card-heading">
-          <div><span class="step-label">Configure</span><h2>New scan</h2></div>
-          <span id="policy" class="policy-pill">Loading policy</span>
-        </div>
-        <form id="form">
-          <label for="scope-policy">Scope policy</label>
-          <select id="scope-policy" required><option value="">Loading authorized policies…</option></select>
-          <label for="name">Scan name</label>
-          <input id="name" value="Local network check" maxlength="100">
-          <label for="targets">Targets <span>one per line</span></label>
-          <textarea id="targets" placeholder="127.0.0.1&#10;192.168.1.0/24&#10;192.168.2.10-192.168.2.25" required></textarea>
-          <p class="field-help">Accepts IP addresses, FQDNs, CIDR blocks, and inclusive IP ranges.</p>
-          <label for="ports">Ports <span>comma-separated</span></label>
-          <input id="ports" placeholder="22,80,443">
-          <button id="submit">Start authorized scan <span aria-hidden="true">→</span></button>
-          <div id="error" class="error" role="alert"></div>
-        </form>
-      </section>
+    <nav class="scan-section-nav" aria-label="Scan pages">
+      <a class="active" href="/scan.html" aria-current="page">Recent scans</a>
+      <a href="/scan-new.html">New scan</a>
+    </nav>
 
-      <section class="card results-card">
+    <section class="card results-card">
         <div class="card-heading">
           <div><span class="step-label">Activity</span><h2>Recent scans</h2></div>
-          <span class="live-label"><span class="state-dot"></span>Live</span>
+          <a class="compact-button" href="/scan-new.html">Start scan</a>
         </div>
         <div id="scans" class="empty-state">
           <span class="empty-icon">○</span>
           <strong>No scans yet</strong>
           <span>Configure your first authorized scan to see activity here.</span>
         </div>
-      </section>
-    </div>
+    </section>
   </main>
   <script src="/scan.js" defer></script>
 </body>

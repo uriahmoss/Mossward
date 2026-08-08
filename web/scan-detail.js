@@ -1,5 +1,8 @@
 const params = new URLSearchParams(window.location.search);
 const scanID = params.get("id");
+const allowedViews = new Set(["overview", "services", "cves", "findings"]);
+const requestedView = params.get("view");
+const activeView = allowedViews.has(requestedView) ? requestedView : "overview";
 const loading = document.querySelector("#detail-loading");
 const errorPanel = document.querySelector("#detail-error");
 const content = document.querySelector("#detail-content");
@@ -58,6 +61,9 @@ function render(scan) {
   document.querySelector("#check-count").textContent = `${done}/${total}`;
   document.querySelector("#finding-count").textContent = observations.length;
   document.querySelector("#issue-count").textContent = findings.length;
+  document.querySelector("#services-nav-count").textContent = observations.length;
+  document.querySelector("#cves-nav-count").textContent = cveMatches.length;
+  document.querySelector("#findings-nav-count").textContent = findings.length;
 
   document.querySelector("#created-at").textContent = formatDate(scan.created_at);
   document.querySelector("#started-at").textContent = formatDate(scan.started_at);
@@ -75,7 +81,7 @@ function render(scan) {
     .join("");
 
   const scanErrorPanel = document.querySelector("#scan-error-panel");
-  scanErrorPanel.hidden = !scan.error;
+  scanErrorPanel.hidden = activeView !== "overview" || !scan.error;
   document.querySelector("#scan-error").textContent = scan.error || "";
 
   document.querySelector("#services-summary").textContent = `${observations.length} observed`;
@@ -152,6 +158,18 @@ function render(scan) {
     : `<div class="no-findings"><span class="empty-icon">✓</span><strong>No security findings observed</strong><span>This area updates while the scan is running.</span></div>`;
 }
 
+function configureSectionNavigation() {
+  document.querySelectorAll("[data-scan-view-link]").forEach((link) => {
+    const view = link.dataset.scanViewLink;
+    link.href = `/scan-detail.html?id=${encodeURIComponent(scanID || "")}${view === "overview" ? "" : `&view=${view}`}`;
+    link.classList.toggle("active", view === activeView);
+    if (view === activeView) link.setAttribute("aria-current", "page");
+  });
+  document.querySelectorAll("[data-scan-view]").forEach((section) => {
+    section.hidden = section.dataset.scanView !== activeView;
+  });
+}
+
 function showError(message) {
   loading.hidden = true;
   content.hidden = true;
@@ -187,6 +205,7 @@ async function loadScan() {
   }
 }
 
+configureSectionNavigation();
 loadScan();
 
 cancelButton.addEventListener("click", async () => {

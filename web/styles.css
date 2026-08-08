@@ -246,3 +246,35 @@ button:disabled { opacity: .5; cursor: wait; }
   .metadata-grid { grid-template-columns: 1fr; }
   .cve-news-grid { grid-template-columns: 1fr; }
 }
+.scan-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .55rem;
+  margin: 0 0 1.25rem;
+}
+
+.scan-section-nav a {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  padding: .55rem .9rem;
+  text-decoration: none;
+}
+
+.scan-section-nav a:hover,
+.scan-section-nav a.active {
+  background: var(--green-dark);
+  border-color: var(--green);
+  color: var(--text);
+}
+
+.scan-section-nav a span {
+  margin-left: .25rem;
+  opacity: .75;
+}
+
+.scan-form-card {
+  max-width: 760px;
+}
+
+[data-scan-view][hidden] { display: none; }

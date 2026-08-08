@@ -296,7 +296,7 @@ failure and health states.
 
 ### 2. Scan interface and results UX
 
-- [ ] Split the scan experience into focused linked pages or sections instead
+- [x] Split the scan experience into focused linked pages or sections instead
       of one oversized page
 - [ ] Add scan-result sorting and configurable filters
 - [ ] Redesign the overall scan-results presentation for clearer hierarchy,
