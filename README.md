@@ -12,6 +12,8 @@ Linux and Windows Server installation is covered in
 [`docs/SERVICE_INSTALLATION.md`](docs/SERVICE_INSTALLATION.md).
 Server-state protection and disaster recovery are documented in
 [`docs/BACKUP_RESTORE.md`](docs/BACKUP_RESTORE.md).
+Endpoint-agent enrollment and outbound-only operation are documented in
+[`docs/ENDPOINT_AGENT.md`](docs/ENDPOINT_AGENT.md).
 
 The signed, non-executable check envelope is documented in
 [`docs/DECLARATIVE_CHECKS.md`](docs/DECLARATIVE_CHECKS.md). Its bounded HTTP
@@ -142,14 +144,16 @@ which is the maximum date window accepted by one NVD API request. Use
 to use the authenticated request cadence. Feed failures do not prevent network
 scans, and the homepage always displays the last successful refresh state.
 
-`make build` writes the executable to `bin/mossward`. All generated files stay
-inside this project directory.
+`make build` writes the server and endpoint-agent executables to `bin/mossward`
+and `bin/mossward-agent`. All generated files stay inside this project
+directory.
 
 ## Project layout
 
 ```text
 Mossward/
 ├── cmd/mossward/       Application entry point
+├── cmd/mossward-agent/ Outbound-only endpoint-agent entry point
 ├── config/             Example runtime configuration
 ├── data/               Local scan data (ignored by Git)
 ├── deploy/             Linux systemd and Windows Service assets

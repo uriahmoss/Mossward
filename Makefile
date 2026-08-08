@@ -5,6 +5,7 @@ GOCACHE ?= /private/tmp/mossward-go-cache
 build:
 	mkdir -p bin
 	GOCACHE=$(GOCACHE) go build -o bin/mossward ./cmd/mossward
+	GOCACHE=$(GOCACHE) go build -o bin/mossward-agent ./cmd/mossward-agent
 
 run:
 	GOCACHE=$(GOCACHE) go run ./cmd/mossward

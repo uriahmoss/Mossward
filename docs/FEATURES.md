@@ -324,9 +324,9 @@ failure and health states.
 
 ### 5. Endpoint-agent core
 
-- [ ] Explicit enrollment and revocation
-- [ ] Mutually authenticated device identity
-- [ ] Outbound-only agent communication
+- [x] Explicit enrollment and revocation
+- [x] Mutually authenticated device identity
+- [x] Outbound-only agent communication
 - [ ] Read-only collector allowlist
 - [ ] Signed Linux endpoint agent
 - [ ] Signed Windows endpoint agent

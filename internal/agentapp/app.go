@@ -1,0 +1,237 @@
+package agentapp
+
+import (
+	"bytes"
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net/http"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"time"
+)
+
+const (
+	agentRequestTimeout    = 30 * time.Second
+	certificateRenewalLead = 30 * 24 * time.Hour
+	maximumRetryExponent   = 8
+)
+
+type App struct {
+	client      *http.Client
+	checkInURL  string
+	renewURL    string
+	interval    time.Duration
+	config      Config
+	certificate *x509.Certificate
+}
+
+func New(config Config) (*App, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
+
+	certificate, leaf, roots, err := loadIdentity(config.StateDirectory)
+	if err != nil {
+		return nil, err
+	}
+	base := strings.TrimRight(config.EndpointURL, "/")
+	return &App{
+		client:      identityClient(certificate, roots),
+		checkInURL:  base + "/api/agent/v1/check-in",
+		renewURL:    base + "/api/agent/v1/certificate/renew",
+		interval:    config.CheckInInterval(),
+		config:      config,
+		certificate: leaf,
+	}, nil
+}
+
+func (a *App) Run(ctx context.Context) error {
+	slog.Info("Mossward endpoint agent started", "check_in_interval", a.interval)
+	failures := 0
+	for {
+		if time.Until(a.certificate.NotAfter) <= certificateRenewalLead {
+			if err := a.renew(ctx); err != nil {
+				slog.Warn("Endpoint-agent certificate renewal failed", "error", err)
+			}
+		}
+
+		err := a.checkIn(ctx)
+		delay := a.interval
+		if err != nil && !errors.Is(err, context.Canceled) {
+			failures++
+			delay = retryDelay(a.interval, failures)
+			slog.Warn("Endpoint-agent check-in failed", "error", err, "retry_in", delay)
+		} else {
+			failures = 0
+		}
+		if waitForNextCheckIn(ctx, delay) {
+			continue
+		}
+
+		slog.Info("Mossward endpoint agent stopped")
+		return nil
+	}
+}
+
+func (a *App) checkIn(ctx context.Context) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, a.checkInURL, nil)
+	if err != nil {
+		return err
+	}
+	response, err := a.client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return fmt.Errorf("endpoint check-in returned status %d", response.StatusCode)
+	}
+	return nil
+}
+
+func (a *App) renew(ctx context.Context) error {
+	_, csr, key, err := newIdentityMaterial()
+	if err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]string{"csr_pem": string(csr)})
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, a.renewURL, bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := a.client.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		return fmt.Errorf("certificate renewal returned status %d", response.StatusCode)
+	}
+
+	var result enrollmentResult
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		return fmt.Errorf("decode certificate renewal: %w", err)
+	}
+	certificate, err := tls.X509KeyPair([]byte(result.CertificatePEM), key)
+	if err != nil {
+		return errors.New("renewed certificate does not match generated key")
+	}
+	leaf, err := parseLeaf(certificate)
+	if err != nil {
+		return err
+	}
+	roots, err := rootsFromPEM([]byte(result.CAChainPEM))
+	if err != nil {
+		return err
+	}
+	if err := saveIdentity(a.config.StateDirectory, key, []byte(result.CertificatePEM), []byte(result.CAChainPEM), result.Endpoint); err != nil {
+		return err
+	}
+
+	previousTransport, _ := a.client.Transport.(*http.Transport)
+	a.client = identityClient(certificate, roots)
+	a.certificate = leaf
+	if previousTransport != nil {
+		previousTransport.CloseIdleConnections()
+	}
+	slog.Info("Mossward endpoint-agent certificate renewed", "expires_at", leaf.NotAfter)
+	return nil
+}
+
+func loadIdentity(directory string) (tls.Certificate, *x509.Certificate, *x509.CertPool, error) {
+	certificatePath := filepath.Join(directory, "agent-cert.pem")
+	keyPath := filepath.Join(directory, "agent-key.pem")
+	if err := requirePrivatePermissions(keyPath); err != nil {
+		return tls.Certificate{}, nil, nil, err
+	}
+	certificate, err := tls.LoadX509KeyPair(certificatePath, keyPath)
+	if err != nil {
+		return tls.Certificate{}, nil, nil, fmt.Errorf("load endpoint-agent identity: %w", err)
+	}
+	leaf, err := parseLeaf(certificate)
+	if err != nil {
+		return tls.Certificate{}, nil, nil, err
+	}
+	roots, err := loadRoots(filepath.Join(directory, "agent-ca.pem"))
+	if err != nil {
+		return tls.Certificate{}, nil, nil, err
+	}
+	return certificate, leaf, roots, nil
+}
+
+func parseLeaf(certificate tls.Certificate) (*x509.Certificate, error) {
+	if len(certificate.Certificate) == 0 {
+		return nil, errors.New("endpoint-agent certificate chain is empty")
+	}
+	leaf, err := x509.ParseCertificate(certificate.Certificate[0])
+	if err != nil {
+		return nil, errors.New("endpoint-agent certificate is invalid")
+	}
+	return leaf, nil
+}
+
+func identityClient(certificate tls.Certificate, roots *x509.CertPool) *http.Client {
+	transport := &http.Transport{TLSClientConfig: &tls.Config{
+		MinVersion:   tls.VersionTLS13,
+		RootCAs:      roots,
+		Certificates: []tls.Certificate{certificate},
+	}}
+	return &http.Client{Timeout: agentRequestTimeout, Transport: transport}
+}
+
+func retryDelay(interval time.Duration, failures int) time.Duration {
+	exponent := min(failures, maximumRetryExponent)
+	return min(interval, time.Duration(1<<exponent)*time.Second)
+}
+
+func waitForNextCheckIn(ctx context.Context, delay time.Duration) bool {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-timer.C:
+		return true
+	}
+}
+
+func loadRoots(path string) (*x509.CertPool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("read endpoint-agent CA: %w", err)
+	}
+	return rootsFromPEM(data)
+}
+
+func rootsFromPEM(data []byte) (*x509.CertPool, error) {
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(data) {
+		return nil, errors.New("endpoint-agent CA contains no certificates")
+	}
+	return roots, nil
+}
+
+func requirePrivatePermissions(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return fmt.Errorf("inspect endpoint-agent private key: %w", err)
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		return errors.New("endpoint-agent private key permissions are too broad")
+	}
+	return nil
+}
