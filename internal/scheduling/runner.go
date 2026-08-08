@@ -17,17 +17,25 @@ const tickInterval = 30 * time.Second
 type AlertSender interface {
 	SendLongRun(model.ReusableScanPolicy, model.Scan) error
 }
+type PolicyLauncher interface {
+	Launch(model.Scan, model.ReusableScanPolicy) error
+}
 type Runner struct {
-	store  store.Repository
-	engine *scanner.Engine
-	cancel context.CancelFunc
-	done   chan struct{}
-	now    func() time.Time
-	alerts AlertSender
+	store    store.Repository
+	engine   *scanner.Engine
+	cancel   context.CancelFunc
+	done     chan struct{}
+	now      func() time.Time
+	alerts   AlertSender
+	launcher PolicyLauncher
 }
 
-func NewRunner(repository store.Repository, engine *scanner.Engine, alerts AlertSender) *Runner {
-	return &Runner{store: repository, engine: engine, alerts: alerts, done: make(chan struct{}), now: func() time.Time { return time.Now().UTC() }}
+func NewRunner(repository store.Repository, engine *scanner.Engine, alerts AlertSender, launchers ...PolicyLauncher) *Runner {
+	runner := &Runner{store: repository, engine: engine, alerts: alerts, done: make(chan struct{}), now: func() time.Time { return time.Now().UTC() }}
+	if len(launchers) > 0 {
+		runner.launcher = launchers[0]
+	}
+	return runner
 }
 func (r *Runner) Start() {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -84,7 +92,7 @@ func (r *Runner) process(policy model.ReusableScanPolicy, scans []model.Scan, no
 			active.Status = model.StatusQueued
 			active.Error = ""
 			active.WindowEnd = windowEnd
-			if err := r.engine.Schedule(*active); err != nil {
+			if err := r.launch(*active, policy); err != nil {
 				slog.Warn("Could not resume scheduled scan", "scan_id", active.ID, "error", err)
 			}
 		}
@@ -110,11 +118,21 @@ func (r *Runner) process(policy model.ReusableScanPolicy, scans []model.Scan, no
 		r.advance(policy, now, "scheduled run could not start")
 		return
 	}
-	if err := r.engine.Schedule(scan); err != nil {
+	if err := r.launch(scan, policy); err != nil {
 		slog.Warn("Could not queue scheduled scan", "policy_id", policy.ID, "error", err)
 		return
 	}
 	r.advance(policy, now, "scheduled run started")
+}
+
+func (r *Runner) launch(scan model.Scan, policy model.ReusableScanPolicy) error {
+	if r.launcher != nil {
+		return r.launcher.Launch(scan, policy)
+	}
+	if policy.ExecutionMode == model.ScanExecutionRemote {
+		return errors.New("remote scanner-worker dispatch is unavailable")
+	}
+	return r.engine.Schedule(scan)
 }
 
 func (r *Runner) alertLongRun(policy model.ReusableScanPolicy, scan model.Scan, now time.Time) {

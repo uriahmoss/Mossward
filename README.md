@@ -340,6 +340,13 @@ same one-time lease credential and mTLS identity. Renewals never move the job,
 never revive an expired lease, never shorten an existing lease, and cannot extend
 past the expiration carried in the signed job.
 
+Manual and scheduled reusable policies share one execution launcher. Local
+policies enter the server scanner queue, while remote policies persist the scan
+and create a signed worker-bound job through the load-aware dispatcher. Dispatch
+failure is recorded on the scan and never triggers local fallback. Remote jobs
+are valid for at most 24 hours, use a 12-hour default, honor shorter maintenance
+windows, and are assigned only when the worker certificate covers the job.
+
 Asset lifecycle management marks systems stale after a configurable interval
 (30 days by default), supports audited retirement and restoration, and provides
 an administrator-reviewed merge workflow that preserves identity, group,

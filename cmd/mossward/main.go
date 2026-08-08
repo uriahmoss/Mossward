@@ -20,6 +20,7 @@ import (
 	"mossward/internal/intelligence"
 	"mossward/internal/model"
 	"mossward/internal/notification"
+	"mossward/internal/scanlaunch"
 	"mossward/internal/scanner"
 	"mossward/internal/scheduling"
 	"mossward/internal/serverbackup"
@@ -99,7 +100,15 @@ func run(stop <-chan string) error {
 	}
 	defer engine.Shutdown()
 	notificationService := notification.New(repository, secretBox)
-	scheduleRunner := scheduling.NewRunner(repository, engine, notificationService)
+	agentIdentity, workerDispatcher, err := newAgentIdentity(cfg, repository)
+	if err != nil {
+		return err
+	}
+	policyLauncher, err := scanlaunch.New(repository, engine, workerDispatcher)
+	if err != nil {
+		return err
+	}
+	scheduleRunner := scheduling.NewRunner(repository, engine, notificationService, policyLauncher)
 	scheduleRunner.Start()
 	defer scheduleRunner.Close()
 	acmeManager, err := newACMEManager(cfg, repository)
@@ -113,12 +122,9 @@ func run(stop <-chan string) error {
 	if acmeManager != nil {
 		options.CertificateStatus = acmeManager.Status
 	}
-	agentIdentity, err := newAgentIdentity(cfg, repository)
-	if err != nil {
-		return err
-	}
 	options.AgentIdentity = agentIdentity
 	options.Notifications = notificationService
+	options.PolicyLauncher = policyLauncher
 	handler := api.New(cfg, repository, engine, identityService, options)
 	server := &http.Server{
 		Addr:              cfg.ListenAddress,
@@ -275,21 +281,25 @@ func runBackupCommand(cfg config.Config, repository *store.SQLiteStore, args []s
 	}
 }
 
-func newAgentIdentity(cfg config.Config, repository store.Repository) (*agentidentity.Service, error) {
+func newAgentIdentity(cfg config.Config, repository store.Repository) (*agentidentity.Service, *workerjob.Dispatcher, error) {
 	if cfg.AgentListen == "" {
-		return nil, nil
+		return nil, nil, nil
 	}
 	pki, err := agentidentity.LoadOrCreatePKI(cfg.AgentPKIDirectory, cfg.AgentServerNames, time.Now().UTC())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	slog.Info("Mossward endpoint certificate authority loaded", "directory", cfg.AgentPKIDirectory)
 	jobSigner, err := workerjob.LoadOrCreateSigner(cfg.AgentPKIDirectory)
 	if err != nil {
-		return nil, fmt.Errorf("load scanner-worker job signer: %w", err)
+		return nil, nil, fmt.Errorf("load scanner-worker job signer: %w", err)
 	}
 	slog.Info("Mossward scanner-worker job signer loaded", "key_id", jobSigner.KeyID())
-	return agentidentity.NewService(repository, pki, jobSigner), nil
+	dispatcher, err := workerjob.NewDispatcher(repository, jobSigner)
+	if err != nil {
+		return nil, nil, fmt.Errorf("initialize scanner-worker dispatcher: %w", err)
+	}
+	return agentidentity.NewService(repository, pki, jobSigner), dispatcher, nil
 }
 
 func serve(server *http.Server, cfg config.Config) error {

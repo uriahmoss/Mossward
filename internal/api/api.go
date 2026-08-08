@@ -33,6 +33,11 @@ type API struct {
 	certificateStatus func() transport.ACMEStatus
 	agentIdentity     *agentidentity.Service
 	notifications     *notification.Service
+	policyLauncher    PolicyLauncher
+}
+
+type PolicyLauncher interface {
+	Launch(model.Scan, model.ReusableScanPolicy) error
 }
 
 const (
@@ -45,6 +50,7 @@ type RuntimeOptions struct {
 	CertificateStatus func() transport.ACMEStatus
 	AgentIdentity     *agentidentity.Service
 	Notifications     *notification.Service
+	PolicyLauncher    PolicyLauncher
 }
 
 func New(cfg config.Config, repository store.Repository, engine *scanner.Engine, identityService *identity.Service,
@@ -54,6 +60,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 		api.certificateStatus = options[0].CertificateStatus
 		api.agentIdentity = options[0].AgentIdentity
 		api.notifications = options[0].Notifications
+		api.policyLauncher = options[0].PolicyLauncher
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/health", api.health)

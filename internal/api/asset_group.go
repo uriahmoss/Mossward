@@ -306,12 +306,23 @@ func (a *API) runReusableScanPolicy(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	scan := model.Scan{ID: scanID, Name: policy.Name, Targets: targets, Ports: ports, Status: model.StatusQueued, Observations: []model.ServiceObservation{}, Findings: []model.Finding{}, CVEMatches: []model.CVEMatch{}, TotalChecks: len(targets) * len(ports), CreatedAt: now, ScopePolicyID: scope.ID, MaxConcurrent: scope.MaxConcurrent, ScanPolicyID: policy.ID, WindowEnd: windowEnd, RateLimitPerSecond: policy.RateLimitPerSecond}
-	if err := a.scanner.Schedule(scan); errors.Is(err, scanner.ErrQueueFull) {
+	err = a.launchPolicyScan(scan, policy)
+	if errors.Is(err, scanner.ErrQueueFull) {
 		writeError(w, 503, err.Error())
 		return
 	} else if err != nil {
-		writeError(w, 500, "could not schedule scan")
+		writeError(w, 503, "could not schedule scan with the selected execution location")
 		return
 	}
 	writeJSON(w, 202, scan)
+}
+
+func (a *API) launchPolicyScan(scan model.Scan, policy model.ReusableScanPolicy) error {
+	if a.policyLauncher != nil {
+		return a.policyLauncher.Launch(scan, policy)
+	}
+	if policy.ExecutionMode == model.ScanExecutionRemote {
+		return errors.New("remote scanner-worker dispatch is unavailable")
+	}
+	return a.scanner.Schedule(scan)
 }

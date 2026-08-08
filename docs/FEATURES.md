@@ -243,6 +243,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Constrained worker scan runtime using only declared targets, ports, and checks
 - [x] Explicit local-or-remote policy execution with no automatic fallback
 - [x] Authenticated active-job lease renewal bounded by the signed job expiration
+- [x] Manual and scheduled remote policies create signed worker-bound jobs
 - [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [ ] Dead-letter quarantine for repeatedly failing jobs
 - [ ] Fleet health visibility for offline, outdated, revoked, and overloaded workers
@@ -284,7 +285,7 @@ failure and health states.
 - [x] Persistent target-and-port checkpoints across maintenance windows
 - [x] Configurable cumulative active-runtime email alerts
 - [x] Administrator-managed TLS SMTP settings with encrypted credentials
-- [ ] Launch scan policies through the distributed-worker runtime
+- [x] Launch remote scan policies into signed distributed-worker jobs
 - [x] Signed and scope-limited worker jobs
 
 ## Remaining ordered roadmap

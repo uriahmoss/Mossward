@@ -21,7 +21,7 @@ func VerifyForWorker(envelope model.SignedWorkerJob, publicKey ed25519.PublicKey
 
 const (
 	jobSchemaVersion   = 1
-	maximumJobLifetime = 15 * time.Minute
+	maximumJobLifetime = 24 * time.Hour
 	jobClockSkew       = time.Minute
 	jobIdentityLimit   = 200
 	jobSiteIDLimit     = 64

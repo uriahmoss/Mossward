@@ -116,6 +116,25 @@ func TestDispatcherRejectsWorkersWithoutCapacityOrScope(t *testing.T) {
 	}
 }
 
+func TestDispatcherAppliesWorkerRateCapToUnlimitedPolicy(t *testing.T) {
+	now := time.Now().UTC()
+	worker := workerSelectionFixture("worker", now)
+	worker.RateLimitPerSecond = 3
+	repository := &dispatchMemoryStore{workers: []model.ScannerWorker{worker}}
+	signer, err := LoadOrCreateSigner(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	dispatcher, _ := NewDispatcher(repository, signer)
+	dispatcher.now = func() time.Time { return now }
+	job := dispatchJobFixture("rate-capped", now)
+	job.RateLimitPerSecond = 0
+	envelope, err := dispatcher.Dispatch(job)
+	if err != nil || envelope.Job.RateLimitPerSecond != worker.RateLimitPerSecond {
+		t.Fatalf("worker rate cap was not applied to unlimited policy: %#v %v", envelope.Job, err)
+	}
+}
+
 func TestDispatcherHonorsGlobalAndPerWorkerKillSwitches(t *testing.T) {
 	now := time.Now().UTC()
 	enabled := false

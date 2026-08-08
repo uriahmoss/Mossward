@@ -57,7 +57,7 @@ func (d *Dispatcher) Dispatch(job model.WorkerJob) (model.SignedWorkerJob, error
 	if err != nil {
 		return model.SignedWorkerJob{}, err
 	}
-	job.WorkerID = worker.ID
+	job = jobForWorker(job, worker)
 	envelope, err := d.signer.Sign(job)
 	if err != nil {
 		return model.SignedWorkerJob{}, err
@@ -99,7 +99,7 @@ func (d *Dispatcher) ReassignExpired(jobID string) (model.SignedWorkerJob, error
 	if err != nil {
 		return model.SignedWorkerJob{}, err
 	}
-	job.WorkerID = worker.ID
+	job = jobForWorker(job, worker)
 	envelope, err := d.signer.Sign(job)
 	if err != nil {
 		return model.SignedWorkerJob{}, err
@@ -145,8 +145,7 @@ func selectWorkerExcluding(job model.WorkerJob, workers []model.ScannerWorker, l
 		if !workerAvailableForAssignment(worker, job, remaining, now) {
 			continue
 		}
-		candidateJob := job
-		candidateJob.WorkerID = worker.ID
+		candidateJob := jobForWorker(job, worker)
 		if Validate(candidateJob, worker, now) != nil {
 			continue
 		}
@@ -171,11 +170,19 @@ func selectWorkerExcluding(job model.WorkerJob, workers []model.ScannerWorker, l
 	return candidates[0].worker, nil
 }
 
+func jobForWorker(job model.WorkerJob, worker model.ScannerWorker) model.WorkerJob {
+	job.WorkerID = worker.ID
+	if job.RateLimitPerSecond == 0 && worker.RateLimitPerSecond > 0 {
+		job.RateLimitPerSecond = worker.RateLimitPerSecond
+	}
+	return job
+}
+
 func workerAvailableForAssignment(worker model.ScannerWorker, job model.WorkerJob, remaining int, now time.Time) bool {
 	if worker.Status != model.EndpointActive || !worker.DispatchEnabled || worker.Health != model.WorkerHealthHealthy || worker.LastSeenAt == nil {
 		return false
 	}
-	if now.Sub(*worker.LastSeenAt) > assignmentHeartbeatFreshness || !now.Before(worker.ExpiresAt) {
+	if now.Sub(*worker.LastSeenAt) > assignmentHeartbeatFreshness || !now.Before(worker.ExpiresAt) || job.ExpiresAt.After(worker.ExpiresAt) {
 		return false
 	}
 	if job.SiteID != "" && worker.SiteID != job.SiteID {

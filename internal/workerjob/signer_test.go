@@ -57,6 +57,20 @@ func TestWorkerJobValidationEnforcesAssignedScope(t *testing.T) {
 	}
 }
 
+func TestWorkerJobValidationSupportsBoundedOvernightExecution(t *testing.T) {
+	now := time.Now().UTC()
+	job, worker := validWorkerJobFixture(now)
+	worker.ExpiresAt = now.Add(25 * time.Hour)
+	job.ExpiresAt = now.Add(12 * time.Hour)
+	if err := Validate(job, worker, now); err != nil {
+		t.Fatalf("bounded overnight worker job was rejected: %v", err)
+	}
+	job.ExpiresAt = now.Add(maximumJobLifetime + time.Second)
+	if err := Validate(job, worker, now); err == nil {
+		t.Fatal("worker job exceeded the maximum signed lifetime")
+	}
+}
+
 func validWorkerJobFixture(now time.Time) (model.WorkerJob, model.ScannerWorker) {
 	worker := model.ScannerWorker{ID: "worker-one", Status: model.EndpointActive, ExpiresAt: now.Add(time.Hour),
 		AllowedCIDRs: []string{"192.0.2.0/24"}, AllowedPorts: []int{443}, MaxConcurrent: 4,
