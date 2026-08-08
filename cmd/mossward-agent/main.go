@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"mossward/internal/agentapp"
 	"os"
-	"os/signal"
 	"strings"
 )
 
@@ -23,6 +22,9 @@ func main() {
 func run() error {
 	if len(os.Args) < 2 {
 		return errors.New("use enroll, run, or diagnose")
+	}
+	if os.Args[1] == "service" {
+		return manageAgentService(os.Args[2:])
 	}
 	flags := flag.NewFlagSet("mossward-agent "+os.Args[1], flag.ContinueOnError)
 	configPath := flags.String("config", os.Getenv("MOSSWARD_AGENT_CONFIG"), "absolute path to endpoint-agent JSON configuration")
@@ -53,13 +55,7 @@ func run() error {
 	if os.Args[1] != "run" {
 		return errors.New("use enroll, run, or diagnose")
 	}
-	app, err := agentapp.New(config)
-	if err != nil {
-		return err
-	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-	return app.Run(ctx)
+	return runAgentPlatform(config)
 }
 
 func runDiagnostics(config agentapp.Config, offline, jsonOutput bool) error {

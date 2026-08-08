@@ -138,8 +138,23 @@ provider or managed signing service to protect the private key.
   -TimestampUrl 'https://timestamp.example.com'
 ```
 
-The installer refuses unsigned or invalidly signed executables and locks the
-installation and state directories to Administrators and SYSTEM. Native
-Windows Service lifecycle and Event Log integration are the next part of this
-slice; the current installer deliberately does not register a console process
-as a service.
+The installer refuses unsigned or invalidly signed executables, locks the
+installation and state directories to Administrators, SYSTEM, and the isolated
+`NT SERVICE\MosswardAgent` virtual account, and registers a native automatic
+Windows Service. It deliberately leaves the service stopped until enrollment
+succeeds.
+
+Service lifecycle and troubleshooting commands are built into the same signed
+agent executable:
+
+```powershell
+mossward-agent.exe service start
+mossward-agent.exe service stop
+mossward-agent.exe service status
+mossward-agent.exe diagnose --config 'C:\ProgramData\Mossward\Agent\agent.json'
+Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='MosswardAgent']]]"
+```
+
+Info, warning, and error records are written to the Windows Application Event
+Log under the `MosswardAgent` source. Service removal preserves configuration,
+certificates, private keys, and other agent state.

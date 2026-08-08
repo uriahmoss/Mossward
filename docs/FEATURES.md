@@ -329,7 +329,7 @@ failure and health states.
 - [x] Outbound-only agent communication
 - [x] Read-only collector allowlist
 - [x] Signed Linux endpoint agent
-- [ ] Signed Windows endpoint agent
+- [x] Signed Windows endpoint agent
 - [ ] Signed, rollback-capable updates
 
 ### 6. Endpoint extension framework
