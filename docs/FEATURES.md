@@ -228,7 +228,7 @@ Work through this sequence unless a review explicitly changes product priority.
 Items within a slice are ordered by dependency. Completed prerequisites remain
 checked so the next unfinished dependency is unambiguous.
 
-### 1. Distributed scanner-worker MVP — active
+### 1. Distributed scanner-worker MVP — complete
 
 - [x] Explicit worker enrollment, revocation, and mutually authenticated identity
 - [x] Worker health, version, certificate, capacity, and capability heartbeats
@@ -248,7 +248,7 @@ checked so the next unfinished dependency is unambiguous.
 - [x] Worker poll, execute, lease-renew, encrypted-outbox, and upload loop
 - [x] Project accepted remote observations, findings, checkpoints, CVEs, and worker provenance into scans and assets
 - [x] Deployable scanner-worker command with strict mTLS, trust-key, scope, and encrypted-state configuration
-- [ ] End-to-end policy launch, remote execution, evidence ingestion, and resume
+- [x] End-to-end policy launch, remote execution, evidence ingestion, and resume
 - [x] Dead-letter quarantine for repeatedly failing jobs
 - [x] Fleet health visibility for offline, outdated, revoked, and overloaded workers
 
