@@ -58,7 +58,7 @@ func readLinuxConnections(path, protocol string, ipv6, udp bool, owners map[stri
 		}
 		owner := owners[fields[9]]
 		connections = append(connections, model.NetworkConnection{Protocol: protocol, LocalAddress: localAddress, LocalPort: localPort,
-			RemoteAddress: remoteAddress, RemotePort: remotePort, ProcessID: owner.pid, ProcessName: owner.name, Direction: "outbound_candidate"})
+			RemoteAddress: remoteAddress, RemotePort: remotePort, ProcessID: owner.pid, ProcessName: owner.name, Executable: owner.executable, Direction: "outbound_candidate"})
 	}
 	return connections, scanner.Err()
 }

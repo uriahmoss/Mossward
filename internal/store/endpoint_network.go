@@ -27,8 +27,8 @@ func (s *SQLiteStore) RecordEndpointNetworkInventory(endpointID string, inventor
 		return err
 	}
 	for index, connection := range inventory.Connections {
-		if _, err := tx.Exec(`INSERT INTO endpoint_network_connections(endpoint_id,ordinal,protocol,local_address,local_port,remote_address,remote_port,process_id,process_name,direction) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-			endpointID, index, connection.Protocol, connection.LocalAddress, connection.LocalPort, connection.RemoteAddress, connection.RemotePort, connection.ProcessID, connection.ProcessName, connection.Direction); err != nil {
+		if _, err := tx.Exec(`INSERT INTO endpoint_network_connections(endpoint_id,ordinal,protocol,local_address,local_port,remote_address,remote_port,process_id,process_name,direction,executable) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+			endpointID, index, connection.Protocol, connection.LocalAddress, connection.LocalPort, connection.RemoteAddress, connection.RemotePort, connection.ProcessID, connection.ProcessName, connection.Direction, connection.Executable); err != nil {
 			return err
 		}
 	}
@@ -47,14 +47,14 @@ func (s *SQLiteStore) EndpointNetworkInventory(endpointID string) (model.Endpoin
 	}
 	inventory.CollectedAt, _ = parseTime(collectedAt)
 	inventory.ReceivedAt, _ = parseTime(receivedAt)
-	rows, err := s.db.Query(`SELECT protocol,local_address,local_port,remote_address,remote_port,process_id,process_name,direction FROM endpoint_network_connections WHERE endpoint_id=? ORDER BY ordinal`, endpointID)
+	rows, err := s.db.Query(`SELECT protocol,local_address,local_port,remote_address,remote_port,process_id,process_name,direction,executable FROM endpoint_network_connections WHERE endpoint_id=? ORDER BY ordinal`, endpointID)
 	if err != nil {
 		return inventory, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var connection model.NetworkConnection
-		if err := rows.Scan(&connection.Protocol, &connection.LocalAddress, &connection.LocalPort, &connection.RemoteAddress, &connection.RemotePort, &connection.ProcessID, &connection.ProcessName, &connection.Direction); err != nil {
+		if err := rows.Scan(&connection.Protocol, &connection.LocalAddress, &connection.LocalPort, &connection.RemoteAddress, &connection.RemotePort, &connection.ProcessID, &connection.ProcessName, &connection.Direction, &connection.Executable); err != nil {
 			return inventory, err
 		}
 		inventory.Connections = append(inventory.Connections, connection)

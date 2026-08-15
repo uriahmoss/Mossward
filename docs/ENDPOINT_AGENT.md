@@ -234,3 +234,8 @@ remote addresses and ports plus owning process metadata when available. No
 payload, packet contents, DNS traffic, TLS contents, or browsing history are
 captured. Administrators can read the snapshot from
 `GET /api/admin/endpoints/{id}/network-inventory`.
+
+Each connection is correlated with its OS-reported PID and process name when
+available. Linux also records the executable path visible through `/proc` to the
+agent service identity. Missing process identity remains empty rather than being
+guessed, and Mossward does not open process memory or inspect process payloads.

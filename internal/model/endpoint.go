@@ -149,6 +149,7 @@ type NetworkConnection struct {
 	RemotePort    int    `json:"remote_port"`
 	ProcessID     int    `json:"process_id,omitempty"`
 	ProcessName   string `json:"process_name,omitempty"`
+	Executable    string `json:"executable,omitempty"`
 	Direction     string `json:"direction"`
 }
 
