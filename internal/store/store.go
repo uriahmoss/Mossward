@@ -31,6 +31,9 @@ var ErrInvalidFindingWorkflow = errors.New("invalid finding workflow update")
 var ErrEndpointIntegrityReplay = errors.New("endpoint integrity sequence was already used")
 var ErrEndpointRelayUnavailable = errors.New("only an active endpoint can be promoted to relay")
 var ErrEndpointRelayAlreadyActive = errors.New("endpoint already has an active relay authorization")
+var ErrRelayDownstreamSelfAssignment = errors.New("relay endpoint cannot authorize itself as downstream")
+var ErrRelayDownstreamUnavailable = errors.New("only an active endpoint can be authorized downstream")
+var ErrRelayDownstreamAlreadyActive = errors.New("downstream endpoint already has an active relay assignment")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -140,6 +143,9 @@ type Repository interface {
 	PromoteEndpointRelay(model.EndpointRelayAuthorization, model.AuditEvent) error
 	RevokeEndpointRelay(string, string, string, time.Time, model.AuditEvent) error
 	ListEndpointRelayAuthorizations() ([]model.EndpointRelayAuthorization, error)
+	AuthorizeRelayDownstream(model.RelayDownstreamAuthorization, model.AuditEvent) error
+	RevokeRelayDownstream(string, string, string, string, time.Time, model.AuditEvent) error
+	ListRelayDownstreamAuthorizations() ([]model.RelayDownstreamAuthorization, error)
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error

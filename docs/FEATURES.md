@@ -379,7 +379,7 @@ failure and health states.
 ### 10. Optional endpoint relay
 
 - [x] Explicit relay promotion and revocation
-- [ ] Approved downstream agent allowlist
+- [x] Approved downstream agent allowlist
 - [ ] Dedicated Mossward transport only
 - [ ] End-to-end signed and encrypted messages
 - [ ] Bounded encrypted store-and-forward queue

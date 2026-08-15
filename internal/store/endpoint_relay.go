@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"fmt"
 	"time"
 
 	"mossward/internal/model"
@@ -53,6 +54,19 @@ func (s *SQLiteStore) RevokeEndpointRelay(endpointID, reason, actorID string, no
 	changed, _ := result.RowsAffected()
 	if changed != 1 {
 		return ErrNotFound
+	}
+	downstreamResult, err := tx.Exec(`UPDATE relay_downstream_authorizations SET status='revoked',revocation_reason='relay authorization revoked',revoked_by=?,revoked_at=? WHERE relay_endpoint_id=? AND status='active'`, actorID, formatTime(now), endpointID)
+	if err != nil {
+		return err
+	}
+	downstreamCount, _ := downstreamResult.RowsAffected()
+	if downstreamCount > 0 {
+		downstreamEvent := event
+		downstreamEvent.Action = "endpoint.relay_downstreams.revoked_with_relay"
+		downstreamEvent.Details = fmt.Sprintf(`{"count":%d}`, downstreamCount)
+		if err := insertAuditEvent(tx, downstreamEvent); err != nil {
+			return err
+		}
 	}
 	if err := insertAuditEvent(tx, event); err != nil {
 		return err

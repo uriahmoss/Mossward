@@ -315,6 +315,13 @@ with recent MFA. Only one authorization can be active per endpoint, while prior
 revoked authorizations remain available as history. Promotion in this slice
 does not open a listener, approve downstream agents, or forward traffic.
 
+Downstream relay authorization is an explicit endpoint allowlist. Both the relay
+and downstream endpoint must be active, self-assignment is prohibited, and a
+downstream endpoint can have only one active relay assignment. Authorization and
+revocation require recent MFA and a reason. Revoking a relay also revokes its
+active downstream assignments while preserving their history. Allowlisting is
+still inert until the dedicated relay transport is implemented.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

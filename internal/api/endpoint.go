@@ -30,6 +30,9 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/endpoint-relays", a.listEndpointRelays)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/promote", a.promoteEndpointRelay)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/revoke", a.revokeEndpointRelay)
+	mux.HandleFunc("GET /api/admin/relay-downstreams", a.listRelayDownstreams)
+	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/downstreams/{downstream_id}/authorize", a.authorizeRelayDownstream)
+	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/downstreams/{downstream_id}/revoke", a.revokeRelayDownstream)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -51,6 +54,76 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listRelayDownstreams(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	authorizations, err := a.store.ListRelayDownstreamAuthorizations()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list relay downstream authorizations")
+		return
+	}
+	writeJSON(w, http.StatusOK, authorizations)
+}
+
+func (a *API) authorizeRelayDownstream(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	reason, ok := decodeRelayTransitionReason(w, r)
+	if !ok {
+		return
+	}
+	id, err := randomID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not authorize relay downstream")
+		return
+	}
+	now := time.Now().UTC()
+	authorization := model.RelayDownstreamAuthorization{ID: id, RelayEndpointID: r.PathValue("id"), DownstreamEndpointID: r.PathValue("downstream_id"),
+		Status: model.EndpointRelayActive, AuthorizationReason: reason, AuthorizedBy: actor.ID, AuthorizedAt: now}
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.relay_downstream.authorized", Severity: model.AuditWarning,
+		TargetType: "endpoint", TargetID: authorization.DownstreamEndpointID, SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.AuthorizeRelayDownstream(authorization, event); err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			writeError(w, http.StatusNotFound, "downstream endpoint not found")
+		case errors.Is(err, store.ErrEndpointRelayUnavailable), errors.Is(err, store.ErrRelayDownstreamUnavailable),
+			errors.Is(err, store.ErrRelayDownstreamAlreadyActive), errors.Is(err, store.ErrRelayDownstreamSelfAssignment):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "could not authorize relay downstream")
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, authorization)
+}
+
+func (a *API) revokeRelayDownstream(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	reason, ok := decodeRelayTransitionReason(w, r)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.relay_downstream.revoked", Severity: model.AuditWarning,
+		TargetType: "endpoint", TargetID: r.PathValue("downstream_id"), SourceIP: requestIP(r), Details: "{}"}
+	err := a.store.RevokeRelayDownstream(r.PathValue("id"), r.PathValue("downstream_id"), reason, actor.ID, now, event)
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "active relay downstream authorization not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not revoke relay downstream")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) listEndpointRelays(w http.ResponseWriter, r *http.Request) {
