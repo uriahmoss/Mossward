@@ -109,8 +109,12 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err != nil {
 		slog.Warn("Endpoint OS inventory collection failed", "error", err)
 	}
+	softwareInventory, err := collectSoftwareInventory(a.config.CollectorAllowlist, now)
+	if err != nil {
+		slog.Warn("Endpoint software inventory collection failed", "error", err)
+	}
 	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
-		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory})
+		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory})
 	if err != nil {
 		return err
 	}

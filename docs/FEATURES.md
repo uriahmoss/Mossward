@@ -351,7 +351,7 @@ failure and health states.
 ### 7. Endpoint inventory and CVE evidence
 
 - [x] Operating-system and patch inventory
-- [ ] Installed package and application inventory
+- [x] Installed package and application inventory
 - [ ] Listening service and owning-process inventory
 - [ ] Local security-posture evidence
 - [ ] Endpoint-backed CVE correlation

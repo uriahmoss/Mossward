@@ -40,13 +40,14 @@ type Endpoint struct {
 }
 
 type AgentCheckIn struct {
-	SchemaVersion       int                  `json:"schema_version"`
-	SoftwareVersion     string               `json:"software_version"`
-	OperatingSystem     string               `json:"operating_system"`
-	Architecture        string               `json:"architecture"`
-	SupportedCollectors []CollectorID        `json:"supported_collectors"`
-	ModuleHealth        []agentmodule.Health `json:"module_health,omitempty"`
-	OSInventory         *EndpointOSInventory `json:"os_inventory,omitempty"`
+	SchemaVersion       int                        `json:"schema_version"`
+	SoftwareVersion     string                     `json:"software_version"`
+	OperatingSystem     string                     `json:"operating_system"`
+	Architecture        string                     `json:"architecture"`
+	SupportedCollectors []CollectorID              `json:"supported_collectors"`
+	ModuleHealth        []agentmodule.Health       `json:"module_health,omitempty"`
+	OSInventory         *EndpointOSInventory       `json:"os_inventory,omitempty"`
+	SoftwareInventory   *EndpointSoftwareInventory `json:"software_inventory,omitempty"`
 }
 
 type EndpointOSInventory struct {
@@ -66,6 +67,21 @@ type EndpointPatch struct {
 	ID          string     `json:"id"`
 	Description string     `json:"description,omitempty"`
 	InstalledAt *time.Time `json:"installed_at,omitempty"`
+}
+
+type EndpointSoftwareInventory struct {
+	EndpointID  string              `json:"endpoint_id,omitempty"`
+	Items       []InstalledSoftware `json:"items"`
+	CollectedAt time.Time           `json:"collected_at"`
+	ReceivedAt  time.Time           `json:"received_at,omitempty"`
+}
+
+type InstalledSoftware struct {
+	Name         string `json:"name"`
+	Version      string `json:"version"`
+	Publisher    string `json:"publisher,omitempty"`
+	Architecture string `json:"architecture,omitempty"`
+	Source       string `json:"source"`
 }
 
 type AgentCheckInResponse struct {

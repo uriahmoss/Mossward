@@ -42,6 +42,8 @@ type EndpointStore interface {
 	RecordAgentModuleHealth(string, []agentmodule.Health) error
 	RecordEndpointOSInventory(string, model.EndpointOSInventory, time.Time) error
 	EndpointOSInventory(string) (model.EndpointOSInventory, error)
+	RecordEndpointSoftwareInventory(string, model.EndpointSoftwareInventory, time.Time) error
+	EndpointSoftwareInventory(string) (model.EndpointSoftwareInventory, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -267,6 +269,12 @@ func (s *Service) Handler() http.Handler {
 				return
 			}
 		}
+		if heartbeat.SoftwareInventory != nil && slices.Contains(endpoint.AllowedCollectors, model.CollectorInstalledSoftware) {
+			if err := s.store.RecordEndpointSoftwareInventory(endpoint.ID, *heartbeat.SoftwareInventory, now); err != nil {
+				http.Error(w, "endpoint software inventory unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		moduleOffers, err := s.store.AgentModuleOffers(endpoint.ID, heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture)
 		if err != nil {
 			http.Error(w, "endpoint module state unavailable", http.StatusServiceUnavailable)
@@ -301,7 +309,29 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	if err := validateOSInventory(checkIn.OSInventory); err != nil {
 		return err
 	}
+	if err := validateSoftwareInventory(checkIn.SoftwareInventory); err != nil {
+		return err
+	}
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
+}
+
+func validateSoftwareInventory(inventory *model.EndpointSoftwareInventory) error {
+	if inventory == nil {
+		return nil
+	}
+	if inventory.CollectedAt.IsZero() || len(inventory.Items) > 10000 {
+		return errors.New("endpoint software inventory is invalid")
+	}
+	seen := map[string]bool{}
+	for _, item := range inventory.Items {
+		identity := strings.ToLower(strings.TrimSpace(item.Name) + "\x00" + strings.TrimSpace(item.Version) + "\x00" + item.Architecture)
+		if strings.TrimSpace(item.Name) == "" || len(item.Name) > 500 || len(item.Version) > 200 || len(item.Publisher) > 500 || len(item.Architecture) > 50 ||
+			(item.Source != "dpkg" && item.Source != "rpm" && item.Source != "apk" && item.Source != "windows_registry") || seen[identity] {
+			return errors.New("endpoint software inventory item is invalid")
+		}
+		seen[identity] = true
+	}
+	return nil
 }
 
 func validateOSInventory(inventory *model.EndpointOSInventory) error {
@@ -327,6 +357,10 @@ func validateOSInventory(inventory *model.EndpointOSInventory) error {
 
 func (s *Service) OSInventory(endpointID string) (model.EndpointOSInventory, error) {
 	return s.store.EndpointOSInventory(endpointID)
+}
+
+func (s *Service) SoftwareInventory(endpointID string) (model.EndpointSoftwareInventory, error) {
+	return s.store.EndpointSoftwareInventory(endpointID)
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {

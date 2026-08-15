@@ -142,6 +142,8 @@ type Repository interface {
 	RecordAgentModuleHealth(string, []agentmodule.Health) error
 	RecordEndpointOSInventory(string, model.EndpointOSInventory, time.Time) error
 	EndpointOSInventory(string) (model.EndpointOSInventory, error)
+	RecordEndpointSoftwareInventory(string, model.EndpointSoftwareInventory, time.Time) error
+	EndpointSoftwareInventory(string) (model.EndpointSoftwareInventory, error)
 	SetAgentModulesEnabled(bool, model.AuditEvent) error
 	LinkEndpointAsset(string, string, model.AuditEvent) error
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error

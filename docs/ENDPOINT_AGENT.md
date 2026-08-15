@@ -190,3 +190,11 @@ The server replaces the endpoint's prior patch snapshot transactionally and
 retains separate collected-at and received-at timestamps. Administrators can
 read it from `GET /api/admin/endpoints/{id}/os-inventory`. A missing snapshot is
 reported as unavailable rather than inferred from network observations.
+
+When `installed_software` is allowed locally and by server policy, Linux agents
+read the installed dpkg or APK database, or use the fixed read-only RPM query
+when RPM is available. Windows agents read both native and 32-bit uninstall
+registry views. Names, versions, publishers when available, architectures, and
+collection sources are normalized into a bounded snapshot. The server replaces
+the prior snapshot transactionally and exposes it at
+`GET /api/admin/endpoints/{id}/software-inventory`.

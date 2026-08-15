@@ -44,3 +44,14 @@ func validateOSInventory(inventory *model.EndpointOSInventory) error {
 	}
 	return nil
 }
+
+func collectSoftwareInventory(allowlist []CollectorID, now time.Time) (*model.EndpointSoftwareInventory, error) {
+	if !slices.Contains(allowlist, CollectorInstalledSoftware) {
+		return nil, nil
+	}
+	items, err := platformSoftwareInventory()
+	if err != nil {
+		return nil, err
+	}
+	return &model.EndpointSoftwareInventory{Items: items, CollectedAt: now}, nil
+}
