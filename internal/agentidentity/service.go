@@ -49,6 +49,7 @@ type EndpointStore interface {
 	EndpointListeningInventory(string) (model.EndpointListeningInventory, error)
 	RecordEndpointPostureInventory(string, model.EndpointPostureInventory, time.Time) error
 	EndpointPostureInventory(string) (model.EndpointPostureInventory, error)
+	EndpointCVEMatches(string) ([]model.EndpointCVEMatch, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -432,6 +433,10 @@ func (s *Service) ListeningInventory(endpointID string) (model.EndpointListening
 
 func (s *Service) PostureInventory(endpointID string) (model.EndpointPostureInventory, error) {
 	return s.store.EndpointPostureInventory(endpointID)
+}
+
+func (s *Service) CVEMatches(endpointID string) ([]model.EndpointCVEMatch, error) {
+	return s.store.EndpointCVEMatches(endpointID)
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {

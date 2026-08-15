@@ -15,6 +15,12 @@ var productAliases = map[string]struct{ Vendor, Product string }{
 	"redis":              {"redis", "redis"},
 	"postgresql":         {"postgresql", "postgresql"},
 	"microsoft-iis":      {"microsoft", "internet_information_services"},
+	"openssl":            {"openssl", "openssl"},
+	"curl":               {"haxx", "curl"},
+	"openssh-client":     {"openbsd", "openssh"},
+	"openssh-server":     {"openbsd", "openssh"},
+	"apache2":            {"apache", "http_server"},
+	"redis-server":       {"redis", "redis"},
 }
 
 func NormalizeProduct(observed string) (vendor, product string, ok bool) {

@@ -116,6 +116,22 @@ type PostureEvidence struct {
 	Detail string `json:"detail"`
 }
 
+type EndpointCVEMatch struct {
+	EndpointID     string    `json:"endpoint_id"`
+	CVEID          string    `json:"cve_id"`
+	Product        string    `json:"product"`
+	Version        string    `json:"version"`
+	PackageSource  string    `json:"package_source"`
+	Severity       string    `json:"severity"`
+	CVSSScore      float64   `json:"cvss_score"`
+	Description    string    `json:"description"`
+	Confidence     string    `json:"confidence"`
+	Evidence       string    `json:"evidence"`
+	KnownExploited bool      `json:"known_exploited"`
+	SourceURL      string    `json:"source_url"`
+	MatchedAt      time.Time `json:"matched_at"`
+}
+
 type AgentCheckInResponse struct {
 	Status            string              `json:"status"`
 	EndpointID        string              `json:"endpoint_id"`

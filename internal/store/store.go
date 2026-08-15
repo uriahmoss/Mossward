@@ -148,6 +148,8 @@ type Repository interface {
 	EndpointListeningInventory(string) (model.EndpointListeningInventory, error)
 	RecordEndpointPostureInventory(string, model.EndpointPostureInventory, time.Time) error
 	EndpointPostureInventory(string) (model.EndpointPostureInventory, error)
+	RefreshEndpointCVEMatches(string, time.Time) error
+	EndpointCVEMatches(string) ([]model.EndpointCVEMatch, error)
 	SetAgentModulesEnabled(bool, model.AuditEvent) error
 	LinkEndpointAsset(string, string, model.AuditEvent) error
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error

@@ -233,6 +233,9 @@ func (s *memoryEndpointStore) RecordEndpointPostureInventory(string, model.Endpo
 func (s *memoryEndpointStore) EndpointPostureInventory(string) (model.EndpointPostureInventory, error) {
 	return model.EndpointPostureInventory{}, store.ErrNotFound
 }
+func (s *memoryEndpointStore) EndpointCVEMatches(string) ([]model.EndpointCVEMatch, error) {
+	return nil, nil
+}
 func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []model.CollectorID, _ model.AuditEvent) error {
 	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
 		return store.ErrNotFound

@@ -31,7 +31,10 @@ func (s *SQLiteStore) RecordEndpointSoftwareInventory(endpointID string, invento
 			return err
 		}
 	}
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	return s.RefreshEndpointCVEMatches(endpointID, receivedAt)
 }
 
 func (s *SQLiteStore) EndpointSoftwareInventory(endpointID string) (model.EndpointSoftwareInventory, error) {

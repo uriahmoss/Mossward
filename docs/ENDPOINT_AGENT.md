@@ -215,3 +215,13 @@ volume BitLocker evidence. Every check uses `pass`, `fail`, or `unknown`;
 unavailable permissions, tools, or platform evidence remain unknown rather than
 being presented as a confirmed failure. The snapshot is available from
 `GET /api/admin/endpoints/{id}/posture-inventory`.
+
+The server correlates installed software with NVD affected-version ranges only
+when a package has an explicit version and an exact, reviewed product alias.
+Matches are labeled medium-confidence candidates because Linux distributions
+may backport security fixes without making NVD's upstream version range directly
+decisive. Every result retains package name, version, package source, match
+evidence, CVSS, Known Exploited status, and the NVD source URL. Refreshing either
+the software snapshot or CVE feed removes stale matches. Results are available
+from `GET /api/admin/endpoints/{id}/cves` and environment matches also influence
+the critical-CVE homepage feed.

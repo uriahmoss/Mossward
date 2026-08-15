@@ -52,6 +52,31 @@ func (s *SQLiteStore) UpsertCVEs(records []model.CVERecord) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit CVE update: %w", err)
 	}
+	return s.refreshAllEndpointCVEMatches(time.Now().UTC())
+}
+
+func (s *SQLiteStore) refreshAllEndpointCVEMatches(at time.Time) error {
+	rows, err := s.db.Query(`SELECT endpoint_id FROM endpoint_software_inventory`)
+	if err != nil {
+		return err
+	}
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, id := range ids {
+		if err := s.RefreshEndpointCVEMatches(id, at); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -99,10 +124,11 @@ func (s *SQLiteStore) ListCriticalNews(limit int) ([]model.CVENewsItem, error) {
 	}
 	rows, err := s.db.Query(`SELECT c.id, c.description, c.published_at, c.cvss_score, c.severity,
 		c.known_exploited, c.source_url,
-		CASE WHEN EXISTS(SELECT 1 FROM cve_matches m WHERE m.cve_id=c.id) THEN 'matched' ELSE 'general' END,
-		COALESCE((SELECT product || ' ' || version FROM cve_matches m WHERE m.cve_id=c.id LIMIT 1), '')
+		CASE WHEN EXISTS(SELECT 1 FROM cve_matches m WHERE m.cve_id=c.id) OR EXISTS(SELECT 1 FROM endpoint_cve_matches em WHERE em.cve_id=c.id) THEN 'matched' ELSE 'general' END,
+		COALESCE((SELECT product || ' ' || version FROM cve_matches m WHERE m.cve_id=c.id LIMIT 1),
+			(SELECT product || ' ' || version FROM endpoint_cve_matches em WHERE em.cve_id=c.id LIMIT 1), '')
 		FROM cves c WHERE c.severity = 'critical' OR c.cvss_score >= 9.0
-		ORDER BY CASE WHEN EXISTS(SELECT 1 FROM cve_matches m WHERE m.cve_id=c.id) THEN 0 ELSE 1 END,
+		ORDER BY CASE WHEN EXISTS(SELECT 1 FROM cve_matches m WHERE m.cve_id=c.id) OR EXISTS(SELECT 1 FROM endpoint_cve_matches em WHERE em.cve_id=c.id) THEN 0 ELSE 1 END,
 			c.known_exploited DESC, c.published_at DESC LIMIT ?`, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list critical CVE news: %w", err)

@@ -354,7 +354,7 @@ failure and health states.
 - [x] Installed package and application inventory
 - [x] Listening service and owning-process inventory
 - [x] Local security-posture evidence
-- [ ] Endpoint-backed CVE correlation
+- [x] Endpoint-backed CVE correlation
 
 ### 8. Endpoint network telemetry
 
