@@ -383,7 +383,7 @@ failure and health states.
 - [x] Dedicated Mossward transport only
 - [x] End-to-end signed and encrypted messages
 - [x] Bounded encrypted store-and-forward queue
-- [ ] Relay health, capacity, and tamper telemetry
+- [x] Relay health, capacity, and tamper telemetry
 - [ ] Approved failover behavior
 - [ ] Direct-versus-relayed path visibility
 

@@ -346,6 +346,15 @@ are counted rather than silently discarded. Queue statistics expose backlog
 size and age without exposing message plaintext. Network forwarding remains
 disabled.
 
+Relay telemetry is signed with the relay endpoint identity and reports only
+bounded operational metadata: queue utilization and backlog age, accepted and
+acknowledged counts, duplicate and capacity rejections, expired-frame counts,
+the last server acknowledgement, and integrity failures. Capacity pressure is
+degraded health; any integrity failure is critical. The report contains no
+message payload, queue path, credential, or cryptographic key material. Signed
+timestamps and monotonic sequences let the server reject altered, stale, or
+replayed reports.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.
