@@ -21,6 +21,10 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/posture-inventory", a.getEndpointPostureInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/cves", a.getEndpointCVEMatches)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/network-inventory", a.getEndpointNetworkInventory)
+	mux.HandleFunc("GET /api/admin/endpoints/{id}/indicator-matches", a.getEndpointIndicatorMatches)
+	mux.HandleFunc("GET /api/admin/threat-indicators", a.listThreatIndicators)
+	mux.HandleFunc("POST /api/admin/threat-indicators", a.createThreatIndicator)
+	mux.HandleFunc("PUT /api/admin/threat-indicators/{id}", a.updateThreatIndicator)
 	mux.HandleFunc("GET /api/admin/scanner-workers", a.listScannerWorkers)
 	mux.HandleFunc("GET /api/admin/scanner-worker-dispatch", a.scannerWorkerDispatchSettings)
 	mux.HandleFunc("PUT /api/admin/scanner-worker-dispatch", a.updateScannerWorkerDispatch)
@@ -28,6 +32,60 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listThreatIndicators(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	indicators, err := a.agentIdentity.ThreatIndicators()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list threat indicators")
+		return
+	}
+	writeJSON(w, http.StatusOK, indicators)
+}
+
+func (a *API) createThreatIndicator(w http.ResponseWriter, r *http.Request) {
+	a.saveThreatIndicator(w, r, "")
+}
+
+func (a *API) updateThreatIndicator(w http.ResponseWriter, r *http.Request) {
+	a.saveThreatIndicator(w, r, r.PathValue("id"))
+}
+
+func (a *API) saveThreatIndicator(w http.ResponseWriter, r *http.Request, id string) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	var indicator model.ThreatIndicator
+	if !decodeJSON(w, r, &indicator) {
+		return
+	}
+	indicator.ID = id
+	saved, err := a.agentIdentity.SaveThreatIndicator(indicator, actor.ID, requestIP(r))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, saved)
+}
+
+func (a *API) getEndpointIndicatorMatches(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	matches, err := a.agentIdentity.IndicatorMatches(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read endpoint indicator matches")
+		return
+	}
+	writeJSON(w, http.StatusOK, matches)
 }
 
 func (a *API) getEndpointNetworkInventory(w http.ResponseWriter, r *http.Request) {

@@ -156,6 +156,42 @@ type NetworkConnection struct {
 	Direction      string `json:"direction"`
 }
 
+type ThreatIndicatorType string
+
+const (
+	ThreatIndicatorIP       ThreatIndicatorType = "ip"
+	ThreatIndicatorHostname ThreatIndicatorType = "hostname"
+)
+
+type ThreatIndicator struct {
+	ID         string              `json:"id"`
+	Type       ThreatIndicatorType `json:"type"`
+	Value      string              `json:"value"`
+	Source     string              `json:"source"`
+	Confidence string              `json:"confidence"`
+	ObservedAt time.Time           `json:"observed_at"`
+	ExpiresAt  time.Time           `json:"expires_at"`
+	Enabled    bool                `json:"enabled"`
+	CreatedBy  string              `json:"created_by"`
+	CreatedAt  time.Time           `json:"created_at"`
+	UpdatedAt  time.Time           `json:"updated_at"`
+}
+
+type EndpointIndicatorMatch struct {
+	EndpointID     string              `json:"endpoint_id"`
+	IndicatorID    string              `json:"indicator_id"`
+	IndicatorType  ThreatIndicatorType `json:"indicator_type"`
+	IndicatorValue string              `json:"indicator_value"`
+	Source         string              `json:"source"`
+	Confidence     string              `json:"confidence"`
+	ExpiresAt      time.Time           `json:"expires_at"`
+	RemoteAddress  string              `json:"remote_address"`
+	RemoteHostname string              `json:"remote_hostname,omitempty"`
+	ProcessName    string              `json:"process_name,omitempty"`
+	Executable     string              `json:"executable,omitempty"`
+	MatchedAt      time.Time           `json:"matched_at"`
+}
+
 type AgentCheckInResponse struct {
 	Status            string              `json:"status"`
 	EndpointID        string              `json:"endpoint_id"`

@@ -28,7 +28,14 @@ const (
 	certificateRenewBefore  = 30 * 24 * time.Hour
 	revocationReasonLimit   = 500
 	maximumAgentCheckInSize = 4 << 20
+	indicatorSourceLimit    = 200
 )
+
+type ThreatIndicatorStore interface {
+	UpsertThreatIndicator(model.ThreatIndicator, time.Time, model.AuditEvent) error
+	ListThreatIndicators() ([]model.ThreatIndicator, error)
+	EndpointIndicatorMatches(string, time.Time) ([]model.EndpointIndicatorMatch, error)
+}
 
 type EndpointStore interface {
 	CreateAgentEnrollmentToken(model.AgentEnrollmentToken, model.AuditEvent) error
@@ -476,6 +483,100 @@ func (s *Service) CVEMatches(endpointID string) ([]model.EndpointCVEMatch, error
 
 func (s *Service) NetworkInventory(endpointID string) (model.EndpointNetworkInventory, error) {
 	return s.store.EndpointNetworkInventory(endpointID)
+}
+
+func (s *Service) SaveThreatIndicator(indicator model.ThreatIndicator, actorID, sourceIP string) (model.ThreatIndicator, error) {
+	repository, ok := s.store.(ThreatIndicatorStore)
+	if !ok {
+		return model.ThreatIndicator{}, errors.New("threat indicator storage is unavailable")
+	}
+	now := s.now()
+	if err := normalizeThreatIndicator(&indicator, now); err != nil {
+		return model.ThreatIndicator{}, err
+	}
+	if indicator.ID == "" {
+		idBytes := make([]byte, 16)
+		if _, err := io.ReadFull(rand.Reader, idBytes); err != nil {
+			return model.ThreatIndicator{}, err
+		}
+		indicator.ID = hex.EncodeToString(idBytes)
+		indicator.CreatedBy = actorID
+		indicator.CreatedAt = now
+	}
+	indicator.UpdatedAt = now
+	details, _ := json.Marshal(map[string]any{"type": indicator.Type, "value": indicator.Value, "source": indicator.Source, "enabled": indicator.Enabled})
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "threat_indicator.saved", Severity: model.AuditInfo,
+		TargetType: "threat_indicator", TargetID: indicator.ID, SourceIP: sourceIP, Details: string(details)}
+	if err := repository.UpsertThreatIndicator(indicator, now, event); err != nil {
+		return model.ThreatIndicator{}, err
+	}
+	return indicator, nil
+}
+
+func (s *Service) ThreatIndicators() ([]model.ThreatIndicator, error) {
+	repository, ok := s.store.(ThreatIndicatorStore)
+	if !ok {
+		return nil, errors.New("threat indicator storage is unavailable")
+	}
+	return repository.ListThreatIndicators()
+}
+
+func (s *Service) IndicatorMatches(endpointID string) ([]model.EndpointIndicatorMatch, error) {
+	repository, ok := s.store.(ThreatIndicatorStore)
+	if !ok {
+		return nil, errors.New("threat indicator storage is unavailable")
+	}
+	return repository.EndpointIndicatorMatches(endpointID, s.now())
+}
+
+func normalizeThreatIndicator(indicator *model.ThreatIndicator, now time.Time) error {
+	indicator.Source = strings.TrimSpace(indicator.Source)
+	indicator.Confidence = strings.ToLower(strings.TrimSpace(indicator.Confidence))
+	indicator.Value = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(indicator.Value), "."))
+	if indicator.Source == "" || len(indicator.Source) > indicatorSourceLimit {
+		return errors.New("indicator source must be between 1 and 200 characters")
+	}
+	if indicator.Confidence != "low" && indicator.Confidence != "medium" && indicator.Confidence != "high" {
+		return errors.New("indicator confidence must be low, medium, or high")
+	}
+	if indicator.ObservedAt.IsZero() || indicator.ExpiresAt.IsZero() || !indicator.ExpiresAt.After(indicator.ObservedAt) || !indicator.ExpiresAt.After(now) {
+		return errors.New("indicator expiration must be after its observation time and in the future")
+	}
+	switch indicator.Type {
+	case model.ThreatIndicatorIP:
+		address, err := netip.ParseAddr(indicator.Value)
+		if err != nil || !address.IsValid() {
+			return errors.New("IP indicator must be a valid individual IP address")
+		}
+		indicator.Value = address.String()
+	case model.ThreatIndicatorHostname:
+		if !validIndicatorHostname(indicator.Value) {
+			return errors.New("hostname indicator must be a valid exact hostname")
+		}
+	default:
+		return errors.New("indicator type must be ip or hostname")
+	}
+	return nil
+}
+
+func validIndicatorHostname(value string) bool {
+	if len(value) < 1 || len(value) > 253 {
+		return false
+	}
+	if _, err := netip.ParseAddr(value); err == nil {
+		return false
+	}
+	for _, label := range strings.Split(value, ".") {
+		if len(label) < 1 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, character := range label {
+			if (character < 'a' || character > 'z') && (character < '0' || character > '9') && character != '-' {
+				return false
+			}
+		}
+	}
+	return strings.Contains(value, ".")
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {

@@ -248,3 +248,9 @@ enrich telemetry. A separate TLS server-name field is persisted for OS-native
 sources, but remains empty when no such source exists. Cached DNS names are
 never presented as observed TLS SNI, and Mossward does not inspect ClientHello
 packets or intercept TLS to obtain it.
+
+Threat indicators supplied by an administrator can be correlated with collected
+remote IP addresses and hostnames. Indicators require a source, confidence,
+observation time, and future expiration. Matching is exact, remains
+detection-only, and does not block traffic, remediate endpoints, or send
+telemetry to a third party.

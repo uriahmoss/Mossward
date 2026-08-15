@@ -152,6 +152,9 @@ type Repository interface {
 	EndpointCVEMatches(string) ([]model.EndpointCVEMatch, error)
 	RecordEndpointNetworkInventory(string, model.EndpointNetworkInventory, time.Time) error
 	EndpointNetworkInventory(string) (model.EndpointNetworkInventory, error)
+	UpsertThreatIndicator(model.ThreatIndicator, time.Time, model.AuditEvent) error
+	ListThreatIndicators() ([]model.ThreatIndicator, error)
+	EndpointIndicatorMatches(string, time.Time) ([]model.EndpointIndicatorMatch, error)
 	SetAgentModulesEnabled(bool, model.AuditEvent) error
 	LinkEndpointAsset(string, string, model.AuditEvent) error
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error

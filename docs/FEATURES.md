@@ -361,8 +361,8 @@ failure and health states.
 - [x] Optional privacy-bounded outbound connection metadata
 - [x] Process-to-destination correlation
 - [x] DNS and available TLS server-name context
-- [ ] Threat-intelligence indicator correlation
-- [ ] Indicator source, confidence, timestamp, and expiration
+- [x] Threat-intelligence indicator correlation (exact IP and hostname matching; detection only)
+- [x] Indicator source, confidence, timestamp, and expiration
 - [ ] Configurable application and destination exclusions
 - [ ] No payload capture or TLS interception by default
 

@@ -32,6 +32,9 @@ func (s *SQLiteStore) RecordEndpointNetworkInventory(endpointID string, inventor
 			return err
 		}
 	}
+	if err := refreshEndpointIndicatorMatches(tx, endpointID, receivedAt); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 
