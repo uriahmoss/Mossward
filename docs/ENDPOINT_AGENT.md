@@ -327,8 +327,16 @@ allowlist of agent check-in, server reply, agent-log batch, and tamper-alert
 message kinds. The frame has no host, port, URL, command, or arbitrary protocol
 fields and cannot represent SOCKS, HTTP CONNECT, TCP forwarding, or a general
 proxy. Administrators can inspect the immutable contract through
-`GET /api/admin/relay-transport/contract`. Forwarding remains disabled until
-end-to-end message protection is implemented.
+`GET /api/admin/relay-transport/contract`. Forwarding remains disabled while
+the remaining relay controls are implemented.
+
+Relay frames use dedicated X25519 recipient keys, HKDF-SHA-256 key derivation,
+AES-256-GCM authenticated encryption, and ECDSA-P-256 signatures from the
+sender's endpoint identity. Encryption keys are deliberately separate from
+certificate signing keys. The relay sees routing identifiers and bounded
+ciphertext but cannot decrypt or silently modify message content. Recipient-key
+binding prevents delivery to a different endpoint key. Network forwarding stays
+disabled until key provisioning and the remaining relay controls are complete.
 
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer

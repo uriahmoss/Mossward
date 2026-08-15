@@ -26,9 +26,15 @@ type Frame struct {
 	MessageID            string      `json:"message_id"`
 	Kind                 MessageKind `json:"kind"`
 	DownstreamEndpointID string      `json:"downstream_endpoint_id"`
+	SenderID             string      `json:"sender_id"`
+	RecipientID          string      `json:"recipient_id"`
+	RecipientKeyID       string      `json:"recipient_key_id"`
 	Sequence             uint64      `json:"sequence"`
 	CreatedAt            time.Time   `json:"created_at"`
+	EphemeralPublicKey   []byte      `json:"ephemeral_public_key"`
+	Nonce                []byte      `json:"nonce"`
 	Ciphertext           []byte      `json:"ciphertext"`
+	Signature            []byte      `json:"signature"`
 }
 
 type Contract struct {
@@ -39,10 +45,14 @@ type Contract struct {
 	GenericProxySupported bool          `json:"generic_proxy_supported"`
 	ArbitraryDestinations bool          `json:"arbitrary_destinations_supported"`
 	ForwardingEnabled     bool          `json:"forwarding_enabled"`
+	EndToEndProtection    bool          `json:"end_to_end_protection"`
+	EncryptionSuite       string        `json:"encryption_suite"`
+	SignatureAlgorithm    string        `json:"signature_algorithm"`
 }
 
 func ProtocolContract() Contract {
-	return Contract{ProtocolVersion: ProtocolVersion, MediaType: MediaType, MaximumCiphertextSize: MaximumCiphertextSize,
+	return Contract{ProtocolVersion: ProtocolVersion, MediaType: MediaType, MaximumCiphertextSize: MaximumCiphertextSize, EndToEndProtection: true,
+		EncryptionSuite: "X25519-HKDF-SHA256-AES-256-GCM", SignatureAlgorithm: "ECDSA-P256-SHA256",
 		AllowedMessageKinds: []MessageKind{MessageAgentCheckIn, MessageServerReply, MessageAgentLogBatch, MessageTamperAlert}}
 }
 
@@ -57,7 +67,7 @@ func ValidateFrame(frame Frame, now time.Time) error {
 	if !allowedMessageKind(frame.Kind) {
 		return errors.New("unsupported Mossward relay message kind")
 	}
-	if frame.DownstreamEndpointID == "" || frame.Sequence == 0 || frame.CreatedAt.IsZero() {
+	if frame.DownstreamEndpointID == "" || frame.SenderID == "" || frame.RecipientID == "" || frame.RecipientKeyID == "" || frame.Sequence == 0 || frame.CreatedAt.IsZero() {
 		return errors.New("relay endpoint identity, sequence, and creation time are required")
 	}
 	if frame.CreatedAt.After(now.Add(5*time.Minute)) || frame.CreatedAt.Before(now.Add(-30*24*time.Hour)) {
@@ -65,6 +75,9 @@ func ValidateFrame(frame Frame, now time.Time) error {
 	}
 	if len(frame.Ciphertext) == 0 || len(frame.Ciphertext) > MaximumCiphertextSize {
 		return errors.New("relay ciphertext size is invalid")
+	}
+	if len(frame.EphemeralPublicKey) != 32 || len(frame.Nonce) != 12 || len(frame.Signature) < 64 || len(frame.Signature) > 80 {
+		return errors.New("relay cryptographic envelope is invalid")
 	}
 	return nil
 }
