@@ -1,10 +1,12 @@
 package api
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"time"
 
+	"mossward/internal/coveragepolicy"
 	"mossward/internal/model"
 	"mossward/internal/store"
 )
@@ -19,6 +21,9 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/endpoints/{id}/network-exclusions", a.updateEndpointNetworkExclusions)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage", a.getEndpointCoverage)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/settings", a.updateEndpointCoverageSettings)
+	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
+	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
+	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/os-inventory", a.getEndpointOSInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/software-inventory", a.getEndpointSoftwareInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/listening-inventory", a.getEndpointListeningInventory)
@@ -36,6 +41,71 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listCoverageDiscoveryPolicies(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	policies, err := a.store.ListCoverageDiscoveryPolicies()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list coverage discovery policies")
+		return
+	}
+	writeJSON(w, http.StatusOK, policies)
+}
+
+func (a *API) createCoverageDiscoveryPolicy(w http.ResponseWriter, r *http.Request) {
+	a.saveCoverageDiscoveryPolicy(w, r, "")
+}
+
+func (a *API) updateCoverageDiscoveryPolicy(w http.ResponseWriter, r *http.Request) {
+	a.saveCoverageDiscoveryPolicy(w, r, r.PathValue("id"))
+}
+
+func (a *API) saveCoverageDiscoveryPolicy(w http.ResponseWriter, r *http.Request, id string) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	var policy model.CoverageDiscoveryPolicy
+	if !decodeJSON(w, r, &policy) {
+		return
+	}
+	policy.ID = id
+	normalized, err := coveragepolicy.Normalize(policy, a.cfg.AllowedCIDRs)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	if normalized.ID == "" {
+		normalized.ID, err = randomID()
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "could not create coverage discovery policy")
+			return
+		}
+		normalized.CreatedBy = actor.ID
+		normalized.CreatedAt = now
+	}
+	normalized.UpdatedBy = actor.ID
+	normalized.UpdatedAt = now
+	details, _ := json.Marshal(map[string]any{"enabled": normalized.Enabled, "cidr_count": len(normalized.CIDRs)})
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.coverage_discovery_policy.saved", Severity: model.AuditInfo,
+		TargetType: "coverage_discovery_policy", TargetID: normalized.ID, SourceIP: requestIP(r), Details: string(details)}
+	if err := a.store.SaveCoverageDiscoveryPolicy(normalized, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "coverage discovery policy not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not save coverage discovery policy")
+		return
+	}
+	status := http.StatusOK
+	if id == "" {
+		status = http.StatusCreated
+	}
+	writeJSON(w, status, normalized)
 }
 
 func (a *API) getEndpointCoverage(w http.ResponseWriter, r *http.Request) {

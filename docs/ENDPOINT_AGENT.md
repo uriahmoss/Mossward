@@ -274,3 +274,8 @@ enables it with recent MFA, Mossward compares active, non-retired inventory
 assets with active endpoint-to-asset links and reports unmatched assets as
 coverage gaps. This slice does not initiate discovery scans or presume that
 every network device is eligible for an endpoint agent.
+
+Coverage discovery policies define administrator-approved CIDR segments and are
+managed with recent MFA. Every segment must remain wholly inside the server's
+global allowed CIDR scope. These policies establish authorization boundaries;
+creating or enabling one does not itself launch a scan.
