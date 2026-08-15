@@ -154,7 +154,7 @@ func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
 	if err != nil {
 		return nil, fmt.Errorf("load asset aging settings: %w", err)
 	}
-	rows, err := s.db.Query(`SELECT id,name,address,first_seen,last_seen,last_scan_id,owner,environment,classification,lifecycle_status,retired_at,retired_by,retirement_reason FROM assets ORDER BY lifecycle_status,last_seen DESC,name`)
+	rows, err := s.db.Query(`SELECT id,name,address,first_seen,last_seen,last_scan_id,owner,environment,classification,lifecycle_status,retired_at,retired_by,retirement_reason,agent_eligibility,agent_eligibility_reason,agent_eligibility_updated_by,agent_eligibility_updated_at FROM assets ORDER BY lifecycle_status,last_seen DESC,name`)
 	if err != nil {
 		return nil, fmt.Errorf("list assets: %w", err)
 	}
@@ -163,9 +163,11 @@ func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
 		var asset model.Asset
 		var firstSeen, lastSeen string
 		var retiredAt sql.NullString
+		var eligibilityUpdatedAt sql.NullString
 		if err := rows.Scan(&asset.ID, &asset.Name, &asset.Address, &firstSeen, &lastSeen, &asset.LastScanID,
 			&asset.Owner, &asset.Environment, &asset.Classification, &asset.Lifecycle.Status, &retiredAt,
-			&asset.Lifecycle.RetiredBy, &asset.Lifecycle.RetirementReason); err != nil {
+			&asset.Lifecycle.RetiredBy, &asset.Lifecycle.RetirementReason, &asset.AgentEligibility.Status,
+			&asset.AgentEligibility.Reason, &asset.AgentEligibility.UpdatedBy, &eligibilityUpdatedAt); err != nil {
 			_ = rows.Close()
 			return nil, fmt.Errorf("read asset: %w", err)
 		}
@@ -174,6 +176,10 @@ func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
 		if retiredAt.Valid {
 			value, _ := parseTime(retiredAt.String)
 			asset.Lifecycle.RetiredAt = &value
+		}
+		if eligibilityUpdatedAt.Valid {
+			value, _ := parseTime(eligibilityUpdatedAt.String)
+			asset.AgentEligibility.UpdatedAt = &value
 		}
 		if asset.Lifecycle.Status == model.AssetActive && time.Since(asset.LastSeen) >= time.Duration(settings.StaleAfterDays)*24*time.Hour {
 			asset.Lifecycle.Status = model.AssetStale
@@ -189,6 +195,27 @@ func (s *SQLiteStore) ListAssets() ([]model.Asset, error) {
 		}
 	}
 	return assets, nil
+}
+
+func (s *SQLiteStore) UpdateAssetAgentEligibility(id string, update model.AssetAgentEligibilityUpdate, event model.AuditEvent) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE assets SET agent_eligibility=?,agent_eligibility_reason=?,agent_eligibility_updated_by=?,agent_eligibility_updated_at=? WHERE id=?`,
+		update.Status, update.Reason, event.ActorID, formatTime(event.OccurredAt), id)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrAssetNotFound
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *SQLiteStore) UpdateAssetLifecycle(id string, update model.AssetLifecycleUpdate, event model.AuditEvent) error {

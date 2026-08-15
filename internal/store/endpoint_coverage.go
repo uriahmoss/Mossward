@@ -41,13 +41,14 @@ func (s *SQLiteStore) SetEndpointCoverageSettings(settings model.EndpointCoverag
 
 func (s *SQLiteStore) EndpointCoverageReport(now time.Time) (model.EndpointCoverageReport, error) {
 	settings, err := s.EndpointCoverageSettings()
-	report := model.EndpointCoverageReport{Enabled: settings.Enabled, EvaluatedAt: now, Gaps: []model.EndpointCoverageGap{}}
+	report := model.EndpointCoverageReport{Enabled: settings.Enabled, EvaluatedAt: now, Gaps: []model.EndpointCoverageGap{}, Unclassified: []model.EndpointCoverageGap{}}
 	if err != nil || !settings.Enabled {
 		return report, err
 	}
-	rows, err := s.db.Query(`SELECT a.id,a.name,a.address,a.last_seen,a.classification FROM assets a
+	rows, err := s.db.Query(`SELECT a.id,a.name,a.address,a.last_seen,a.agent_eligibility,a.agent_eligibility_reason FROM assets a
 		WHERE a.lifecycle_status<>'retired' AND NOT EXISTS (
 			SELECT 1 FROM endpoints e WHERE e.asset_id=a.id AND e.status='active')
+			AND a.agent_eligibility<>'ineligible'
 		ORDER BY a.last_seen DESC,a.name,a.id`)
 	if err != nil {
 		return report, err
@@ -56,12 +57,17 @@ func (s *SQLiteStore) EndpointCoverageReport(now time.Time) (model.EndpointCover
 	for rows.Next() {
 		var gap model.EndpointCoverageGap
 		var lastSeen string
-		if err := rows.Scan(&gap.AssetID, &gap.Name, &gap.Address, &lastSeen, &gap.Classification); err != nil {
+		if err := rows.Scan(&gap.AssetID, &gap.Name, &gap.Address, &lastSeen, &gap.Eligibility, &gap.EligibilityReason); err != nil {
 			return report, err
 		}
 		gap.LastSeen, _ = parseTime(lastSeen)
 		gap.Reason = missingEndpointReason
-		report.Gaps = append(report.Gaps, gap)
+		if gap.Eligibility == model.AgentEligibilityEligible {
+			report.Gaps = append(report.Gaps, gap)
+			continue
+		}
+		gap.Reason = "agent eligibility has not been classified"
+		report.Unclassified = append(report.Unclassified, gap)
 	}
 	return report, rows.Err()
 }

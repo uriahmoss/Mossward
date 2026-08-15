@@ -45,6 +45,7 @@ type Repository interface {
 	ReconcileInterrupted() error
 	ListAssets() ([]model.Asset, error)
 	UpdateAssetMetadata(string, model.AssetMetadata, model.AuditEvent) error
+	UpdateAssetAgentEligibility(string, model.AssetAgentEligibilityUpdate, model.AuditEvent) error
 	UpdateAssetLifecycle(string, model.AssetLifecycleUpdate, model.AuditEvent) error
 	AssetAgingSettings() (model.AssetAgingSettings, error)
 	UpdateAssetAgingSettings(model.AssetAgingSettings, model.AuditEvent) error

@@ -13,6 +13,7 @@ import (
 
 const assetMetadataLimit = 200
 const assetRetirementReasonLimit = 500
+const assetEligibilityReasonLimit = 500
 
 func (a *API) listAssets(w http.ResponseWriter, _ *http.Request) {
 	assets, err := a.store.ListAssets()
@@ -74,6 +75,50 @@ func validAssetMetadata(metadata model.AssetMetadata) bool {
 	return utf8.RuneCountInString(metadata.Owner) <= assetMetadataLimit &&
 		utf8.RuneCountInString(metadata.Environment) <= assetMetadataLimit &&
 		utf8.RuneCountInString(metadata.Classification) <= assetMetadataLimit
+}
+
+func (a *API) updateAssetAgentEligibility(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	var update model.AssetAgentEligibilityUpdate
+	if !decodeJSON(w, r, &update) {
+		return
+	}
+	update.Reason = strings.TrimSpace(update.Reason)
+	if err := validateAssetAgentEligibility(update); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if update.Status == model.AgentEligibilityUnknown {
+		update.Reason = ""
+	}
+	now := time.Now().UTC()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "asset.agent_eligibility.updated", Severity: model.AuditInfo,
+		TargetType: "asset", TargetID: r.PathValue("id"), SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.UpdateAssetAgentEligibility(r.PathValue("id"), update, event); err != nil {
+		if errors.Is(err, store.ErrAssetNotFound) {
+			writeError(w, http.StatusNotFound, "asset not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not update asset agent eligibility")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func validateAssetAgentEligibility(update model.AssetAgentEligibilityUpdate) error {
+	if update.Status != model.AgentEligibilityUnknown && update.Status != model.AgentEligibilityEligible && update.Status != model.AgentEligibilityIneligible {
+		return errors.New("agent eligibility must be unknown, eligible, or ineligible")
+	}
+	if update.Status == model.AgentEligibilityIneligible && update.Reason == "" {
+		return errors.New("ineligible assets require a reason")
+	}
+	if utf8.RuneCountInString(update.Reason) > assetEligibilityReasonLimit {
+		return errors.New("agent eligibility reason must not exceed 500 characters")
+	}
+	return nil
 }
 
 func (a *API) updateAssetLifecycle(w http.ResponseWriter, r *http.Request) {

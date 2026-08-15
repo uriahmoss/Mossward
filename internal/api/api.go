@@ -91,6 +91,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("GET /api/assets", api.listAssets)
 	mux.HandleFunc("GET /api/assets/{id}", api.getAsset)
 	mux.HandleFunc("PATCH /api/assets/{id}", api.updateAsset)
+	mux.HandleFunc("PUT /api/admin/assets/{id}/agent-eligibility", api.updateAssetAgentEligibility)
 	mux.HandleFunc("PATCH /api/assets/{id}/lifecycle", api.updateAssetLifecycle)
 	mux.HandleFunc("GET /api/admin/asset-aging", api.getAssetAgingSettings)
 	mux.HandleFunc("PATCH /api/admin/asset-aging", api.updateAssetAgingSettings)

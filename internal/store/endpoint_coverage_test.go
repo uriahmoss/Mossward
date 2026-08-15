@@ -33,8 +33,25 @@ func TestEndpointCoverageIsOptInAndReportsOnlyUnlinkedAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 	report, err = repository.EndpointCoverageReport(now)
-	if err != nil || !report.Enabled || len(report.Gaps) != 1 || report.Gaps[0].AssetID != "missing" {
+	if err != nil || !report.Enabled || len(report.Gaps) != 0 || len(report.Unclassified) != 1 || report.Unclassified[0].AssetID != "missing" {
 		t.Fatalf("enabled coverage report = %#v, error = %v", report, err)
+	}
+	eligibility := model.AssetAgentEligibilityUpdate{Status: model.AgentEligibilityEligible, Reason: "managed workstation"}
+	eligibilityEvent := model.AuditEvent{OccurredAt: now, Action: "asset.agent_eligibility.updated", Severity: model.AuditInfo, TargetType: "asset", TargetID: "missing"}
+	if err := repository.UpdateAssetAgentEligibility("missing", eligibility, eligibilityEvent); err != nil {
+		t.Fatal(err)
+	}
+	report, err = repository.EndpointCoverageReport(now)
+	if err != nil || len(report.Gaps) != 1 || len(report.Unclassified) != 0 || report.Gaps[0].AssetID != "missing" {
+		t.Fatalf("classified coverage report = %#v, error = %v", report, err)
+	}
+	eligibility = model.AssetAgentEligibilityUpdate{Status: model.AgentEligibilityIneligible, Reason: "network appliance"}
+	if err := repository.UpdateAssetAgentEligibility("missing", eligibility, eligibilityEvent); err != nil {
+		t.Fatal(err)
+	}
+	report, err = repository.EndpointCoverageReport(now)
+	if err != nil || len(report.Gaps) != 0 || len(report.Unclassified) != 0 {
+		t.Fatalf("ineligible coverage report = %#v, error = %v", report, err)
 	}
 	var count int
 	if err := repository.db.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE action='endpoint.coverage.updated'`).Scan(&count); err != nil || count != 1 {

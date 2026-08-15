@@ -3,18 +3,39 @@ package model
 import "time"
 
 type Asset struct {
-	ID             string         `json:"id"`
-	Name           string         `json:"name"`
-	Address        string         `json:"address"`
-	FirstSeen      time.Time      `json:"first_seen"`
-	LastSeen       time.Time      `json:"last_seen"`
-	LastScanID     string         `json:"last_scan_id"`
-	Names          []string       `json:"names"`
-	Addresses      []AssetAddress `json:"addresses"`
-	Owner          string         `json:"owner"`
-	Environment    string         `json:"environment"`
-	Classification string         `json:"classification"`
-	Lifecycle      AssetLifecycle `json:"lifecycle"`
+	ID               string                `json:"id"`
+	Name             string                `json:"name"`
+	Address          string                `json:"address"`
+	FirstSeen        time.Time             `json:"first_seen"`
+	LastSeen         time.Time             `json:"last_seen"`
+	LastScanID       string                `json:"last_scan_id"`
+	Names            []string              `json:"names"`
+	Addresses        []AssetAddress        `json:"addresses"`
+	Owner            string                `json:"owner"`
+	Environment      string                `json:"environment"`
+	Classification   string                `json:"classification"`
+	AgentEligibility AssetAgentEligibility `json:"agent_eligibility"`
+	Lifecycle        AssetLifecycle        `json:"lifecycle"`
+}
+
+type AgentEligibilityStatus string
+
+const (
+	AgentEligibilityUnknown    AgentEligibilityStatus = "unknown"
+	AgentEligibilityEligible   AgentEligibilityStatus = "eligible"
+	AgentEligibilityIneligible AgentEligibilityStatus = "ineligible"
+)
+
+type AssetAgentEligibility struct {
+	Status    AgentEligibilityStatus `json:"status"`
+	Reason    string                 `json:"reason,omitempty"`
+	UpdatedBy string                 `json:"updated_by,omitempty"`
+	UpdatedAt *time.Time             `json:"updated_at,omitempty"`
+}
+
+type AssetAgentEligibilityUpdate struct {
+	Status AgentEligibilityStatus `json:"status"`
+	Reason string                 `json:"reason"`
 }
 
 type AssetLifecycleStatus string

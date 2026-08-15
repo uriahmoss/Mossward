@@ -9,18 +9,20 @@ type EndpointCoverageSettings struct {
 }
 
 type EndpointCoverageGap struct {
-	AssetID        string    `json:"asset_id"`
-	Name           string    `json:"name"`
-	Address        string    `json:"address"`
-	LastSeen       time.Time `json:"last_seen"`
-	Reason         string    `json:"reason"`
-	Classification string    `json:"classification"`
+	AssetID           string                 `json:"asset_id"`
+	Name              string                 `json:"name"`
+	Address           string                 `json:"address"`
+	LastSeen          time.Time              `json:"last_seen"`
+	Reason            string                 `json:"reason"`
+	Eligibility       AgentEligibilityStatus `json:"eligibility"`
+	EligibilityReason string                 `json:"eligibility_reason,omitempty"`
 }
 
 type EndpointCoverageReport struct {
-	Enabled     bool                  `json:"enabled"`
-	EvaluatedAt time.Time             `json:"evaluated_at"`
-	Gaps        []EndpointCoverageGap `json:"gaps"`
+	Enabled      bool                  `json:"enabled"`
+	EvaluatedAt  time.Time             `json:"evaluated_at"`
+	Gaps         []EndpointCoverageGap `json:"gaps"`
+	Unclassified []EndpointCoverageGap `json:"unclassified"`
 }
 
 type CoverageDiscoveryPolicy struct {

@@ -16,7 +16,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const schemaVersion = 53
+const schemaVersion = 54
 
 type SQLiteStore struct {
 	db *sql.DB
@@ -390,6 +390,11 @@ func (s *SQLiteStore) migrate() error {
 	}
 	if current < 53 {
 		if err := s.applyCoverageDiscoveryPolicyMigration(); err != nil {
+			return err
+		}
+	}
+	if current < 54 {
+		if err := s.applyAssetAgentEligibilityMigration(); err != nil {
 			return err
 		}
 	}

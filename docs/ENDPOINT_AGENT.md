@@ -279,3 +279,10 @@ Coverage discovery policies define administrator-approved CIDR segments and are
 managed with recent MFA. Every segment must remain wholly inside the server's
 global allowed CIDR scope. These policies establish authorization boundaries;
 creating or enabling one does not itself launch a scan.
+
+Assets have an explicit agent-eligibility state: `unknown`, `eligible`, or
+`ineligible`. New assets default to `unknown`. Only explicitly eligible,
+unlinked assets are counted as missing-agent coverage gaps; unknown assets are
+shown separately for review, and ineligible assets require an administrator
+reason and are excluded from gap counts. Changes require recent MFA and are
+audited.
