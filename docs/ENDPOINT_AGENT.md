@@ -268,3 +268,9 @@ capture, TLS interception, or certificate injection. Administrators can inspect
 that contract through `GET /api/admin/network-telemetry/privacy`. A schema test
 requires explicit privacy review if fields are ever added to connection
 telemetry.
+
+Missing-agent coverage detection is disabled by default. When an administrator
+enables it with recent MFA, Mossward compares active, non-retired inventory
+assets with active endpoint-to-asset links and reports unmatched assets as
+coverage gaps. This slice does not initiate discovery scans or presume that
+every network device is eligible for an endpoint agent.

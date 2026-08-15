@@ -368,7 +368,7 @@ failure and health states.
 
 ### 9. Endpoint coverage and integrity
 
-- [ ] Opt-in missing-agent coverage detection
+- [x] Opt-in missing-agent coverage detection
 - [ ] Authorized-segment discovery policies
 - [ ] Agent-eligible and agent-ineligible classifications
 - [ ] Stale-agent and missed-heartbeat alerts

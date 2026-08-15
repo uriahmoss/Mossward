@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"mossward/internal/model"
 	"mossward/internal/store"
@@ -16,6 +17,8 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/revoke", a.revokeEndpoint)
 	mux.HandleFunc("PUT /api/admin/endpoints/{id}/collectors", a.updateEndpointCollectors)
 	mux.HandleFunc("PUT /api/admin/endpoints/{id}/network-exclusions", a.updateEndpointNetworkExclusions)
+	mux.HandleFunc("GET /api/admin/endpoint-coverage", a.getEndpointCoverage)
+	mux.HandleFunc("PUT /api/admin/endpoint-coverage/settings", a.updateEndpointCoverageSettings)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/os-inventory", a.getEndpointOSInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/software-inventory", a.getEndpointSoftwareInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/listening-inventory", a.getEndpointListeningInventory)
@@ -33,6 +36,39 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) getEndpointCoverage(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	report, err := a.store.EndpointCoverageReport(time.Now().UTC())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not evaluate endpoint coverage")
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
+func (a *API) updateEndpointCoverageSettings(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	var settings model.EndpointCoverageSettings
+	if !decodeJSON(w, r, &settings) {
+		return
+	}
+	now := time.Now().UTC()
+	settings.UpdatedBy = actor.ID
+	settings.UpdatedAt = now
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.coverage.updated", Severity: model.AuditInfo,
+		TargetType: "endpoint_coverage", TargetID: "global", SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.SetEndpointCoverageSettings(settings, event); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not update endpoint coverage")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }
 
 func (a *API) updateEndpointNetworkExclusions(w http.ResponseWriter, r *http.Request) {
