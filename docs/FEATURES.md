@@ -380,7 +380,7 @@ failure and health states.
 
 - [x] Explicit relay promotion and revocation
 - [x] Approved downstream agent allowlist
-- [ ] Dedicated Mossward transport only
+- [x] Dedicated Mossward transport only
 - [ ] End-to-end signed and encrypted messages
 - [ ] Bounded encrypted store-and-forward queue
 - [ ] Relay health, capacity, and tamper telemetry

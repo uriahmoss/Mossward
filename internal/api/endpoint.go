@@ -9,6 +9,7 @@ import (
 
 	"mossward/internal/coveragepolicy"
 	"mossward/internal/model"
+	"mossward/internal/relaytransport"
 	"mossward/internal/store"
 )
 
@@ -33,6 +34,7 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/relay-downstreams", a.listRelayDownstreams)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/downstreams/{downstream_id}/authorize", a.authorizeRelayDownstream)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/downstreams/{downstream_id}/revoke", a.revokeRelayDownstream)
+	mux.HandleFunc("GET /api/admin/relay-transport/contract", a.getRelayTransportContract)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -54,6 +56,13 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) getRelayTransportContract(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, relaytransport.ProtocolContract())
 }
 
 func (a *API) listRelayDownstreams(w http.ResponseWriter, r *http.Request) {

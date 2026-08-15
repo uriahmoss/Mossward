@@ -322,6 +322,14 @@ revocation require recent MFA and a reason. Revoking a relay also revokes its
 active downstream assignments while preserving their history. Allowlisting is
 still inert until the dedicated relay transport is implemented.
 
+Relay messages use a versioned Mossward-only frame and media type with a closed
+allowlist of agent check-in, server reply, agent-log batch, and tamper-alert
+message kinds. The frame has no host, port, URL, command, or arbitrary protocol
+fields and cannot represent SOCKS, HTTP CONNECT, TCP forwarding, or a general
+proxy. Administrators can inspect the immutable contract through
+`GET /api/admin/relay-transport/contract`. Forwarding remains disabled until
+end-to-end message protection is implemented.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.
