@@ -27,6 +27,9 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/endpoint-maintenance", a.listEndpointMaintenanceWindows)
 	mux.HandleFunc("POST /api/admin/endpoint-maintenance", a.createEndpointMaintenanceWindow)
 	mux.HandleFunc("POST /api/admin/endpoint-maintenance/{id}/cancel", a.cancelEndpointMaintenanceWindow)
+	mux.HandleFunc("GET /api/admin/endpoint-relays", a.listEndpointRelays)
+	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/promote", a.promoteEndpointRelay)
+	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/revoke", a.revokeEndpointRelay)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -48,6 +51,87 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listEndpointRelays(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	authorizations, err := a.store.ListEndpointRelayAuthorizations()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list endpoint relay authorizations")
+		return
+	}
+	writeJSON(w, http.StatusOK, authorizations)
+}
+
+func (a *API) promoteEndpointRelay(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	reason, ok := decodeRelayTransitionReason(w, r)
+	if !ok {
+		return
+	}
+	id, err := randomID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not promote endpoint relay")
+		return
+	}
+	now := time.Now().UTC()
+	authorization := model.EndpointRelayAuthorization{ID: id, EndpointID: r.PathValue("id"), Status: model.EndpointRelayActive,
+		PromotionReason: reason, PromotedBy: actor.ID, PromotedAt: now}
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.relay.promoted", Severity: model.AuditWarning,
+		TargetType: "endpoint", TargetID: authorization.EndpointID, SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.PromoteEndpointRelay(authorization, event); err != nil {
+		switch {
+		case errors.Is(err, store.ErrNotFound):
+			writeError(w, http.StatusNotFound, "endpoint not found")
+		case errors.Is(err, store.ErrEndpointRelayUnavailable), errors.Is(err, store.ErrEndpointRelayAlreadyActive):
+			writeError(w, http.StatusConflict, err.Error())
+		default:
+			writeError(w, http.StatusInternalServerError, "could not promote endpoint relay")
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, authorization)
+}
+
+func (a *API) revokeEndpointRelay(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	reason, ok := decodeRelayTransitionReason(w, r)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.relay.revoked", Severity: model.AuditWarning,
+		TargetType: "endpoint", TargetID: r.PathValue("id"), SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.RevokeEndpointRelay(r.PathValue("id"), reason, actor.ID, now, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "active endpoint relay authorization not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not revoke endpoint relay")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func decodeRelayTransitionReason(w http.ResponseWriter, r *http.Request) (string, bool) {
+	var request model.EndpointRelayTransitionRequest
+	if !decodeJSON(w, r, &request) {
+		return "", false
+	}
+	request.Reason = strings.TrimSpace(request.Reason)
+	if request.Reason == "" || len(request.Reason) > 500 {
+		writeError(w, http.StatusBadRequest, "relay transition reason must be between 1 and 500 characters")
+		return "", false
+	}
+	return request.Reason, true
 }
 
 func (a *API) listEndpointMaintenanceWindows(w http.ResponseWriter, r *http.Request) {

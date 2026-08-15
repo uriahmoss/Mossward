@@ -309,6 +309,12 @@ and integrity signals are never suppressed. Creation and cancellation remain in
 the audit log, and the underlying heartbeat timestamps and integrity evidence
 are retained.
 
+Endpoint relay capability is unauthorized by default. Administrators can create
+an explicit, reasoned relay authorization for an active endpoint and revoke it
+with recent MFA. Only one authorization can be active per endpoint, while prior
+revoked authorizations remain available as history. Promotion in this slice
+does not open a listener, approve downstream agents, or forward traffic.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

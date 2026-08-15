@@ -29,6 +29,8 @@ var ErrWorkerJobQuarantined = errors.New("scanner-worker job was quarantined aft
 var ErrFindingNotFound = errors.New("finding not found")
 var ErrInvalidFindingWorkflow = errors.New("invalid finding workflow update")
 var ErrEndpointIntegrityReplay = errors.New("endpoint integrity sequence was already used")
+var ErrEndpointRelayUnavailable = errors.New("only an active endpoint can be promoted to relay")
+var ErrEndpointRelayAlreadyActive = errors.New("endpoint already has an active relay authorization")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -135,6 +137,9 @@ type Repository interface {
 	CancelEndpointMaintenanceWindow(string, string, time.Time, model.AuditEvent) error
 	ListEndpointMaintenanceWindows() ([]model.EndpointMaintenanceWindow, error)
 	EndpointInMaintenance(string, time.Time) (bool, error)
+	PromoteEndpointRelay(model.EndpointRelayAuthorization, model.AuditEvent) error
+	RevokeEndpointRelay(string, string, string, time.Time, model.AuditEvent) error
+	ListEndpointRelayAuthorizations() ([]model.EndpointRelayAuthorization, error)
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
