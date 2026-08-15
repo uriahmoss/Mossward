@@ -4,6 +4,7 @@ import (
 	"errors"
 	"time"
 
+	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 )
 
@@ -129,6 +130,20 @@ type Repository interface {
 	RevokeAgentUpdateRelease(string, string, string, time.Time, model.AuditEvent) error
 	AssignAgentUpdate(string, string, string, time.Time, model.AuditEvent) error
 	AgentUpdateOffer(string, time.Time) ([]byte, error)
+	SaveAgentModulePublisher(agentmodule.Publisher, model.AuditEvent) error
+	AgentModulePublisher(string) (agentmodule.Publisher, error)
+	ListAgentModulePublishers() ([]agentmodule.Publisher, error)
+	CreateAgentModuleRelease(agentmodule.Release, model.AuditEvent) error
+	ListAgentModuleReleases() ([]agentmodule.Release, error)
+	TransitionAgentModuleRelease(string, agentmodule.ReleaseStatus, agentmodule.ReleaseStatus, string, string, time.Time, model.AuditEvent) error
+	SaveAgentModuleAssignment(agentmodule.Assignment, model.AuditEvent) error
+	ListAgentModuleAssignments() ([]agentmodule.Assignment, error)
+	AgentModuleOffers(string, string, string, string) ([]agentmodule.Offer, error)
+	RecordAgentModuleHealth(string, []agentmodule.Health) error
+	RecordEndpointOSInventory(string, model.EndpointOSInventory, time.Time) error
+	EndpointOSInventory(string) (model.EndpointOSInventory, error)
+	SetAgentModulesEnabled(bool, model.AuditEvent) error
+	LinkEndpointAsset(string, string, model.AuditEvent) error
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error
 	WorkerEnrollmentToken([]byte, time.Time) (model.WorkerEnrollmentToken, error)
 	ConsumeWorkerEnrollmentToken([]byte, model.ScannerWorker, time.Time, model.AuditEvent) error

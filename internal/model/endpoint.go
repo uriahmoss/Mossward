@@ -3,6 +3,8 @@ package model
 import (
 	"encoding/json"
 	"time"
+
+	"mossward/internal/agentmodule"
 )
 
 type EndpointStatus string
@@ -38,19 +40,41 @@ type Endpoint struct {
 }
 
 type AgentCheckIn struct {
-	SchemaVersion       int           `json:"schema_version"`
-	SoftwareVersion     string        `json:"software_version"`
-	OperatingSystem     string        `json:"operating_system"`
-	Architecture        string        `json:"architecture"`
-	SupportedCollectors []CollectorID `json:"supported_collectors"`
+	SchemaVersion       int                  `json:"schema_version"`
+	SoftwareVersion     string               `json:"software_version"`
+	OperatingSystem     string               `json:"operating_system"`
+	Architecture        string               `json:"architecture"`
+	SupportedCollectors []CollectorID        `json:"supported_collectors"`
+	ModuleHealth        []agentmodule.Health `json:"module_health,omitempty"`
+	OSInventory         *EndpointOSInventory `json:"os_inventory,omitempty"`
+}
+
+type EndpointOSInventory struct {
+	EndpointID   string          `json:"endpoint_id,omitempty"`
+	Family       string          `json:"family"`
+	Name         string          `json:"name"`
+	Version      string          `json:"version"`
+	Build        string          `json:"build,omitempty"`
+	Kernel       string          `json:"kernel"`
+	Architecture string          `json:"architecture"`
+	Patches      []EndpointPatch `json:"patches"`
+	CollectedAt  time.Time       `json:"collected_at"`
+	ReceivedAt   time.Time       `json:"received_at,omitempty"`
+}
+
+type EndpointPatch struct {
+	ID          string     `json:"id"`
+	Description string     `json:"description,omitempty"`
+	InstalledAt *time.Time `json:"installed_at,omitempty"`
 }
 
 type AgentCheckInResponse struct {
-	Status            string          `json:"status"`
-	EndpointID        string          `json:"endpoint_id"`
-	ServerTime        time.Time       `json:"server_time"`
-	AllowedCollectors []CollectorID   `json:"allowed_collectors"`
-	UpdateEnvelope    json.RawMessage `json:"update_envelope,omitempty"`
+	Status            string              `json:"status"`
+	EndpointID        string              `json:"endpoint_id"`
+	ServerTime        time.Time           `json:"server_time"`
+	AllowedCollectors []CollectorID       `json:"allowed_collectors"`
+	UpdateEnvelope    json.RawMessage     `json:"update_envelope,omitempty"`
+	ModuleOffers      []agentmodule.Offer `json:"module_offers,omitempty"`
 }
 
 type EndpointAlert struct {

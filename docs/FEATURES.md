@@ -335,22 +335,22 @@ failure and health states.
 ### 6. Endpoint extension framework
 
 - [x] Versioned module interface and capability declarations
-- [ ] Signed manifests, package checksums, and trusted-publisher policy
-- [ ] Declarative inventory and configuration-check modules
-- [ ] Isolated low-privilege native-module host for OS-integrated detectors
-- [ ] Explicit filesystem, network, resource, and data-access permissions
-- [ ] Prevent modules from accessing endpoint identity private keys
-- [ ] Server-side module catalog and per-group or per-endpoint assignments
-- [ ] Compatibility checks across module, agent, and operating-system versions
-- [ ] Staged deployment rings, module health reporting, and rollback
-- [ ] Per-module resource limits, crash isolation, and emergency disable controls
-- [ ] Versioned developer SDK, validation tools, and testing harness
-- [ ] Prohibit arbitrary web-uploaded scripts, undeclared downloads, permission
+- [x] Signed manifests, package checksums, and trusted-publisher policy
+- [x] Declarative inventory and configuration-check modules
+- [x] Isolated low-privilege native-module host for OS-integrated detectors
+- [x] Explicit filesystem, network, resource, and data-access permissions
+- [x] Prevent modules from accessing endpoint identity private keys
+- [x] Server-side module catalog and per-group or per-endpoint assignments
+- [x] Compatibility checks across module, agent, and operating-system versions
+- [x] Staged deployment rings, module health reporting, and rollback
+- [x] Per-module resource limits, crash isolation, and emergency disable controls
+- [x] Versioned developer SDK, validation tools, and testing harness
+- [x] Prohibit arbitrary web-uploaded scripts, undeclared downloads, permission
       expansion, self-propagation, and unreviewed shell execution
 
 ### 7. Endpoint inventory and CVE evidence
 
-- [ ] Operating-system and patch inventory
+- [x] Operating-system and patch inventory
 - [ ] Installed package and application inventory
 - [ ] Listening service and owning-process inventory
 - [ ] Local security-posture evidence

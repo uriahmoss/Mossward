@@ -38,6 +38,7 @@ type App struct {
 	certificate *x509.Certificate
 	updateKeyID string
 	updateKey   ed25519.PublicKey
+	moduleTrust map[string]ed25519.PublicKey
 }
 
 func New(config Config) (*App, error) {
@@ -53,6 +54,10 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	moduleTrust, err := config.ModuleTrust()
+	if err != nil {
+		return nil, err
+	}
 	base := strings.TrimRight(config.EndpointURL, "/")
 	return &App{
 		client:      identityClient(certificate, roots),
@@ -63,6 +68,7 @@ func New(config Config) (*App, error) {
 		certificate: leaf,
 		updateKeyID: updateKeyID,
 		updateKey:   updateKey,
+		moduleTrust: moduleTrust,
 	}, nil
 }
 
@@ -98,8 +104,13 @@ func (a *App) Run(ctx context.Context) error {
 }
 
 func (a *App) checkIn(ctx context.Context) error {
+	now := time.Now().UTC()
+	osInventory, err := collectOSInventory(a.config.CollectorAllowlist, now)
+	if err != nil {
+		slog.Warn("Endpoint OS inventory collection failed", "error", err)
+	}
 	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
-		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs()})
+		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory})
 	if err != nil {
 		return err
 	}
@@ -132,6 +143,11 @@ func (a *App) checkIn(ctx context.Context) error {
 	}
 	if err := a.applyUpdateOffer(ctx, result.UpdateEnvelope); err != nil {
 		return err
+	}
+	if a.config.ModulesEnabled {
+		if err := applyModuleOffers(a.config.ModuleDirectory(), result.ModuleOffers, a.moduleTrust); err != nil {
+			return fmt.Errorf("apply endpoint module offers: %w", err)
+		}
 	}
 	return nil
 }

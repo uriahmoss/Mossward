@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 	"mossward/internal/store"
 	"mossward/internal/workerevidence"
@@ -204,6 +205,16 @@ func (s *memoryEndpointStore) RecordEndpointCheckIn(id string, checkIn model.Age
 	return nil
 }
 func (s *memoryEndpointStore) AgentUpdateOffer(string, time.Time) ([]byte, error) { return nil, nil }
+func (s *memoryEndpointStore) AgentModuleOffers(string, string, string, string) ([]agentmodule.Offer, error) {
+	return nil, nil
+}
+func (s *memoryEndpointStore) RecordAgentModuleHealth(string, []agentmodule.Health) error { return nil }
+func (s *memoryEndpointStore) RecordEndpointOSInventory(string, model.EndpointOSInventory, time.Time) error {
+	return nil
+}
+func (s *memoryEndpointStore) EndpointOSInventory(string) (model.EndpointOSInventory, error) {
+	return model.EndpointOSInventory{}, store.ErrNotFound
+}
 func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []model.CollectorID, _ model.AuditEvent) error {
 	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
 		return store.ErrNotFound

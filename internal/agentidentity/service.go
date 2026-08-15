@@ -10,9 +10,11 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
+	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 	"mossward/internal/store"
 	"mossward/internal/workerjob"
@@ -24,6 +26,7 @@ const (
 	endpointNameLimit       = 200
 	certificateRenewBefore  = 30 * 24 * time.Hour
 	revocationReasonLimit   = 500
+	maximumAgentCheckInSize = 4 << 20
 )
 
 type EndpointStore interface {
@@ -35,6 +38,10 @@ type EndpointStore interface {
 	EndpointBySerial(string) (model.Endpoint, error)
 	RecordEndpointCheckIn(string, model.AgentCheckIn, time.Time) error
 	AgentUpdateOffer(string, time.Time) ([]byte, error)
+	AgentModuleOffers(string, string, string, string) ([]agentmodule.Offer, error)
+	RecordAgentModuleHealth(string, []agentmodule.Health) error
+	RecordEndpointOSInventory(string, model.EndpointOSInventory, time.Time) error
+	EndpointOSInventory(string) (model.EndpointOSInventory, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -231,7 +238,7 @@ func (s *Service) Handler() http.Handler {
 			return
 		}
 		var heartbeat model.AgentCheckIn
-		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10))
+		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maximumAgentCheckInSize))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&heartbeat); err != nil || heartbeat.SchemaVersion != 1 || decoder.Decode(&struct{}{}) != io.EOF {
 			http.Error(w, "invalid endpoint-agent check-in", http.StatusBadRequest)
@@ -250,9 +257,24 @@ func (s *Service) Handler() http.Handler {
 			http.Error(w, "endpoint update state unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		if err := s.store.RecordAgentModuleHealth(endpoint.ID, heartbeat.ModuleHealth); err != nil {
+			http.Error(w, "endpoint module health unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if heartbeat.OSInventory != nil && slices.Contains(endpoint.AllowedCollectors, model.CollectorOperatingSystem) {
+			if err := s.store.RecordEndpointOSInventory(endpoint.ID, *heartbeat.OSInventory, now); err != nil {
+				http.Error(w, "endpoint OS inventory unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		moduleOffers, err := s.store.AgentModuleOffers(endpoint.ID, heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture)
+		if err != nil {
+			http.Error(w, "endpoint module state unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(model.AgentCheckInResponse{Status: "accepted", EndpointID: endpoint.ID,
-			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors, UpdateEnvelope: updateEnvelope})
+			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors, UpdateEnvelope: updateEnvelope, ModuleOffers: moduleOffers})
 	})
 }
 
@@ -266,7 +288,45 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	if checkIn.Architecture != "amd64" && checkIn.Architecture != "arm64" {
 		return errors.New("endpoint architecture is unsupported")
 	}
+	if len(checkIn.ModuleHealth) > 256 {
+		return errors.New("endpoint module health report is too large")
+	}
+	seenModules := map[string]bool{}
+	for _, report := range checkIn.ModuleHealth {
+		if strings.TrimSpace(report.ModuleID) == "" || strings.TrimSpace(report.Version) == "" || report.CrashCount < 0 || len(report.Error) > 500 || seenModules[report.ModuleID] {
+			return errors.New("endpoint module health report is invalid")
+		}
+		seenModules[report.ModuleID] = true
+	}
+	if err := validateOSInventory(checkIn.OSInventory); err != nil {
+		return err
+	}
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
+}
+
+func validateOSInventory(inventory *model.EndpointOSInventory) error {
+	if inventory == nil {
+		return nil
+	}
+	if inventory.Family != "linux" && inventory.Family != "windows" {
+		return errors.New("endpoint OS inventory family is unsupported")
+	}
+	if strings.TrimSpace(inventory.Name) == "" || strings.TrimSpace(inventory.Version) == "" || strings.TrimSpace(inventory.Kernel) == "" ||
+		(inventory.Architecture != "amd64" && inventory.Architecture != "arm64") || inventory.CollectedAt.IsZero() || len(inventory.Patches) > 10000 {
+		return errors.New("endpoint OS inventory is invalid")
+	}
+	seen := map[string]bool{}
+	for _, patch := range inventory.Patches {
+		if strings.TrimSpace(patch.ID) == "" || len(patch.ID) > 200 || len(patch.Description) > 500 || seen[patch.ID] {
+			return errors.New("endpoint OS patch inventory is invalid")
+		}
+		seen[patch.ID] = true
+	}
+	return nil
+}
+
+func (s *Service) OSInventory(endpointID string) (model.EndpointOSInventory, error) {
+	return s.store.EndpointOSInventory(endpointID)
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {

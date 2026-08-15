@@ -245,6 +245,17 @@ so machine-specific policy does not enter source control.
 - `POST /api/admin/agent-updates/{id}/approve`
 - `POST /api/admin/agent-updates/{id}/revoke`
 - `PUT /api/admin/endpoints/{id}/update`
+- `GET /api/admin/agent-module-publishers`
+- `PUT /api/admin/agent-module-publishers/{id}`
+- `GET /api/admin/agent-modules`
+- `POST /api/admin/agent-modules`
+- `POST /api/admin/agent-modules/{id}/approve`
+- `POST /api/admin/agent-modules/{id}/revoke`
+- `GET /api/admin/agent-module-assignments`
+- `POST /api/admin/agent-module-assignments`
+- `PUT /api/admin/agent-modules/emergency-state`
+- `PUT /api/admin/endpoints/{id}/asset`
+- `GET /api/admin/endpoints/{id}/os-inventory`
 - `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`

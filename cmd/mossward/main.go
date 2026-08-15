@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"mossward/internal/agentidentity"
+	"mossward/internal/agentmodulecatalog"
 	"mossward/internal/agentupdatecatalog"
 	"mossward/internal/api"
 	"mossward/internal/auth"
@@ -110,6 +111,7 @@ func run(stop <-chan string) error {
 		return err
 	}
 	agentUpdates := agentupdatecatalog.New(repository, updateKeyID, updateKey)
+	agentModules := agentmodulecatalog.New(repository)
 	if agentUpdates != nil {
 		slog.Info("Mossward endpoint-agent release trust loaded", "key_id", updateKeyID)
 	}
@@ -133,6 +135,7 @@ func run(stop <-chan string) error {
 	}
 	options.AgentIdentity = agentIdentity
 	options.AgentUpdates = agentUpdates
+	options.AgentModules = agentModules
 	options.Notifications = notificationService
 	options.PolicyLauncher = policyLauncher
 	handler := api.New(cfg, repository, engine, identityService, options)

@@ -17,15 +17,22 @@ import (
 const maximumConfigBytes = 1 << 20
 
 type Config struct {
-	ServerURL              string        `json:"server_url"`
-	EndpointURL            string        `json:"endpoint_url"`
-	EnrollmentCAFile       string        `json:"enrollment_ca_file,omitempty"`
-	StateDirectory         string        `json:"state_directory"`
-	CheckInIntervalSeconds int           `json:"check_in_interval_seconds"`
-	CollectorAllowlist     []CollectorID `json:"collector_allowlist,omitempty"`
-	UpdateEnabled          bool          `json:"update_enabled,omitempty"`
-	UpdateSigningKeyID     string        `json:"update_signing_key_id,omitempty"`
-	UpdateSigningPublicKey string        `json:"update_signing_public_key,omitempty"`
+	ServerURL              string                 `json:"server_url"`
+	EndpointURL            string                 `json:"endpoint_url"`
+	EnrollmentCAFile       string                 `json:"enrollment_ca_file,omitempty"`
+	StateDirectory         string                 `json:"state_directory"`
+	CheckInIntervalSeconds int                    `json:"check_in_interval_seconds"`
+	CollectorAllowlist     []CollectorID          `json:"collector_allowlist,omitempty"`
+	UpdateEnabled          bool                   `json:"update_enabled,omitempty"`
+	UpdateSigningKeyID     string                 `json:"update_signing_key_id,omitempty"`
+	UpdateSigningPublicKey string                 `json:"update_signing_public_key,omitempty"`
+	ModulesEnabled         bool                   `json:"modules_enabled,omitempty"`
+	ModulePublishers       []ModulePublisherTrust `json:"module_publishers,omitempty"`
+}
+
+type ModulePublisherTrust struct {
+	KeyID     string `json:"key_id"`
+	PublicKey string `json:"public_key"`
 }
 
 func LoadConfig(path string) (Config, error) {
@@ -71,11 +78,40 @@ func (c Config) Validate() error {
 	if _, _, err := c.UpdateTrust(); err != nil {
 		return err
 	}
+	if _, err := c.ModuleTrust(); err != nil {
+		return err
+	}
 	return nil
 }
 
 func (c Config) CheckInInterval() time.Duration {
 	return time.Duration(c.CheckInIntervalSeconds) * time.Second
+}
+
+func (c Config) ModuleDirectory() string { return filepath.Join(c.StateDirectory, "modules") }
+
+func (c Config) ModuleTrust() (map[string]ed25519.PublicKey, error) {
+	if !c.ModulesEnabled {
+		if len(c.ModulePublishers) != 0 {
+			return nil, errors.New("endpoint module trust requires modules_enabled")
+		}
+		return nil, nil
+	}
+	if len(c.ModulePublishers) == 0 {
+		return nil, errors.New("endpoint module publisher trust is required")
+	}
+	trusted := make(map[string]ed25519.PublicKey, len(c.ModulePublishers))
+	for _, publisher := range c.ModulePublishers {
+		if strings.TrimSpace(publisher.KeyID) == "" || trusted[publisher.KeyID] != nil {
+			return nil, errors.New("endpoint module publisher key ID is invalid or duplicated")
+		}
+		decoded, err := base64.RawStdEncoding.DecodeString(publisher.PublicKey)
+		if err != nil || len(decoded) != ed25519.PublicKeySize {
+			return nil, errors.New("endpoint module publisher public key is invalid")
+		}
+		trusted[publisher.KeyID] = ed25519.PublicKey(decoded)
+	}
+	return trusted, nil
 }
 
 func (c Config) UpdateStateDirectory() string {

@@ -176,3 +176,17 @@ Get-WinEvent -LogName Application -FilterXPath "*[System[Provider[@Name='Mosswar
 Info, warning, and error records are written to the Windows Application Event
 Log under the `MosswardAgent` source. Service removal preserves configuration,
 certificates, private keys, and other agent state.
+
+## Operating-system and patch inventory
+
+When the local configuration and server collector policy both allow
+`operating_system`, the agent reports a timestamped OS snapshot during its
+authenticated check-in. Linux reports `/etc/os-release` identity, build data,
+architecture, and the running kernel patch level. Windows reports the product,
+display version, build number, and cumulative-update build revision from the
+local registry. Collection is read-only and does not contact update services.
+
+The server replaces the endpoint's prior patch snapshot transactionally and
+retains separate collected-at and received-at timestamps. Administrators can
+read it from `GET /api/admin/endpoints/{id}/os-inventory`. A missing snapshot is
+reported as unavailable rather than inferred from network observations.
