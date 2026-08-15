@@ -20,6 +20,7 @@ import (
 	identity "mossward/internal/auth"
 	"mossward/internal/config"
 	"mossward/internal/model"
+	"mossward/internal/networkpolicy"
 	"mossward/internal/notification"
 	"mossward/internal/scanner"
 	"mossward/internal/store"
@@ -74,6 +75,7 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	mux.HandleFunc("GET /api/health", api.health)
 	mux.HandleFunc("GET /api/ready", api.readiness)
 	mux.HandleFunc("GET /api/admin/certificate-status", api.getCertificateStatus)
+	mux.HandleFunc("GET /api/admin/network-telemetry/privacy", api.getNetworkTelemetryPrivacy)
 	api.registerAgentIdentityRoutes(mux)
 	api.registerAgentUpdateRoutes(mux)
 	api.registerAgentModuleRoutes(mux)
@@ -98,6 +100,13 @@ func New(cfg config.Config, repository store.Repository, engine *scanner.Engine,
 	api.registerIdentityRoutes(mux)
 	mux.Handle("/", http.FileServer(http.FS(web.Files)))
 	return api.trustedProxyRequest(api.transportSecurity(securityHeaders(api.identityGate(mux))))
+}
+
+func (a *API) getNetworkTelemetryPrivacy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, networkpolicy.PrivacyContract())
 }
 
 func (a *API) getCertificateStatus(w http.ResponseWriter, r *http.Request) {

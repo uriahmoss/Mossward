@@ -342,6 +342,29 @@ func TestCertificateStatusReportsUnmanagedMode(t *testing.T) {
 	}
 }
 
+func TestNetworkTelemetryPrivacyReportsImmutableMetadataOnlyContract(t *testing.T) {
+	handler, _ := testHandler(t)
+	request := httptest.NewRequest(http.MethodGet, "/api/admin/network-telemetry/privacy", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("unexpected privacy status: %d %s", response.Code, response.Body.String())
+	}
+	var contract struct {
+		CollectionMode                string `json:"collection_mode"`
+		PayloadCaptureSupported       bool   `json:"payload_capture_supported"`
+		TLSInterceptionSupported      bool   `json:"tls_interception_supported"`
+		CertificateInjectionSupported bool   `json:"certificate_injection_supported"`
+		RuntimeMutable                bool   `json:"runtime_mutable"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &contract); err != nil {
+		t.Fatal(err)
+	}
+	if contract.CollectionMode != "metadata_only" || contract.PayloadCaptureSupported || contract.TLSInterceptionSupported || contract.CertificateInjectionSupported || contract.RuntimeMutable {
+		t.Fatalf("unsafe privacy contract: %#v", contract)
+	}
+}
+
 func TestEndpointAdministrationReportsDisabledService(t *testing.T) {
 	handler, _ := testHandler(t)
 	request := httptest.NewRequest(http.MethodGet, "/api/admin/endpoints", nil)

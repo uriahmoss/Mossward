@@ -364,7 +364,7 @@ failure and health states.
 - [x] Threat-intelligence indicator correlation (exact IP and hostname matching; detection only)
 - [x] Indicator source, confidence, timestamp, and expiration
 - [x] Configurable application and destination exclusions
-- [ ] No payload capture or TLS interception by default
+- [x] No payload capture or TLS interception (immutable metadata-only contract)
 
 ### 9. Endpoint coverage and integrity
 

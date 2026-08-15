@@ -261,3 +261,10 @@ destination rules match an exact IP address, exact hostname, or normalized CIDR.
 The agent combines locally configured privacy exclusions with server policy and
 filters before upload. The server filters again before persistence. Policies do
 not disable agent identity, integrity, update, or other inventory controls.
+
+The endpoint network collector has an immutable metadata-only privacy contract.
+It exposes no setting or capability for packet payload capture, DNS packet
+capture, TLS interception, or certificate injection. Administrators can inspect
+that contract through `GET /api/admin/network-telemetry/privacy`. A schema test
+requires explicit privacy review if fields are ever added to connection
+telemetry.
