@@ -382,7 +382,7 @@ failure and health states.
 - [x] Approved downstream agent allowlist
 - [x] Dedicated Mossward transport only
 - [x] End-to-end signed and encrypted messages
-- [ ] Bounded encrypted store-and-forward queue
+- [x] Bounded encrypted store-and-forward queue
 - [ ] Relay health, capacity, and tamper telemetry
 - [ ] Approved failover behavior
 - [ ] Direct-versus-relayed path visibility

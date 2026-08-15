@@ -338,6 +338,14 @@ ciphertext but cannot decrypt or silently modify message content. Recipient-key
 binding prevents delivery to a different endpoint key. Network forwarding stays
 disabled until key provisioning and the remaining relay controls are complete.
 
+The relay queue persists only complete end-to-end encrypted frames in a private
+SQLite database. Configurable item, encoded-byte, and age limits prevent an
+offline relay from exhausting its host. Duplicate and over-capacity frames are
+rejected explicitly; acknowledged frames and explicitly purged expired frames
+are counted rather than silently discarded. Queue statistics expose backlog
+size and age without exposing message plaintext. Network forwarding remains
+disabled.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.
