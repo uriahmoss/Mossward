@@ -86,5 +86,16 @@ func collectNetworkInventory(allowlist []CollectorID, now time.Time) (*model.End
 	if err != nil {
 		return nil, err
 	}
+	contexts := platformNetworkNameContext()
+	for index := range connections {
+		context, ok := contexts[connections[index].RemoteAddress]
+		if !ok {
+			continue
+		}
+		connections[index].RemoteHostname = context.hostname
+		connections[index].HostnameSource = context.source
+	}
 	return &model.EndpointNetworkInventory{Connections: connections, CollectedAt: now}, nil
 }
+
+type networkNameContext struct{ hostname, source string }

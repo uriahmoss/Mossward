@@ -14,12 +14,12 @@ func TestEndpointNetworkInventoryReplacesMetadataSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inventory := model.EndpointNetworkInventory{CollectedAt: now, Connections: []model.NetworkConnection{{Protocol: "tcp", LocalAddress: "10.0.0.2", LocalPort: 50000, RemoteAddress: "198.51.100.10", RemotePort: 443, ProcessID: 10, ProcessName: "client", Executable: "/usr/bin/client", Direction: "outbound_candidate"}}}
+	inventory := model.EndpointNetworkInventory{CollectedAt: now, Connections: []model.NetworkConnection{{Protocol: "tcp", LocalAddress: "10.0.0.2", LocalPort: 50000, RemoteAddress: "198.51.100.10", RemotePort: 443, ProcessID: 10, ProcessName: "client", Executable: "/usr/bin/client", RemoteHostname: "service.example.test", HostnameSource: "hosts_file", Direction: "outbound_candidate"}}}
 	if err := repository.RecordEndpointNetworkInventory("endpoint-1", inventory, now.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	stored, err := repository.EndpointNetworkInventory("endpoint-1")
-	if err != nil || len(stored.Connections) != 1 || stored.Connections[0].RemotePort != 443 || stored.Connections[0].Executable != "/usr/bin/client" {
+	if err != nil || len(stored.Connections) != 1 || stored.Connections[0].RemotePort != 443 || stored.Connections[0].Executable != "/usr/bin/client" || stored.Connections[0].RemoteHostname != "service.example.test" {
 		t.Fatalf("network inventory = %#v, error = %v", stored, err)
 	}
 	inventory.Connections = nil

@@ -142,15 +142,18 @@ type EndpointNetworkInventory struct {
 }
 
 type NetworkConnection struct {
-	Protocol      string `json:"protocol"`
-	LocalAddress  string `json:"local_address"`
-	LocalPort     int    `json:"local_port"`
-	RemoteAddress string `json:"remote_address"`
-	RemotePort    int    `json:"remote_port"`
-	ProcessID     int    `json:"process_id,omitempty"`
-	ProcessName   string `json:"process_name,omitempty"`
-	Executable    string `json:"executable,omitempty"`
-	Direction     string `json:"direction"`
+	Protocol       string `json:"protocol"`
+	LocalAddress   string `json:"local_address"`
+	LocalPort      int    `json:"local_port"`
+	RemoteAddress  string `json:"remote_address"`
+	RemotePort     int    `json:"remote_port"`
+	ProcessID      int    `json:"process_id,omitempty"`
+	ProcessName    string `json:"process_name,omitempty"`
+	Executable     string `json:"executable,omitempty"`
+	RemoteHostname string `json:"remote_hostname,omitempty"`
+	HostnameSource string `json:"hostname_source,omitempty"`
+	TLSServerName  string `json:"tls_server_name,omitempty"`
+	Direction      string `json:"direction"`
 }
 
 type AgentCheckInResponse struct {

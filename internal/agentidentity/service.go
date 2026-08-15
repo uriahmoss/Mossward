@@ -364,7 +364,9 @@ func validateNetworkInventory(inventory *model.EndpointNetworkInventory) error {
 		identity := fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%d\x00%d", connection.Protocol, local, connection.LocalPort, remote, connection.RemotePort, connection.ProcessID)
 		if (connection.Protocol != "tcp" && connection.Protocol != "udp") || localErr != nil || remoteErr != nil || remote.IsUnspecified() ||
 			connection.LocalPort < 1 || connection.LocalPort > 65535 || connection.RemotePort < 1 || connection.RemotePort > 65535 || connection.ProcessID < 0 ||
-			len(connection.ProcessName) > 500 || len(connection.Executable) > 2000 || connection.Direction != "outbound_candidate" || seen[identity] {
+			len(connection.ProcessName) > 500 || len(connection.Executable) > 2000 || len(connection.RemoteHostname) > 253 || len(connection.TLSServerName) > 253 ||
+			(connection.HostnameSource != "" && connection.HostnameSource != "hosts_file" && connection.HostnameSource != "windows_dns_cache") ||
+			(connection.RemoteHostname == "") != (connection.HostnameSource == "") || connection.Direction != "outbound_candidate" || seen[identity] {
 			return errors.New("endpoint network connection metadata is invalid")
 		}
 		seen[identity] = true

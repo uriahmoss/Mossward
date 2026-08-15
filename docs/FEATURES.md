@@ -360,7 +360,7 @@ failure and health states.
 
 - [x] Optional privacy-bounded outbound connection metadata
 - [x] Process-to-destination correlation
-- [ ] DNS and available TLS server-name context
+- [x] DNS and available TLS server-name context
 - [ ] Threat-intelligence indicator correlation
 - [ ] Indicator source, confidence, timestamp, and expiration
 - [ ] Configurable application and destination exclusions

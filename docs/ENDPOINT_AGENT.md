@@ -239,3 +239,12 @@ Each connection is correlated with its OS-reported PID and process name when
 available. Linux also records the executable path visible through `/proc` to the
 agent service identity. Missing process identity remains empty rather than being
 guessed, and Mossward does not open process memory or inspect process payloads.
+
+Name context remains provenance-separated from connection identity. Linux uses
+only non-loopback entries already present in `/etc/hosts`; Windows uses entries
+already present in the DNS client cache when `ipconfig.exe /displaydns` is
+available and parseable. Mossward does not perform reverse-DNS lookups merely to
+enrich telemetry. A separate TLS server-name field is persisted for OS-native
+sources, but remains empty when no such source exists. Cached DNS names are
+never presented as observed TLS SNI, and Mossward does not inspect ClientHello
+packets or intercept TLS to obtain it.
