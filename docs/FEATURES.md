@@ -373,7 +373,7 @@ failure and health states.
 - [x] Agent-eligible and agent-ineligible classifications
 - [x] Stale-agent and missed-heartbeat alerts
 - [x] Agent executable, configuration, and identity integrity events
-- [ ] Signed and sequence-numbered tamper events
+- [x] Signed and sequence-numbered tamper events
 - [ ] Maintenance-window suppression with retained audit history
 
 ### 10. Optional endpoint relay

@@ -9,11 +9,34 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"mossward/internal/model"
 )
+
+func nextIntegritySequence(stateDirectory string) (uint64, error) {
+	path := filepath.Join(stateDirectory, "integrity-sequence")
+	var current uint64
+	data, err := os.ReadFile(path)
+	if err == nil {
+		current, err = strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("parse integrity sequence: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return 0, err
+	}
+	if current == ^uint64(0) {
+		return 0, errors.New("integrity sequence is exhausted")
+	}
+	next := current + 1
+	if err := writePrivateFile(path, []byte(strconv.FormatUint(next, 10)+"\n")); err != nil {
+		return 0, err
+	}
+	return next, nil
+}
 
 func collectIntegritySnapshot(config Config, now time.Time) (*model.AgentIntegritySnapshot, error) {
 	var issues []error

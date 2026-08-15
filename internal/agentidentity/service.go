@@ -1,6 +1,7 @@
 package agentidentity
 
 import (
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"mossward/internal/agentintegrity"
 	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 	"mossward/internal/networkpolicy"
@@ -43,7 +45,7 @@ type EndpointHeartbeatSettingsStore interface {
 }
 
 type EndpointIntegrityStore interface {
-	RecordEndpointIntegritySnapshot(string, model.AgentIntegritySnapshot, time.Time) error
+	RecordEndpointIntegritySnapshot(string, model.SignedAgentIntegritySnapshot, time.Time) error
 	EndpointIntegrityEvents(string) ([]model.AgentIntegrityEvent, error)
 }
 
@@ -302,16 +304,29 @@ func (s *Service) Handler() http.Handler {
 			http.Error(w, "invalid endpoint-agent capabilities", http.StatusBadRequest)
 			return
 		}
-		if err := s.store.RecordEndpointCheckIn(endpoint.ID, heartbeat, now); err != nil {
-			http.Error(w, "endpoint state unavailable", http.StatusServiceUnavailable)
-			return
-		}
 		if heartbeat.IntegritySnapshot != nil {
+			publicKey, ok := r.TLS.PeerCertificates[0].PublicKey.(*ecdsa.PublicKey)
+			if !ok || agentintegrity.Verify(publicKey, *heartbeat.IntegritySnapshot) != nil {
+				http.Error(w, "invalid endpoint integrity signature", http.StatusBadRequest)
+				return
+			}
 			repository, ok := s.store.(EndpointIntegrityStore)
-			if !ok || repository.RecordEndpointIntegritySnapshot(endpoint.ID, *heartbeat.IntegritySnapshot, now) != nil {
+			if !ok {
 				http.Error(w, "endpoint integrity state unavailable", http.StatusServiceUnavailable)
 				return
 			}
+			if err := repository.RecordEndpointIntegritySnapshot(endpoint.ID, *heartbeat.IntegritySnapshot, now); err != nil {
+				if errors.Is(err, store.ErrEndpointIntegrityReplay) {
+					http.Error(w, "endpoint integrity sequence rejected", http.StatusConflict)
+					return
+				}
+				http.Error(w, "endpoint integrity state unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
+		if err := s.store.RecordEndpointCheckIn(endpoint.ID, heartbeat, now); err != nil {
+			http.Error(w, "endpoint state unavailable", http.StatusServiceUnavailable)
+			return
 		}
 		updateEnvelope, err := s.store.AgentUpdateOffer(endpoint.ID, now)
 		if err != nil {
@@ -405,10 +420,14 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
 }
 
-func validateIntegritySnapshot(snapshot *model.AgentIntegritySnapshot) error {
-	if snapshot == nil {
+func validateIntegritySnapshot(envelope *model.SignedAgentIntegritySnapshot) error {
+	if envelope == nil {
 		return nil
 	}
+	if envelope.Sequence == 0 || envelope.Sequence > uint64(^uint64(0)>>1) || len(envelope.Signature) < 1 || len(envelope.Signature) > 256 {
+		return errors.New("endpoint integrity envelope is invalid")
+	}
+	snapshot := &envelope.Snapshot
 	for _, value := range []string{snapshot.ExecutableSHA256, snapshot.ConfigurationSHA256, snapshot.IdentitySHA256} {
 		decoded, err := hex.DecodeString(value)
 		if err != nil || len(decoded) != sha256.Size || value != strings.ToLower(value) {

@@ -31,3 +31,15 @@ func TestHashFileStatesStillFingerprintsMissingFiles(t *testing.T) {
 		t.Fatalf("missing-file fingerprint = %q, error = %v", hash, err)
 	}
 }
+
+func TestNextIntegritySequencePersistsMonotonically(t *testing.T) {
+	directory := t.TempDir()
+	first, err := nextIntegritySequence(directory)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := nextIntegritySequence(directory)
+	if err != nil || first != 1 || second != 2 {
+		t.Fatalf("integrity sequences = %d, %d, error = %v", first, second, err)
+	}
+}

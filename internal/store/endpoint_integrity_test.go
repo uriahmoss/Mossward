@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -17,7 +18,8 @@ func TestEndpointIntegrityBaselineEmitsOnlyChangedComponents(t *testing.T) {
 	}
 	hashA, hashB := strings.Repeat("a", 64), strings.Repeat("b", 64)
 	snapshot := model.AgentIntegritySnapshot{ExecutableSHA256: hashA, ConfigurationSHA256: hashA, IdentitySHA256: hashA, ObservedAt: now}
-	if err := repository.RecordEndpointIntegritySnapshot("endpoint", snapshot, now); err != nil {
+	envelope := model.SignedAgentIntegritySnapshot{Sequence: 1, Snapshot: snapshot, Signature: "signature-1"}
+	if err := repository.RecordEndpointIntegritySnapshot("endpoint", envelope, now); err != nil {
 		t.Fatal(err)
 	}
 	events, err := repository.EndpointIntegrityEvents("endpoint")
@@ -26,11 +28,15 @@ func TestEndpointIntegrityBaselineEmitsOnlyChangedComponents(t *testing.T) {
 	}
 	snapshot.ConfigurationSHA256 = hashB
 	snapshot.ObservedAt = now.Add(time.Minute)
-	if err := repository.RecordEndpointIntegritySnapshot("endpoint", snapshot, now.Add(time.Minute)); err != nil {
+	envelope = model.SignedAgentIntegritySnapshot{Sequence: 2, Snapshot: snapshot, Signature: "signature-2"}
+	if err := repository.RecordEndpointIntegritySnapshot("endpoint", envelope, now.Add(time.Minute)); err != nil {
 		t.Fatal(err)
 	}
 	events, err = repository.EndpointIntegrityEvents("endpoint")
-	if err != nil || len(events) != 1 || events[0].Component != "configuration" || events[0].PreviousSHA256 != hashA || events[0].CurrentSHA256 != hashB {
+	if err != nil || len(events) != 1 || events[0].Component != "configuration" || events[0].PreviousSHA256 != hashA || events[0].CurrentSHA256 != hashB || events[0].Sequence != 2 || events[0].Signature != "signature-2" {
 		t.Fatalf("change events = %#v, error = %v", events, err)
+	}
+	if err := repository.RecordEndpointIntegritySnapshot("endpoint", envelope, now.Add(2*time.Minute)); !errors.Is(err, ErrEndpointIntegrityReplay) {
+		t.Fatalf("replayed integrity sequence error = %v", err)
 	}
 }

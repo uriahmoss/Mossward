@@ -3,6 +3,7 @@ package agentapp
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/ed25519"
 	"crypto/tls"
 	"crypto/x509"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"mossward/internal/agentintegrity"
 	"mossward/internal/agentupdate"
 	"mossward/internal/model"
 	"mossward/internal/networkpolicy"
@@ -41,6 +43,7 @@ type App struct {
 	updateKey         ed25519.PublicKey
 	moduleTrust       map[string]ed25519.PublicKey
 	networkExclusions model.NetworkTelemetryExclusions
+	identityKey       *ecdsa.PrivateKey
 }
 
 func New(config Config) (*App, error) {
@@ -65,6 +68,10 @@ func New(config Config) (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	identityKey, ok := certificate.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("endpoint-agent identity key must be ECDSA")
+	}
 	base := strings.TrimRight(config.EndpointURL, "/")
 	return &App{
 		client:      identityClient(certificate, roots),
@@ -76,6 +83,7 @@ func New(config Config) (*App, error) {
 		updateKeyID: updateKeyID,
 		updateKey:   updateKey,
 		moduleTrust: moduleTrust,
+		identityKey: identityKey,
 	}, nil
 }
 
@@ -136,8 +144,16 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err != nil {
 		slog.Warn("Endpoint-agent integrity fingerprint collection degraded", "error", err)
 	}
+	sequence, err := nextIntegritySequence(a.config.StateDirectory)
+	if err != nil {
+		return fmt.Errorf("advance endpoint integrity sequence: %w", err)
+	}
+	signedIntegrity, err := agentintegrity.Sign(a.identityKey, sequence, *integritySnapshot)
+	if err != nil {
+		return fmt.Errorf("sign endpoint integrity snapshot: %w", err)
+	}
 	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
-		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory, NetworkInventory: networkInventory, IntegritySnapshot: integritySnapshot})
+		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory, NetworkInventory: networkInventory, IntegritySnapshot: &signedIntegrity})
 	if err != nil {
 		return err
 	}
@@ -231,6 +247,11 @@ func (a *App) renew(ctx context.Context) error {
 	previousTransport, _ := a.client.Transport.(*http.Transport)
 	a.client = identityClient(certificate, roots)
 	a.certificate = leaf
+	identityKey, ok := certificate.PrivateKey.(*ecdsa.PrivateKey)
+	if !ok {
+		return errors.New("renewed endpoint-agent identity key must be ECDSA")
+	}
+	a.identityKey = identityKey
 	if previousTransport != nil {
 		previousTransport.CloseIdleConnections()
 	}

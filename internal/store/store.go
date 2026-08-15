@@ -28,6 +28,7 @@ var ErrWorkerJobNotResumable = errors.New("scanner-worker job is not ready for s
 var ErrWorkerJobQuarantined = errors.New("scanner-worker job was quarantined after repeated failures")
 var ErrFindingNotFound = errors.New("finding not found")
 var ErrInvalidFindingWorkflow = errors.New("invalid finding workflow update")
+var ErrEndpointIntegrityReplay = errors.New("endpoint integrity sequence was already used")
 
 type Repository interface {
 	Save(model.Scan) error
@@ -128,7 +129,7 @@ type Repository interface {
 	EndpointCoverageReport(time.Time) (model.EndpointCoverageReport, error)
 	EndpointHeartbeatSettings() (model.EndpointHeartbeatSettings, error)
 	SetEndpointHeartbeatSettings(model.EndpointHeartbeatSettings, model.AuditEvent) error
-	RecordEndpointIntegritySnapshot(string, model.AgentIntegritySnapshot, time.Time) error
+	RecordEndpointIntegritySnapshot(string, model.SignedAgentIntegritySnapshot, time.Time) error
 	EndpointIntegrityEvents(string) ([]model.AgentIntegrityEvent, error)
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)

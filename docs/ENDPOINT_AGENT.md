@@ -294,6 +294,13 @@ a baseline and retains component-specific events when a later fingerprint
 changes. Integrity events are detection evidence and do not trigger automatic
 file or process changes.
 
+Each integrity snapshot is signed with the endpoint's existing ECDSA identity
+key and includes a durable, monotonically increasing sequence number. The server
+verifies the signature against the mutually authenticated client certificate
+and rejects reused or reset sequences. Sequence gaps are allowed so a lost HTTP
+response cannot permanently strand an agent. Stored change events retain their
+source sequence and signature for later verification.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

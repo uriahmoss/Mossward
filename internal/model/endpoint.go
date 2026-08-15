@@ -42,18 +42,18 @@ type Endpoint struct {
 }
 
 type AgentCheckIn struct {
-	SchemaVersion       int                         `json:"schema_version"`
-	SoftwareVersion     string                      `json:"software_version"`
-	OperatingSystem     string                      `json:"operating_system"`
-	Architecture        string                      `json:"architecture"`
-	SupportedCollectors []CollectorID               `json:"supported_collectors"`
-	ModuleHealth        []agentmodule.Health        `json:"module_health,omitempty"`
-	OSInventory         *EndpointOSInventory        `json:"os_inventory,omitempty"`
-	SoftwareInventory   *EndpointSoftwareInventory  `json:"software_inventory,omitempty"`
-	ListeningInventory  *EndpointListeningInventory `json:"listening_inventory,omitempty"`
-	PostureInventory    *EndpointPostureInventory   `json:"posture_inventory,omitempty"`
-	NetworkInventory    *EndpointNetworkInventory   `json:"network_inventory,omitempty"`
-	IntegritySnapshot   *AgentIntegritySnapshot     `json:"integrity_snapshot,omitempty"`
+	SchemaVersion       int                           `json:"schema_version"`
+	SoftwareVersion     string                        `json:"software_version"`
+	OperatingSystem     string                        `json:"operating_system"`
+	Architecture        string                        `json:"architecture"`
+	SupportedCollectors []CollectorID                 `json:"supported_collectors"`
+	ModuleHealth        []agentmodule.Health          `json:"module_health,omitempty"`
+	OSInventory         *EndpointOSInventory          `json:"os_inventory,omitempty"`
+	SoftwareInventory   *EndpointSoftwareInventory    `json:"software_inventory,omitempty"`
+	ListeningInventory  *EndpointListeningInventory   `json:"listening_inventory,omitempty"`
+	PostureInventory    *EndpointPostureInventory     `json:"posture_inventory,omitempty"`
+	NetworkInventory    *EndpointNetworkInventory     `json:"network_inventory,omitempty"`
+	IntegritySnapshot   *SignedAgentIntegritySnapshot `json:"integrity_snapshot,omitempty"`
 }
 
 type AgentIntegritySnapshot struct {
@@ -61,6 +61,12 @@ type AgentIntegritySnapshot struct {
 	ConfigurationSHA256 string    `json:"configuration_sha256"`
 	IdentitySHA256      string    `json:"identity_sha256"`
 	ObservedAt          time.Time `json:"observed_at"`
+}
+
+type SignedAgentIntegritySnapshot struct {
+	Sequence  uint64                 `json:"sequence"`
+	Snapshot  AgentIntegritySnapshot `json:"snapshot"`
+	Signature string                 `json:"signature"`
 }
 
 type AgentIntegrityEvent struct {
@@ -71,6 +77,8 @@ type AgentIntegrityEvent struct {
 	CurrentSHA256  string    `json:"current_sha256"`
 	ObservedAt     time.Time `json:"observed_at"`
 	ReceivedAt     time.Time `json:"received_at"`
+	Sequence       uint64    `json:"sequence"`
+	Signature      string    `json:"signature"`
 }
 
 type EndpointOSInventory struct {
