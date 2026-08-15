@@ -66,3 +66,14 @@ func collectListeningInventory(allowlist []CollectorID, now time.Time) (*model.E
 	}
 	return &model.EndpointListeningInventory{Services: services, CollectedAt: now}, nil
 }
+
+func collectPostureInventory(allowlist []CollectorID, now time.Time) (*model.EndpointPostureInventory, error) {
+	if !slices.Contains(allowlist, CollectorSecurityPosture) {
+		return nil, nil
+	}
+	evidence, err := platformPostureEvidence()
+	if err != nil {
+		return nil, err
+	}
+	return &model.EndpointPostureInventory{Evidence: evidence, CollectedAt: now}, nil
+}

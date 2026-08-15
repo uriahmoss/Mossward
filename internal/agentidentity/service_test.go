@@ -227,6 +227,12 @@ func (s *memoryEndpointStore) RecordEndpointListeningInventory(string, model.End
 func (s *memoryEndpointStore) EndpointListeningInventory(string) (model.EndpointListeningInventory, error) {
 	return model.EndpointListeningInventory{}, store.ErrNotFound
 }
+func (s *memoryEndpointStore) RecordEndpointPostureInventory(string, model.EndpointPostureInventory, time.Time) error {
+	return nil
+}
+func (s *memoryEndpointStore) EndpointPostureInventory(string) (model.EndpointPostureInventory, error) {
+	return model.EndpointPostureInventory{}, store.ErrNotFound
+}
 func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []model.CollectorID, _ model.AuditEvent) error {
 	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
 		return store.ErrNotFound

@@ -18,6 +18,7 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/os-inventory", a.getEndpointOSInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/software-inventory", a.getEndpointSoftwareInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/listening-inventory", a.getEndpointListeningInventory)
+	mux.HandleFunc("GET /api/admin/endpoints/{id}/posture-inventory", a.getEndpointPostureInventory)
 	mux.HandleFunc("GET /api/admin/scanner-workers", a.listScannerWorkers)
 	mux.HandleFunc("GET /api/admin/scanner-worker-dispatch", a.scannerWorkerDispatchSettings)
 	mux.HandleFunc("PUT /api/admin/scanner-worker-dispatch", a.updateScannerWorkerDispatch)
@@ -25,6 +26,22 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) getEndpointPostureInventory(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	inventory, err := a.agentIdentity.PostureInventory(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "endpoint security-posture inventory not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read endpoint security-posture inventory")
+		return
+	}
+	writeJSON(w, http.StatusOK, inventory)
 }
 
 func (a *API) getEndpointListeningInventory(w http.ResponseWriter, r *http.Request) {

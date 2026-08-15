@@ -49,6 +49,7 @@ type AgentCheckIn struct {
 	OSInventory         *EndpointOSInventory        `json:"os_inventory,omitempty"`
 	SoftwareInventory   *EndpointSoftwareInventory  `json:"software_inventory,omitempty"`
 	ListeningInventory  *EndpointListeningInventory `json:"listening_inventory,omitempty"`
+	PostureInventory    *EndpointPostureInventory   `json:"posture_inventory,omitempty"`
 }
 
 type EndpointOSInventory struct {
@@ -99,6 +100,20 @@ type ListeningService struct {
 	ProcessID   int    `json:"process_id,omitempty"`
 	ProcessName string `json:"process_name,omitempty"`
 	Executable  string `json:"executable,omitempty"`
+}
+
+type EndpointPostureInventory struct {
+	EndpointID  string            `json:"endpoint_id,omitempty"`
+	Evidence    []PostureEvidence `json:"evidence"`
+	CollectedAt time.Time         `json:"collected_at"`
+	ReceivedAt  time.Time         `json:"received_at,omitempty"`
+}
+
+type PostureEvidence struct {
+	ID     string `json:"id"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Detail string `json:"detail"`
 }
 
 type AgentCheckInResponse struct {

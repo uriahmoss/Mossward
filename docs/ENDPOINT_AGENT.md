@@ -207,3 +207,11 @@ process IDs and names. The snapshot contains metadata only: it does not capture
 packets, payloads, or established outbound connections. Administrators can read
 the transactionally replaced snapshot from
 `GET /api/admin/endpoints/{id}/listening-inventory`.
+
+When `security_posture` is allowed, Linux agents report Secure Boot visibility,
+root device-mapper encryption evidence, and active nftables configuration.
+Windows agents report Secure Boot, Windows Firewall profile state, and system
+volume BitLocker evidence. Every check uses `pass`, `fail`, or `unknown`;
+unavailable permissions, tools, or platform evidence remain unknown rather than
+being presented as a confirmed failure. The snapshot is available from
+`GET /api/admin/endpoints/{id}/posture-inventory`.

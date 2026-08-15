@@ -47,6 +47,8 @@ type EndpointStore interface {
 	EndpointSoftwareInventory(string) (model.EndpointSoftwareInventory, error)
 	RecordEndpointListeningInventory(string, model.EndpointListeningInventory, time.Time) error
 	EndpointListeningInventory(string) (model.EndpointListeningInventory, error)
+	RecordEndpointPostureInventory(string, model.EndpointPostureInventory, time.Time) error
+	EndpointPostureInventory(string) (model.EndpointPostureInventory, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -284,6 +286,12 @@ func (s *Service) Handler() http.Handler {
 				return
 			}
 		}
+		if heartbeat.PostureInventory != nil && slices.Contains(endpoint.AllowedCollectors, model.CollectorSecurityPosture) {
+			if err := s.store.RecordEndpointPostureInventory(endpoint.ID, *heartbeat.PostureInventory, now); err != nil {
+				http.Error(w, "endpoint security-posture inventory unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		moduleOffers, err := s.store.AgentModuleOffers(endpoint.ID, heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture)
 		if err != nil {
 			http.Error(w, "endpoint module state unavailable", http.StatusServiceUnavailable)
@@ -324,7 +332,28 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	if err := validateListeningInventory(checkIn.ListeningInventory); err != nil {
 		return err
 	}
+	if err := validatePostureInventory(checkIn.PostureInventory); err != nil {
+		return err
+	}
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
+}
+
+func validatePostureInventory(inventory *model.EndpointPostureInventory) error {
+	if inventory == nil {
+		return nil
+	}
+	if inventory.CollectedAt.IsZero() || len(inventory.Evidence) == 0 || len(inventory.Evidence) > 100 {
+		return errors.New("endpoint security-posture inventory is invalid")
+	}
+	seen := map[string]bool{}
+	for _, evidence := range inventory.Evidence {
+		if strings.TrimSpace(evidence.ID) == "" || len(evidence.ID) > 100 || strings.TrimSpace(evidence.Title) == "" || len(evidence.Title) > 200 || len(evidence.Detail) > 1000 ||
+			(evidence.Status != "pass" && evidence.Status != "fail" && evidence.Status != "unknown") || seen[evidence.ID] {
+			return errors.New("endpoint security-posture evidence is invalid")
+		}
+		seen[evidence.ID] = true
+	}
+	return nil
 }
 
 func validateListeningInventory(inventory *model.EndpointListeningInventory) error {
@@ -399,6 +428,10 @@ func (s *Service) SoftwareInventory(endpointID string) (model.EndpointSoftwareIn
 
 func (s *Service) ListeningInventory(endpointID string) (model.EndpointListeningInventory, error) {
 	return s.store.EndpointListeningInventory(endpointID)
+}
+
+func (s *Service) PostureInventory(endpointID string) (model.EndpointPostureInventory, error) {
+	return s.store.EndpointPostureInventory(endpointID)
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {
