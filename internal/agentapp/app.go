@@ -132,8 +132,12 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err != nil {
 		slog.Warn("Endpoint network metadata collection failed", "error", err)
 	}
+	integritySnapshot, err := collectIntegritySnapshot(a.config, now)
+	if err != nil {
+		slog.Warn("Endpoint-agent integrity fingerprint collection degraded", "error", err)
+	}
 	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
-		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory, NetworkInventory: networkInventory})
+		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory, NetworkInventory: networkInventory, IntegritySnapshot: integritySnapshot})
 	if err != nil {
 		return err
 	}

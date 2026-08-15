@@ -53,6 +53,24 @@ type AgentCheckIn struct {
 	ListeningInventory  *EndpointListeningInventory `json:"listening_inventory,omitempty"`
 	PostureInventory    *EndpointPostureInventory   `json:"posture_inventory,omitempty"`
 	NetworkInventory    *EndpointNetworkInventory   `json:"network_inventory,omitempty"`
+	IntegritySnapshot   *AgentIntegritySnapshot     `json:"integrity_snapshot,omitempty"`
+}
+
+type AgentIntegritySnapshot struct {
+	ExecutableSHA256    string    `json:"executable_sha256"`
+	ConfigurationSHA256 string    `json:"configuration_sha256"`
+	IdentitySHA256      string    `json:"identity_sha256"`
+	ObservedAt          time.Time `json:"observed_at"`
+}
+
+type AgentIntegrityEvent struct {
+	ID             int64     `json:"id"`
+	EndpointID     string    `json:"endpoint_id"`
+	Component      string    `json:"component"`
+	PreviousSHA256 string    `json:"previous_sha256"`
+	CurrentSHA256  string    `json:"current_sha256"`
+	ObservedAt     time.Time `json:"observed_at"`
+	ReceivedAt     time.Time `json:"received_at"`
 }
 
 type EndpointOSInventory struct {

@@ -33,6 +33,7 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/cves", a.getEndpointCVEMatches)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/network-inventory", a.getEndpointNetworkInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/indicator-matches", a.getEndpointIndicatorMatches)
+	mux.HandleFunc("GET /api/admin/endpoints/{id}/integrity-events", a.getEndpointIntegrityEvents)
 	mux.HandleFunc("GET /api/admin/threat-indicators", a.listThreatIndicators)
 	mux.HandleFunc("POST /api/admin/threat-indicators", a.createThreatIndicator)
 	mux.HandleFunc("PUT /api/admin/threat-indicators/{id}", a.updateThreatIndicator)
@@ -43,6 +44,18 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) getEndpointIntegrityEvents(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	events, err := a.agentIdentity.IntegrityEvents(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read endpoint integrity events")
+		return
+	}
+	writeJSON(w, http.StatusOK, events)
 }
 
 func (a *API) getEndpointHeartbeatSettings(w http.ResponseWriter, r *http.Request) {

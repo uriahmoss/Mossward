@@ -32,6 +32,7 @@ type Config struct {
 	UpdateSigningPublicKey string                           `json:"update_signing_public_key,omitempty"`
 	ModulesEnabled         bool                             `json:"modules_enabled,omitempty"`
 	ModulePublishers       []ModulePublisherTrust           `json:"module_publishers,omitempty"`
+	sourcePath             string
 }
 
 type ModulePublisherTrust struct {
@@ -54,6 +55,7 @@ func LoadConfig(path string) (Config, error) {
 	if decoder.Decode(&struct{}{}) != io.EOF {
 		return config, errors.New("endpoint-agent configuration contains trailing data")
 	}
+	config.sourcePath = strings.TrimSpace(path)
 	if config.CheckInIntervalSeconds == 0 {
 		config.CheckInIntervalSeconds = 60
 	}

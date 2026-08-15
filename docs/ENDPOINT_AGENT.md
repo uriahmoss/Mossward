@@ -287,6 +287,13 @@ shown separately for review, and ineligible assets require an administrator
 reason and are excluded from gap counts. Changes require recent MFA and are
 audited.
 
+The agent fingerprints its executable, loaded configuration file, and local
+identity bundle with SHA-256. Only fingerprints are uploaded; file contents and
+private keys are never transmitted. The server records the first observation as
+a baseline and retains component-specific events when a later fingerprint
+changes. Integrity events are detection evidence and do not trigger automatic
+file or process changes.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

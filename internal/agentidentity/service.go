@@ -42,6 +42,11 @@ type EndpointHeartbeatSettingsStore interface {
 	EndpointHeartbeatSettings() (model.EndpointHeartbeatSettings, error)
 }
 
+type EndpointIntegrityStore interface {
+	RecordEndpointIntegritySnapshot(string, model.AgentIntegritySnapshot, time.Time) error
+	EndpointIntegrityEvents(string) ([]model.AgentIntegrityEvent, error)
+}
+
 type EndpointStore interface {
 	CreateAgentEnrollmentToken(model.AgentEnrollmentToken, model.AuditEvent) error
 	ListAgentEnrollmentTokens(time.Time) ([]model.AgentEnrollmentToken, error)
@@ -301,6 +306,13 @@ func (s *Service) Handler() http.Handler {
 			http.Error(w, "endpoint state unavailable", http.StatusServiceUnavailable)
 			return
 		}
+		if heartbeat.IntegritySnapshot != nil {
+			repository, ok := s.store.(EndpointIntegrityStore)
+			if !ok || repository.RecordEndpointIntegritySnapshot(endpoint.ID, *heartbeat.IntegritySnapshot, now) != nil {
+				http.Error(w, "endpoint integrity state unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		updateEnvelope, err := s.store.AgentUpdateOffer(endpoint.ID, now)
 		if err != nil {
 			http.Error(w, "endpoint update state unavailable", http.StatusServiceUnavailable)
@@ -362,6 +374,9 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	if checkIn.Architecture != "amd64" && checkIn.Architecture != "arm64" {
 		return errors.New("endpoint architecture is unsupported")
 	}
+	if err := validateIntegritySnapshot(checkIn.IntegritySnapshot); err != nil {
+		return err
+	}
 	if len(checkIn.ModuleHealth) > 256 {
 		return errors.New("endpoint module health report is too large")
 	}
@@ -388,6 +403,22 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 		return err
 	}
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
+}
+
+func validateIntegritySnapshot(snapshot *model.AgentIntegritySnapshot) error {
+	if snapshot == nil {
+		return nil
+	}
+	for _, value := range []string{snapshot.ExecutableSHA256, snapshot.ConfigurationSHA256, snapshot.IdentitySHA256} {
+		decoded, err := hex.DecodeString(value)
+		if err != nil || len(decoded) != sha256.Size || value != strings.ToLower(value) {
+			return errors.New("endpoint integrity fingerprint is invalid")
+		}
+	}
+	if snapshot.ObservedAt.IsZero() {
+		return errors.New("endpoint integrity observation time is required")
+	}
+	return nil
 }
 
 func validateNetworkInventory(inventory *model.EndpointNetworkInventory) error {
@@ -560,6 +591,14 @@ func (s *Service) IndicatorMatches(endpointID string) ([]model.EndpointIndicator
 		return nil, errors.New("threat indicator storage is unavailable")
 	}
 	return repository.EndpointIndicatorMatches(endpointID, s.now())
+}
+
+func (s *Service) IntegrityEvents(endpointID string) ([]model.AgentIntegrityEvent, error) {
+	repository, ok := s.store.(EndpointIntegrityStore)
+	if !ok {
+		return nil, errors.New("endpoint integrity storage is unavailable")
+	}
+	return repository.EndpointIntegrityEvents(endpointID)
 }
 
 func normalizeThreatIndicator(indicator *model.ThreatIndicator, now time.Time) error {
