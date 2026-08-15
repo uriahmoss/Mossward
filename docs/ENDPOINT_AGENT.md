@@ -301,6 +301,14 @@ and rejects reused or reset sequences. Sequence gaps are allowed so a lost HTTP
 response cannot permanently strand an agent. Stored change events retain their
 source sequence and signature for later verification.
 
+Administrators can create time-bounded maintenance windows for an endpoint or
+asset group. Windows require recent MFA, a reason, an existing target, and a
+maximum duration of 30 days. Active windows suppress only missed/stale heartbeat
+notifications and replace them with a visible informational status. Certificate
+and integrity signals are never suppressed. Creation and cancellation remain in
+the audit log, and the underlying heartbeat timestamps and integrity evidence
+are retained.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"mossward/internal/coveragepolicy"
@@ -23,6 +24,9 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/settings", a.updateEndpointCoverageSettings)
 	mux.HandleFunc("GET /api/admin/endpoints/heartbeat-settings", a.getEndpointHeartbeatSettings)
 	mux.HandleFunc("PUT /api/admin/endpoints/heartbeat-settings", a.updateEndpointHeartbeatSettings)
+	mux.HandleFunc("GET /api/admin/endpoint-maintenance", a.listEndpointMaintenanceWindows)
+	mux.HandleFunc("POST /api/admin/endpoint-maintenance", a.createEndpointMaintenanceWindow)
+	mux.HandleFunc("POST /api/admin/endpoint-maintenance/{id}/cancel", a.cancelEndpointMaintenanceWindow)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -44,6 +48,89 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listEndpointMaintenanceWindows(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	windows, err := a.store.ListEndpointMaintenanceWindows()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list endpoint maintenance windows")
+		return
+	}
+	writeJSON(w, http.StatusOK, windows)
+}
+
+func (a *API) createEndpointMaintenanceWindow(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	var window model.EndpointMaintenanceWindow
+	if !decodeJSON(w, r, &window) {
+		return
+	}
+	window.Name = strings.TrimSpace(window.Name)
+	window.TargetID = strings.TrimSpace(window.TargetID)
+	window.Reason = strings.TrimSpace(window.Reason)
+	now := time.Now().UTC()
+	if err := validateEndpointMaintenanceWindow(window, now); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id, err := randomID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create endpoint maintenance window")
+		return
+	}
+	window.ID, window.CreatedBy, window.CreatedAt = id, actor.ID, now
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.maintenance.created", Severity: model.AuditWarning,
+		TargetType: "endpoint_maintenance", TargetID: window.ID, SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.CreateEndpointMaintenanceWindow(window, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "maintenance target not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not create endpoint maintenance window")
+		return
+	}
+	writeJSON(w, http.StatusCreated, window)
+}
+
+func (a *API) cancelEndpointMaintenanceWindow(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.maintenance.cancelled", Severity: model.AuditWarning,
+		TargetType: "endpoint_maintenance", TargetID: r.PathValue("id"), SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.CancelEndpointMaintenanceWindow(r.PathValue("id"), actor.ID, now, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "active maintenance window not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not cancel endpoint maintenance window")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func validateEndpointMaintenanceWindow(window model.EndpointMaintenanceWindow, now time.Time) error {
+	if window.Name == "" || len(window.Name) > 100 || window.Reason == "" || len(window.Reason) > 500 {
+		return errors.New("maintenance name and reason are required and must remain within their limits")
+	}
+	if window.TargetID == "" || (window.TargetType != model.MaintenanceTargetEndpoint && window.TargetType != model.MaintenanceTargetGroup) {
+		return errors.New("maintenance target must be an endpoint or group")
+	}
+	if window.StartsAt.Before(now.Add(-5*time.Minute)) || !window.EndsAt.After(window.StartsAt) || !window.EndsAt.After(now) {
+		return errors.New("maintenance window must start now or later and end in the future")
+	}
+	if window.EndsAt.Sub(window.StartsAt) > 30*24*time.Hour {
+		return errors.New("maintenance window cannot exceed 30 days")
+	}
+	return nil
 }
 
 func (a *API) getEndpointIntegrityEvents(w http.ResponseWriter, r *http.Request) {

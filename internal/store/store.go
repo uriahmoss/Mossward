@@ -131,6 +131,10 @@ type Repository interface {
 	SetEndpointHeartbeatSettings(model.EndpointHeartbeatSettings, model.AuditEvent) error
 	RecordEndpointIntegritySnapshot(string, model.SignedAgentIntegritySnapshot, time.Time) error
 	EndpointIntegrityEvents(string) ([]model.AgentIntegrityEvent, error)
+	CreateEndpointMaintenanceWindow(model.EndpointMaintenanceWindow, model.AuditEvent) error
+	CancelEndpointMaintenanceWindow(string, string, time.Time, model.AuditEvent) error
+	ListEndpointMaintenanceWindows() ([]model.EndpointMaintenanceWindow, error)
+	EndpointInMaintenance(string, time.Time) (bool, error)
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error

@@ -374,7 +374,7 @@ failure and health states.
 - [x] Stale-agent and missed-heartbeat alerts
 - [x] Agent executable, configuration, and identity integrity events
 - [x] Signed and sequence-numbered tamper events
-- [ ] Maintenance-window suppression with retained audit history
+- [x] Maintenance-window suppression with retained audit history
 
 ### 10. Optional endpoint relay
 

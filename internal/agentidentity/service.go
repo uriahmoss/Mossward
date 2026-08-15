@@ -49,6 +49,10 @@ type EndpointIntegrityStore interface {
 	EndpointIntegrityEvents(string) ([]model.AgentIntegrityEvent, error)
 }
 
+type EndpointMaintenanceStore interface {
+	EndpointInMaintenance(string, time.Time) (bool, error)
+}
+
 type EndpointStore interface {
 	CreateAgentEnrollmentToken(model.AgentEnrollmentToken, model.AuditEvent) error
 	ListAgentEnrollmentTokens(time.Time) ([]model.AgentEnrollmentToken, error)
@@ -138,12 +142,20 @@ func (s *Service) Endpoints() ([]model.Endpoint, error) {
 		settings = loaded
 	}
 	for index := range items {
-		items[index].Alerts = endpointAlerts(items[index], settings, s.now())
+		now := s.now()
+		inMaintenance := false
+		if repository, ok := s.store.(EndpointMaintenanceStore); ok {
+			inMaintenance, err = repository.EndpointInMaintenance(items[index].ID, now)
+			if err != nil {
+				return nil, err
+			}
+		}
+		items[index].Alerts = endpointAlerts(items[index], settings, inMaintenance, now)
 	}
 	return items, nil
 }
 
-func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSettings, now time.Time) []model.EndpointAlert {
+func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSettings, inMaintenance bool, now time.Time) []model.EndpointAlert {
 	alerts := []model.EndpointAlert{}
 	if endpoint.Status == model.EndpointRevoked {
 		return append(alerts, model.EndpointAlert{Code: "certificate_revoked", Severity: "error", Message: "Endpoint certificate is revoked"})
@@ -162,6 +174,9 @@ func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSe
 		lastHeartbeat = *endpoint.LastSeenAt
 	}
 	age := now.Sub(lastHeartbeat)
+	if inMaintenance && age >= time.Duration(heartbeat.MissedAfterMinutes)*time.Minute {
+		return append(alerts, model.EndpointAlert{Code: "heartbeat_suppressed_maintenance", Severity: "info", Message: "Heartbeat alert is suppressed by an active maintenance window"})
+	}
 	if age >= time.Duration(heartbeat.StaleAfterMinutes)*time.Minute {
 		return append(alerts, model.EndpointAlert{Code: "agent_stale", Severity: "error", Message: "Endpoint agent has exceeded the stale-heartbeat threshold"})
 	}
