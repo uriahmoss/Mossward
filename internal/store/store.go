@@ -144,6 +144,8 @@ type Repository interface {
 	EndpointOSInventory(string) (model.EndpointOSInventory, error)
 	RecordEndpointSoftwareInventory(string, model.EndpointSoftwareInventory, time.Time) error
 	EndpointSoftwareInventory(string) (model.EndpointSoftwareInventory, error)
+	RecordEndpointListeningInventory(string, model.EndpointListeningInventory, time.Time) error
+	EndpointListeningInventory(string) (model.EndpointListeningInventory, error)
 	SetAgentModulesEnabled(bool, model.AuditEvent) error
 	LinkEndpointAsset(string, string, model.AuditEvent) error
 	CreateWorkerEnrollmentToken(model.WorkerEnrollmentToken, model.AuditEvent) error

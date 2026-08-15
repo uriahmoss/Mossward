@@ -40,14 +40,15 @@ type Endpoint struct {
 }
 
 type AgentCheckIn struct {
-	SchemaVersion       int                        `json:"schema_version"`
-	SoftwareVersion     string                     `json:"software_version"`
-	OperatingSystem     string                     `json:"operating_system"`
-	Architecture        string                     `json:"architecture"`
-	SupportedCollectors []CollectorID              `json:"supported_collectors"`
-	ModuleHealth        []agentmodule.Health       `json:"module_health,omitempty"`
-	OSInventory         *EndpointOSInventory       `json:"os_inventory,omitempty"`
-	SoftwareInventory   *EndpointSoftwareInventory `json:"software_inventory,omitempty"`
+	SchemaVersion       int                         `json:"schema_version"`
+	SoftwareVersion     string                      `json:"software_version"`
+	OperatingSystem     string                      `json:"operating_system"`
+	Architecture        string                      `json:"architecture"`
+	SupportedCollectors []CollectorID               `json:"supported_collectors"`
+	ModuleHealth        []agentmodule.Health        `json:"module_health,omitempty"`
+	OSInventory         *EndpointOSInventory        `json:"os_inventory,omitempty"`
+	SoftwareInventory   *EndpointSoftwareInventory  `json:"software_inventory,omitempty"`
+	ListeningInventory  *EndpointListeningInventory `json:"listening_inventory,omitempty"`
 }
 
 type EndpointOSInventory struct {
@@ -82,6 +83,22 @@ type InstalledSoftware struct {
 	Publisher    string `json:"publisher,omitempty"`
 	Architecture string `json:"architecture,omitempty"`
 	Source       string `json:"source"`
+}
+
+type EndpointListeningInventory struct {
+	EndpointID  string             `json:"endpoint_id,omitempty"`
+	Services    []ListeningService `json:"services"`
+	CollectedAt time.Time          `json:"collected_at"`
+	ReceivedAt  time.Time          `json:"received_at,omitempty"`
+}
+
+type ListeningService struct {
+	Protocol    string `json:"protocol"`
+	Address     string `json:"address"`
+	Port        int    `json:"port"`
+	ProcessID   int    `json:"process_id,omitempty"`
+	ProcessName string `json:"process_name,omitempty"`
+	Executable  string `json:"executable,omitempty"`
 }
 
 type AgentCheckInResponse struct {

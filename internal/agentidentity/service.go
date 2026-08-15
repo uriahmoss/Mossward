@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -44,6 +45,8 @@ type EndpointStore interface {
 	EndpointOSInventory(string) (model.EndpointOSInventory, error)
 	RecordEndpointSoftwareInventory(string, model.EndpointSoftwareInventory, time.Time) error
 	EndpointSoftwareInventory(string) (model.EndpointSoftwareInventory, error)
+	RecordEndpointListeningInventory(string, model.EndpointListeningInventory, time.Time) error
+	EndpointListeningInventory(string) (model.EndpointListeningInventory, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -275,6 +278,12 @@ func (s *Service) Handler() http.Handler {
 				return
 			}
 		}
+		if heartbeat.ListeningInventory != nil && slices.Contains(endpoint.AllowedCollectors, model.CollectorListeningServices) {
+			if err := s.store.RecordEndpointListeningInventory(endpoint.ID, *heartbeat.ListeningInventory, now); err != nil {
+				http.Error(w, "endpoint listening-service inventory unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		moduleOffers, err := s.store.AgentModuleOffers(endpoint.ID, heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture)
 		if err != nil {
 			http.Error(w, "endpoint module state unavailable", http.StatusServiceUnavailable)
@@ -312,7 +321,32 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	if err := validateSoftwareInventory(checkIn.SoftwareInventory); err != nil {
 		return err
 	}
+	if err := validateListeningInventory(checkIn.ListeningInventory); err != nil {
+		return err
+	}
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
+}
+
+func validateListeningInventory(inventory *model.EndpointListeningInventory) error {
+	if inventory == nil {
+		return nil
+	}
+	if inventory.CollectedAt.IsZero() || len(inventory.Services) > 20000 {
+		return errors.New("endpoint listening-service inventory is invalid")
+	}
+	seen := map[string]bool{}
+	for _, service := range inventory.Services {
+		identity := fmt.Sprintf("%s\x00%s\x00%d\x00%d", service.Protocol, service.Address, service.Port, service.ProcessID)
+		if (service.Protocol != "tcp" && service.Protocol != "udp") || service.Port < 1 || service.Port > 65535 || service.ProcessID < 0 ||
+			len(service.ProcessName) > 500 || len(service.Executable) > 2000 || seen[identity] {
+			return errors.New("endpoint listening-service record is invalid")
+		}
+		if _, err := netip.ParseAddr(service.Address); err != nil {
+			return errors.New("endpoint listening-service address is invalid")
+		}
+		seen[identity] = true
+	}
+	return nil
 }
 
 func validateSoftwareInventory(inventory *model.EndpointSoftwareInventory) error {
@@ -361,6 +395,10 @@ func (s *Service) OSInventory(endpointID string) (model.EndpointOSInventory, err
 
 func (s *Service) SoftwareInventory(endpointID string) (model.EndpointSoftwareInventory, error) {
 	return s.store.EndpointSoftwareInventory(endpointID)
+}
+
+func (s *Service) ListeningInventory(endpointID string) (model.EndpointListeningInventory, error) {
+	return s.store.EndpointListeningInventory(endpointID)
 }
 
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {

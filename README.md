@@ -257,6 +257,7 @@ so machine-specific policy does not enter source control.
 - `PUT /api/admin/endpoints/{id}/asset`
 - `GET /api/admin/endpoints/{id}/os-inventory`
 - `GET /api/admin/endpoints/{id}/software-inventory`
+- `GET /api/admin/endpoints/{id}/listening-inventory`
 - `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`

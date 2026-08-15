@@ -55,3 +55,14 @@ func collectSoftwareInventory(allowlist []CollectorID, now time.Time) (*model.En
 	}
 	return &model.EndpointSoftwareInventory{Items: items, CollectedAt: now}, nil
 }
+
+func collectListeningInventory(allowlist []CollectorID, now time.Time) (*model.EndpointListeningInventory, error) {
+	if !slices.Contains(allowlist, CollectorListeningServices) {
+		return nil, nil
+	}
+	services, err := platformListeningInventory()
+	if err != nil {
+		return nil, err
+	}
+	return &model.EndpointListeningInventory{Services: services, CollectedAt: now}, nil
+}

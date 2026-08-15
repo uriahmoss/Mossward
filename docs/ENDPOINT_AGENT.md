@@ -198,3 +198,12 @@ registry views. Names, versions, publishers when available, architectures, and
 collection sources are normalized into a bounded snapshot. The server replaces
 the prior snapshot transactionally and exposes it at
 `GET /api/admin/endpoints/{id}/software-inventory`.
+
+When `listening_services` is allowed, Linux agents correlate listening TCP and
+bound UDP sockets from `/proc` with owning process IDs, names, and executable
+paths available to the agent service identity. Windows agents use fixed
+read-only `netstat.exe` and `tasklist.exe` queries to correlate listeners with
+process IDs and names. The snapshot contains metadata only: it does not capture
+packets, payloads, or established outbound connections. Administrators can read
+the transactionally replaced snapshot from
+`GET /api/admin/endpoints/{id}/listening-inventory`.
