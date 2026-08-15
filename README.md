@@ -260,6 +260,7 @@ so machine-specific policy does not enter source control.
 - `GET /api/admin/endpoints/{id}/listening-inventory`
 - `GET /api/admin/endpoints/{id}/posture-inventory`
 - `GET /api/admin/endpoints/{id}/cves`
+- `GET /api/admin/endpoints/{id}/network-inventory`
 - `POST /api/agent/enroll`
 - `GET /api/config`
 - `GET /api/scans`

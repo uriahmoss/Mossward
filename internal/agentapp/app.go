@@ -121,8 +121,12 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err != nil {
 		slog.Warn("Endpoint security-posture collection failed", "error", err)
 	}
+	networkInventory, err := collectNetworkInventory(a.config.CollectorAllowlist, now)
+	if err != nil {
+		slog.Warn("Endpoint network metadata collection failed", "error", err)
+	}
 	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
-		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory})
+		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory, NetworkInventory: networkInventory})
 	if err != nil {
 		return err
 	}

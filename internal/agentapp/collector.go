@@ -17,6 +17,7 @@ const (
 	CollectorInstalledSoftware = model.CollectorInstalledSoftware
 	CollectorListeningServices = model.CollectorListeningServices
 	CollectorSecurityPosture   = model.CollectorSecurityPosture
+	CollectorNetworkTelemetry  = model.CollectorNetworkTelemetry
 )
 
 var supportedCollectors = map[CollectorID]struct{}{
@@ -24,6 +25,7 @@ var supportedCollectors = map[CollectorID]struct{}{
 	CollectorInstalledSoftware: {},
 	CollectorListeningServices: {},
 	CollectorSecurityPosture:   {},
+	CollectorNetworkTelemetry:  {},
 }
 
 func effectiveCollectors(local, server []CollectorID) []CollectorID {

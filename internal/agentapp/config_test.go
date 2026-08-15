@@ -70,6 +70,7 @@ func TestSupportedCollectorIDsAreStable(t *testing.T) {
 	want := []CollectorID{
 		CollectorInstalledSoftware,
 		CollectorListeningServices,
+		CollectorNetworkTelemetry,
 		CollectorOperatingSystem,
 		CollectorSecurityPosture,
 	}

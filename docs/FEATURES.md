@@ -358,7 +358,7 @@ failure and health states.
 
 ### 8. Endpoint network telemetry
 
-- [ ] Optional privacy-bounded outbound connection metadata
+- [x] Optional privacy-bounded outbound connection metadata
 - [ ] Process-to-destination correlation
 - [ ] DNS and available TLS server-name context
 - [ ] Threat-intelligence indicator correlation

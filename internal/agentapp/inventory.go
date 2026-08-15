@@ -77,3 +77,14 @@ func collectPostureInventory(allowlist []CollectorID, now time.Time) (*model.End
 	}
 	return &model.EndpointPostureInventory{Evidence: evidence, CollectedAt: now}, nil
 }
+
+func collectNetworkInventory(allowlist []CollectorID, now time.Time) (*model.EndpointNetworkInventory, error) {
+	if !slices.Contains(allowlist, CollectorNetworkTelemetry) {
+		return nil, nil
+	}
+	connections, err := platformNetworkInventory()
+	if err != nil {
+		return nil, err
+	}
+	return &model.EndpointNetworkInventory{Connections: connections, CollectedAt: now}, nil
+}

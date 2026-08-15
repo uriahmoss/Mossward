@@ -225,3 +225,12 @@ evidence, CVSS, Known Exploited status, and the NVD source URL. Refreshing eithe
 the software snapshot or CVE feed removes stale matches. Results are available
 from `GET /api/admin/endpoints/{id}/cves` and environment matches also influence
 the critical-CVE homepage feed.
+
+The optional `network_telemetry` collector records a bounded point-in-time
+snapshot of TCP and supported connected UDP metadata. It excludes sockets whose
+local ports are listening and labels the remaining direction as
+`outbound_candidate` rather than claiming certainty. Records contain local and
+remote addresses and ports plus owning process metadata when available. No
+payload, packet contents, DNS traffic, TLS contents, or browsing history are
+captured. Administrators can read the snapshot from
+`GET /api/admin/endpoints/{id}/network-inventory`.

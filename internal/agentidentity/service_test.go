@@ -236,6 +236,12 @@ func (s *memoryEndpointStore) EndpointPostureInventory(string) (model.EndpointPo
 func (s *memoryEndpointStore) EndpointCVEMatches(string) ([]model.EndpointCVEMatch, error) {
 	return nil, nil
 }
+func (s *memoryEndpointStore) RecordEndpointNetworkInventory(string, model.EndpointNetworkInventory, time.Time) error {
+	return nil
+}
+func (s *memoryEndpointStore) EndpointNetworkInventory(string) (model.EndpointNetworkInventory, error) {
+	return model.EndpointNetworkInventory{}, store.ErrNotFound
+}
 func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []model.CollectorID, _ model.AuditEvent) error {
 	if id != s.endpoint.ID || s.endpoint.Status != model.EndpointActive {
 		return store.ErrNotFound

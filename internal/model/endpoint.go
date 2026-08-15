@@ -18,6 +18,7 @@ const (
 	CollectorInstalledSoftware CollectorID = "installed_software"
 	CollectorListeningServices CollectorID = "listening_services"
 	CollectorSecurityPosture   CollectorID = "security_posture"
+	CollectorNetworkTelemetry  CollectorID = "network_telemetry"
 )
 
 type Endpoint struct {
@@ -50,6 +51,7 @@ type AgentCheckIn struct {
 	SoftwareInventory   *EndpointSoftwareInventory  `json:"software_inventory,omitempty"`
 	ListeningInventory  *EndpointListeningInventory `json:"listening_inventory,omitempty"`
 	PostureInventory    *EndpointPostureInventory   `json:"posture_inventory,omitempty"`
+	NetworkInventory    *EndpointNetworkInventory   `json:"network_inventory,omitempty"`
 }
 
 type EndpointOSInventory struct {
@@ -130,6 +132,24 @@ type EndpointCVEMatch struct {
 	KnownExploited bool      `json:"known_exploited"`
 	SourceURL      string    `json:"source_url"`
 	MatchedAt      time.Time `json:"matched_at"`
+}
+
+type EndpointNetworkInventory struct {
+	EndpointID  string              `json:"endpoint_id,omitempty"`
+	Connections []NetworkConnection `json:"connections"`
+	CollectedAt time.Time           `json:"collected_at"`
+	ReceivedAt  time.Time           `json:"received_at,omitempty"`
+}
+
+type NetworkConnection struct {
+	Protocol      string `json:"protocol"`
+	LocalAddress  string `json:"local_address"`
+	LocalPort     int    `json:"local_port"`
+	RemoteAddress string `json:"remote_address"`
+	RemotePort    int    `json:"remote_port"`
+	ProcessID     int    `json:"process_id,omitempty"`
+	ProcessName   string `json:"process_name,omitempty"`
+	Direction     string `json:"direction"`
 }
 
 type AgentCheckInResponse struct {

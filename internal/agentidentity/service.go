@@ -50,6 +50,8 @@ type EndpointStore interface {
 	RecordEndpointPostureInventory(string, model.EndpointPostureInventory, time.Time) error
 	EndpointPostureInventory(string) (model.EndpointPostureInventory, error)
 	EndpointCVEMatches(string) ([]model.EndpointCVEMatch, error)
+	RecordEndpointNetworkInventory(string, model.EndpointNetworkInventory, time.Time) error
+	EndpointNetworkInventory(string) (model.EndpointNetworkInventory, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
@@ -293,6 +295,12 @@ func (s *Service) Handler() http.Handler {
 				return
 			}
 		}
+		if heartbeat.NetworkInventory != nil && slices.Contains(endpoint.AllowedCollectors, model.CollectorNetworkTelemetry) {
+			if err := s.store.RecordEndpointNetworkInventory(endpoint.ID, *heartbeat.NetworkInventory, now); err != nil {
+				http.Error(w, "endpoint network metadata unavailable", http.StatusServiceUnavailable)
+				return
+			}
+		}
 		moduleOffers, err := s.store.AgentModuleOffers(endpoint.ID, heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture)
 		if err != nil {
 			http.Error(w, "endpoint module state unavailable", http.StatusServiceUnavailable)
@@ -336,7 +344,32 @@ func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
 	if err := validatePostureInventory(checkIn.PostureInventory); err != nil {
 		return err
 	}
+	if err := validateNetworkInventory(checkIn.NetworkInventory); err != nil {
+		return err
+	}
 	return validateEndpointCollectors(checkIn.SupportedCollectors)
+}
+
+func validateNetworkInventory(inventory *model.EndpointNetworkInventory) error {
+	if inventory == nil {
+		return nil
+	}
+	if inventory.CollectedAt.IsZero() || len(inventory.Connections) > 10000 {
+		return errors.New("endpoint network metadata is invalid")
+	}
+	seen := map[string]bool{}
+	for _, connection := range inventory.Connections {
+		local, localErr := netip.ParseAddr(connection.LocalAddress)
+		remote, remoteErr := netip.ParseAddr(connection.RemoteAddress)
+		identity := fmt.Sprintf("%s\x00%s\x00%d\x00%s\x00%d\x00%d", connection.Protocol, local, connection.LocalPort, remote, connection.RemotePort, connection.ProcessID)
+		if (connection.Protocol != "tcp" && connection.Protocol != "udp") || localErr != nil || remoteErr != nil || remote.IsUnspecified() ||
+			connection.LocalPort < 1 || connection.LocalPort > 65535 || connection.RemotePort < 1 || connection.RemotePort > 65535 || connection.ProcessID < 0 ||
+			len(connection.ProcessName) > 500 || connection.Direction != "outbound_candidate" || seen[identity] {
+			return errors.New("endpoint network connection metadata is invalid")
+		}
+		seen[identity] = true
+	}
+	return nil
 }
 
 func validatePostureInventory(inventory *model.EndpointPostureInventory) error {
@@ -439,6 +472,10 @@ func (s *Service) CVEMatches(endpointID string) ([]model.EndpointCVEMatch, error
 	return s.store.EndpointCVEMatches(endpointID)
 }
 
+func (s *Service) NetworkInventory(endpointID string) (model.EndpointNetworkInventory, error) {
+	return s.store.EndpointNetworkInventory(endpointID)
+}
+
 func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorID, actorID, sourceIP string) error {
 	if err := validateEndpointCollectors(collectors); err != nil {
 		return err
@@ -452,6 +489,7 @@ func validateEndpointCollectors(collectors []model.CollectorID) error {
 	allowed := map[model.CollectorID]bool{
 		model.CollectorOperatingSystem: true, model.CollectorInstalledSoftware: true,
 		model.CollectorListeningServices: true, model.CollectorSecurityPosture: true,
+		model.CollectorNetworkTelemetry: true,
 	}
 	seen := map[model.CollectorID]bool{}
 	for _, collector := range collectors {
