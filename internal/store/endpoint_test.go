@@ -95,3 +95,29 @@ func TestEndpointCollectorPolicyDefaultsDenyAndIsAudited(t *testing.T) {
 		t.Fatalf("audit event count = %d, error = %v", count, err)
 	}
 }
+
+func TestEndpointNetworkExclusionsPersistAndAreAudited(t *testing.T) {
+	repository := openTestStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	_, err := repository.db.Exec(`INSERT INTO endpoints(id,name,status,certificate_serial,certificate_pem,enrolled_at,expires_at)
+		VALUES('endpoint','Endpoint','active','serial','certificate',?,?)`, formatTime(now), formatTime(now.Add(time.Hour)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy := model.NetworkTelemetryExclusions{
+		Applications: []model.NetworkTelemetryExclusion{{Kind: model.NetworkExcludeExecutable, Value: "/opt/private-client"}},
+		Destinations: []model.NetworkTelemetryExclusion{{Kind: model.NetworkExcludeCIDR, Value: "192.0.2.0/24"}},
+	}
+	event := model.AuditEvent{OccurredAt: now, Action: "endpoint.network_exclusions.updated", Severity: model.AuditInfo}
+	if err := repository.SetEndpointNetworkExclusions("endpoint", policy, event); err != nil {
+		t.Fatal(err)
+	}
+	endpoint, err := repository.EndpointBySerial("serial")
+	if err != nil || len(endpoint.NetworkExclusions.Applications) != 1 || len(endpoint.NetworkExclusions.Destinations) != 1 {
+		t.Fatalf("network exclusions = %#v, error = %v", endpoint.NetworkExclusions, err)
+	}
+	var count int
+	if err := repository.db.QueryRow(`SELECT COUNT(*) FROM audit_events WHERE action='endpoint.network_exclusions.updated'`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("audit event count = %d, error = %v", count, err)
+	}
+}

@@ -12,22 +12,26 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"mossward/internal/model"
+	"mossward/internal/networkpolicy"
 )
 
 const maximumConfigBytes = 1 << 20
 
 type Config struct {
-	ServerURL              string                 `json:"server_url"`
-	EndpointURL            string                 `json:"endpoint_url"`
-	EnrollmentCAFile       string                 `json:"enrollment_ca_file,omitempty"`
-	StateDirectory         string                 `json:"state_directory"`
-	CheckInIntervalSeconds int                    `json:"check_in_interval_seconds"`
-	CollectorAllowlist     []CollectorID          `json:"collector_allowlist,omitempty"`
-	UpdateEnabled          bool                   `json:"update_enabled,omitempty"`
-	UpdateSigningKeyID     string                 `json:"update_signing_key_id,omitempty"`
-	UpdateSigningPublicKey string                 `json:"update_signing_public_key,omitempty"`
-	ModulesEnabled         bool                   `json:"modules_enabled,omitempty"`
-	ModulePublishers       []ModulePublisherTrust `json:"module_publishers,omitempty"`
+	ServerURL              string                           `json:"server_url"`
+	EndpointURL            string                           `json:"endpoint_url"`
+	EnrollmentCAFile       string                           `json:"enrollment_ca_file,omitempty"`
+	StateDirectory         string                           `json:"state_directory"`
+	CheckInIntervalSeconds int                              `json:"check_in_interval_seconds"`
+	CollectorAllowlist     []CollectorID                    `json:"collector_allowlist,omitempty"`
+	NetworkExclusions      model.NetworkTelemetryExclusions `json:"network_telemetry_exclusions,omitempty"`
+	UpdateEnabled          bool                             `json:"update_enabled,omitempty"`
+	UpdateSigningKeyID     string                           `json:"update_signing_key_id,omitempty"`
+	UpdateSigningPublicKey string                           `json:"update_signing_public_key,omitempty"`
+	ModulesEnabled         bool                             `json:"modules_enabled,omitempty"`
+	ModulePublishers       []ModulePublisherTrust           `json:"module_publishers,omitempty"`
 }
 
 type ModulePublisherTrust struct {
@@ -73,6 +77,9 @@ func (c Config) Validate() error {
 		return errors.New("endpoint-agent check-in interval must be between 15 and 86400 seconds")
 	}
 	if err := validateCollectorAllowlist(c.CollectorAllowlist); err != nil {
+		return err
+	}
+	if _, err := networkpolicy.Normalize(c.NetworkExclusions); err != nil {
 		return err
 	}
 	if _, _, err := c.UpdateTrust(); err != nil {

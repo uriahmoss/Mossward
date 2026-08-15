@@ -87,7 +87,7 @@ func (s *SQLiteStore) ConsumeAgentEnrollmentToken(hash []byte, endpoint model.En
 }
 
 func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, software_version, operating_system, architecture
+	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, network_telemetry_exclusions, software_version, operating_system, architecture
 		FROM endpoints ORDER BY name, enrolled_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
@@ -105,7 +105,7 @@ func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
 }
 
 func (s *SQLiteStore) EndpointBySerial(serial string) (model.Endpoint, error) {
-	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, software_version, operating_system, architecture
+	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, network_telemetry_exclusions, software_version, operating_system, architecture
 		FROM endpoints WHERE certificate_serial=?`, serial)
 	endpoint, err := scanEndpoint(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -213,6 +213,30 @@ func (s *SQLiteStore) SetEndpointCollectors(id string, collectors []model.Collec
 	return tx.Commit()
 }
 
+func (s *SQLiteStore) SetEndpointNetworkExclusions(id string, exclusions model.NetworkTelemetryExclusions, event model.AuditEvent) error {
+	encoded, err := json.Marshal(exclusions)
+	if err != nil {
+		return err
+	}
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	result, err := tx.Exec(`UPDATE endpoints SET network_telemetry_exclusions=? WHERE id=? AND status='active'`, encoded, id)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrNotFound
+	}
+	if err := insertAuditEvent(tx, event); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 type endpointScanner interface {
 	Scan(...any) error
 }
@@ -221,14 +245,17 @@ func scanEndpoint(row endpointScanner) (model.Endpoint, error) {
 	var endpoint model.Endpoint
 	var enrolledAt, expiresAt string
 	var lastSeen, renewedAt, revokedAt sql.NullString
-	var allowedCollectors string
+	var allowedCollectors, networkExclusions string
 	if err := row.Scan(&endpoint.ID, &endpoint.Name, &endpoint.Status, &endpoint.CertificateSerial, &enrolledAt, &expiresAt,
-		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors,
+		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors, &networkExclusions,
 		&endpoint.SoftwareVersion, &endpoint.OperatingSystem, &endpoint.Architecture); err != nil {
 		return model.Endpoint{}, err
 	}
 	if err := json.Unmarshal([]byte(allowedCollectors), &endpoint.AllowedCollectors); err != nil {
 		return model.Endpoint{}, fmt.Errorf("decode endpoint collector policy: %w", err)
+	}
+	if err := json.Unmarshal([]byte(networkExclusions), &endpoint.NetworkExclusions); err != nil {
+		return model.Endpoint{}, fmt.Errorf("decode endpoint network-exclusion policy: %w", err)
 	}
 	endpoint.EnrolledAt, _ = parseTime(enrolledAt)
 	endpoint.ExpiresAt, _ = parseTime(expiresAt)

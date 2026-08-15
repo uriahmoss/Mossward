@@ -19,6 +19,7 @@ import (
 
 	"mossward/internal/agentupdate"
 	"mossward/internal/model"
+	"mossward/internal/networkpolicy"
 )
 
 const (
@@ -30,21 +31,27 @@ const (
 var Version = "development"
 
 type App struct {
-	client      *http.Client
-	checkInURL  string
-	renewURL    string
-	interval    time.Duration
-	config      Config
-	certificate *x509.Certificate
-	updateKeyID string
-	updateKey   ed25519.PublicKey
-	moduleTrust map[string]ed25519.PublicKey
+	client            *http.Client
+	checkInURL        string
+	renewURL          string
+	interval          time.Duration
+	config            Config
+	certificate       *x509.Certificate
+	updateKeyID       string
+	updateKey         ed25519.PublicKey
+	moduleTrust       map[string]ed25519.PublicKey
+	networkExclusions model.NetworkTelemetryExclusions
 }
 
 func New(config Config) (*App, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+	localNetworkExclusions, err := networkpolicy.Normalize(config.NetworkExclusions)
+	if err != nil {
+		return nil, err
+	}
+	config.NetworkExclusions = localNetworkExclusions
 
 	certificate, leaf, roots, err := loadIdentity(config.StateDirectory)
 	if err != nil {
@@ -121,7 +128,7 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err != nil {
 		slog.Warn("Endpoint security-posture collection failed", "error", err)
 	}
-	networkInventory, err := collectNetworkInventory(a.config.CollectorAllowlist, now)
+	networkInventory, err := collectNetworkInventory(a.config.CollectorAllowlist, now, a.config.NetworkExclusions, a.networkExclusions)
 	if err != nil {
 		slog.Warn("Endpoint network metadata collection failed", "error", err)
 	}
@@ -152,8 +159,14 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err := validateCollectorAllowlist(result.AllowedCollectors); err != nil {
 		return fmt.Errorf("reject endpoint collector policy: %w", err)
 	}
+	networkExclusions, err := networkpolicy.Normalize(result.NetworkExclusions)
+	if err != nil {
+		return fmt.Errorf("reject endpoint network-exclusion policy: %w", err)
+	}
+	a.networkExclusions = networkExclusions
 	effective := effectiveCollectors(a.config.CollectorAllowlist, result.AllowedCollectors)
-	slog.Info("Endpoint collector policy received", "server_allowed", len(result.AllowedCollectors), "effective", len(effective))
+	slog.Info("Endpoint collector policy received", "server_allowed", len(result.AllowedCollectors), "effective", len(effective),
+		"network_application_exclusions", len(networkExclusions.Applications), "network_destination_exclusions", len(networkExclusions.Destinations))
 	if err := agentupdate.ConfirmHealthy(a.config.UpdateStateDirectory(), Version, time.Now().UTC()); err != nil {
 		return fmt.Errorf("confirm endpoint-agent update health: %w", err)
 	}

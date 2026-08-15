@@ -254,3 +254,10 @@ remote IP addresses and hostnames. Indicators require a source, confidence,
 observation time, and future expiration. Matching is exact, remains
 detection-only, and does not block traffic, remediate endpoints, or send
 telemetry to a third party.
+
+Network telemetry supports audited, per-endpoint application and destination
+exclusions. Application rules match an exact process name or executable path;
+destination rules match an exact IP address, exact hostname, or normalized CIDR.
+The agent combines locally configured privacy exclusions with server policy and
+filters before upload. The server filters again before persistence. Policies do
+not disable agent identity, integrity, update, or other inventory controls.

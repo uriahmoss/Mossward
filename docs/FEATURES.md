@@ -363,7 +363,7 @@ failure and health states.
 - [x] DNS and available TLS server-name context
 - [x] Threat-intelligence indicator correlation (exact IP and hostname matching; detection only)
 - [x] Indicator source, confidence, timestamp, and expiration
-- [ ] Configurable application and destination exclusions
+- [x] Configurable application and destination exclusions
 - [ ] No payload capture or TLS interception by default
 
 ### 9. Endpoint coverage and integrity

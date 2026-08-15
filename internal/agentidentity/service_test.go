@@ -249,6 +249,14 @@ func (s *memoryEndpointStore) SetEndpointCollectors(id string, collectors []mode
 	s.endpoint.AllowedCollectors = append([]model.CollectorID(nil), collectors...)
 	return nil
 }
+
+func (s *memoryEndpointStore) SetEndpointNetworkExclusions(id string, exclusions model.NetworkTelemetryExclusions, _ model.AuditEvent) error {
+	if s.endpoint.ID != id || s.endpoint.Status != model.EndpointActive {
+		return store.ErrNotFound
+	}
+	s.endpoint.NetworkExclusions = exclusions
+	return nil
+}
 func (s *memoryEndpointStore) RenewEndpointCertificate(oldSerial string, endpoint model.Endpoint, _ model.AuditEvent) error {
 	if oldSerial != s.endpoint.CertificateSerial {
 		return store.ErrEndpointCertificateChanged

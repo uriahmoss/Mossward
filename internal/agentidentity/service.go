@@ -17,6 +17,7 @@ import (
 
 	"mossward/internal/agentmodule"
 	"mossward/internal/model"
+	"mossward/internal/networkpolicy"
 	"mossward/internal/store"
 	"mossward/internal/workerjob"
 )
@@ -60,6 +61,7 @@ type EndpointStore interface {
 	RecordEndpointNetworkInventory(string, model.EndpointNetworkInventory, time.Time) error
 	EndpointNetworkInventory(string) (model.EndpointNetworkInventory, error)
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
+	SetEndpointNetworkExclusions(string, model.NetworkTelemetryExclusions, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
 }
@@ -303,6 +305,7 @@ func (s *Service) Handler() http.Handler {
 			}
 		}
 		if heartbeat.NetworkInventory != nil && slices.Contains(endpoint.AllowedCollectors, model.CollectorNetworkTelemetry) {
+			heartbeat.NetworkInventory.Connections = networkpolicy.Filter(heartbeat.NetworkInventory.Connections, endpoint.NetworkExclusions)
 			if err := s.store.RecordEndpointNetworkInventory(endpoint.ID, *heartbeat.NetworkInventory, now); err != nil {
 				http.Error(w, "endpoint network metadata unavailable", http.StatusServiceUnavailable)
 				return
@@ -315,7 +318,7 @@ func (s *Service) Handler() http.Handler {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(model.AgentCheckInResponse{Status: "accepted", EndpointID: endpoint.ID,
-			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors, UpdateEnvelope: updateEnvelope, ModuleOffers: moduleOffers})
+			ServerTime: now, AllowedCollectors: endpoint.AllowedCollectors, NetworkExclusions: endpoint.NetworkExclusions, UpdateEnvelope: updateEnvelope, ModuleOffers: moduleOffers})
 	})
 }
 
@@ -586,6 +589,18 @@ func (s *Service) SetEndpointCollectors(id string, collectors []model.CollectorI
 	event := model.AuditEvent{OccurredAt: s.now(), ActorID: actorID, Action: "endpoint.collectors.updated",
 		Severity: model.AuditWarning, TargetType: "endpoint", TargetID: id, SourceIP: sourceIP, Details: "{}"}
 	return s.store.SetEndpointCollectors(id, collectors, event)
+}
+
+func (s *Service) SetEndpointNetworkExclusions(id string, exclusions model.NetworkTelemetryExclusions, actorID, sourceIP string) error {
+	normalized, err := networkpolicy.Normalize(exclusions)
+	if err != nil {
+		return err
+	}
+	now := s.now()
+	details, _ := json.Marshal(map[string]int{"applications": len(normalized.Applications), "destinations": len(normalized.Destinations)})
+	event := model.AuditEvent{OccurredAt: now, ActorID: actorID, Action: "endpoint.network_exclusions.updated", Severity: model.AuditInfo,
+		TargetType: "endpoint", TargetID: id, SourceIP: sourceIP, Details: string(details)}
+	return s.store.SetEndpointNetworkExclusions(id, normalized, event)
 }
 
 func validateEndpointCollectors(collectors []model.CollectorID) error {

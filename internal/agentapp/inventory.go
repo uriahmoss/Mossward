@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"mossward/internal/model"
+	"mossward/internal/networkpolicy"
 )
 
 func collectOSInventory(allowlist []CollectorID, now time.Time) (*model.EndpointOSInventory, error) {
@@ -78,7 +79,7 @@ func collectPostureInventory(allowlist []CollectorID, now time.Time) (*model.End
 	return &model.EndpointPostureInventory{Evidence: evidence, CollectedAt: now}, nil
 }
 
-func collectNetworkInventory(allowlist []CollectorID, now time.Time) (*model.EndpointNetworkInventory, error) {
+func collectNetworkInventory(allowlist []CollectorID, now time.Time, exclusions ...model.NetworkTelemetryExclusions) (*model.EndpointNetworkInventory, error) {
 	if !slices.Contains(allowlist, CollectorNetworkTelemetry) {
 		return nil, nil
 	}
@@ -95,7 +96,7 @@ func collectNetworkInventory(allowlist []CollectorID, now time.Time) (*model.End
 		connections[index].RemoteHostname = context.hostname
 		connections[index].HostnameSource = context.source
 	}
-	return &model.EndpointNetworkInventory{Connections: connections, CollectedAt: now}, nil
+	return &model.EndpointNetworkInventory{Connections: networkpolicy.Filter(connections, exclusions...), CollectedAt: now}, nil
 }
 
 type networkNameContext struct{ hostname, source string }

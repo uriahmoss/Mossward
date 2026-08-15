@@ -15,6 +15,7 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/agent/enroll", a.enrollAgent)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/revoke", a.revokeEndpoint)
 	mux.HandleFunc("PUT /api/admin/endpoints/{id}/collectors", a.updateEndpointCollectors)
+	mux.HandleFunc("PUT /api/admin/endpoints/{id}/network-exclusions", a.updateEndpointNetworkExclusions)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/os-inventory", a.getEndpointOSInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/software-inventory", a.getEndpointSoftwareInventory)
 	mux.HandleFunc("GET /api/admin/endpoints/{id}/listening-inventory", a.getEndpointListeningInventory)
@@ -32,6 +33,27 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) updateEndpointNetworkExclusions(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok || !a.requireAgentIdentity(w) {
+		return
+	}
+	var exclusions model.NetworkTelemetryExclusions
+	if !decodeJSON(w, r, &exclusions) {
+		return
+	}
+	err := a.agentIdentity.SetEndpointNetworkExclusions(r.PathValue("id"), exclusions, actor.ID, requestIP(r))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "active endpoint not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (a *API) listThreatIndicators(w http.ResponseWriter, r *http.Request) {

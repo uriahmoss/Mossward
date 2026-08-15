@@ -22,22 +22,23 @@ const (
 )
 
 type Endpoint struct {
-	ID                string          `json:"id"`
-	Name              string          `json:"name"`
-	Status            EndpointStatus  `json:"status"`
-	CertificateSerial string          `json:"certificate_serial"`
-	CertificatePEM    string          `json:"-"`
-	EnrolledAt        time.Time       `json:"enrolled_at"`
-	ExpiresAt         time.Time       `json:"expires_at"`
-	LastSeenAt        *time.Time      `json:"last_seen_at,omitempty"`
-	RenewedAt         *time.Time      `json:"renewed_at,omitempty"`
-	RevokedAt         *time.Time      `json:"revoked_at,omitempty"`
-	RevocationReason  string          `json:"revocation_reason,omitempty"`
-	AllowedCollectors []CollectorID   `json:"allowed_collectors"`
-	SoftwareVersion   string          `json:"software_version,omitempty"`
-	OperatingSystem   string          `json:"operating_system,omitempty"`
-	Architecture      string          `json:"architecture,omitempty"`
-	Alerts            []EndpointAlert `json:"alerts"`
+	ID                string                     `json:"id"`
+	Name              string                     `json:"name"`
+	Status            EndpointStatus             `json:"status"`
+	CertificateSerial string                     `json:"certificate_serial"`
+	CertificatePEM    string                     `json:"-"`
+	EnrolledAt        time.Time                  `json:"enrolled_at"`
+	ExpiresAt         time.Time                  `json:"expires_at"`
+	LastSeenAt        *time.Time                 `json:"last_seen_at,omitempty"`
+	RenewedAt         *time.Time                 `json:"renewed_at,omitempty"`
+	RevokedAt         *time.Time                 `json:"revoked_at,omitempty"`
+	RevocationReason  string                     `json:"revocation_reason,omitempty"`
+	AllowedCollectors []CollectorID              `json:"allowed_collectors"`
+	NetworkExclusions NetworkTelemetryExclusions `json:"network_telemetry_exclusions"`
+	SoftwareVersion   string                     `json:"software_version,omitempty"`
+	OperatingSystem   string                     `json:"operating_system,omitempty"`
+	Architecture      string                     `json:"architecture,omitempty"`
+	Alerts            []EndpointAlert            `json:"alerts"`
 }
 
 type AgentCheckIn struct {
@@ -156,6 +157,26 @@ type NetworkConnection struct {
 	Direction      string `json:"direction"`
 }
 
+type NetworkExclusionKind string
+
+const (
+	NetworkExcludeProcessName NetworkExclusionKind = "process_name"
+	NetworkExcludeExecutable  NetworkExclusionKind = "executable"
+	NetworkExcludeIP          NetworkExclusionKind = "ip"
+	NetworkExcludeCIDR        NetworkExclusionKind = "cidr"
+	NetworkExcludeHostname    NetworkExclusionKind = "hostname"
+)
+
+type NetworkTelemetryExclusion struct {
+	Kind  NetworkExclusionKind `json:"kind"`
+	Value string               `json:"value"`
+}
+
+type NetworkTelemetryExclusions struct {
+	Applications []NetworkTelemetryExclusion `json:"applications"`
+	Destinations []NetworkTelemetryExclusion `json:"destinations"`
+}
+
 type ThreatIndicatorType string
 
 const (
@@ -193,12 +214,13 @@ type EndpointIndicatorMatch struct {
 }
 
 type AgentCheckInResponse struct {
-	Status            string              `json:"status"`
-	EndpointID        string              `json:"endpoint_id"`
-	ServerTime        time.Time           `json:"server_time"`
-	AllowedCollectors []CollectorID       `json:"allowed_collectors"`
-	UpdateEnvelope    json.RawMessage     `json:"update_envelope,omitempty"`
-	ModuleOffers      []agentmodule.Offer `json:"module_offers,omitempty"`
+	Status            string                     `json:"status"`
+	EndpointID        string                     `json:"endpoint_id"`
+	ServerTime        time.Time                  `json:"server_time"`
+	AllowedCollectors []CollectorID              `json:"allowed_collectors"`
+	NetworkExclusions NetworkTelemetryExclusions `json:"network_telemetry_exclusions"`
+	UpdateEnvelope    json.RawMessage            `json:"update_envelope,omitempty"`
+	ModuleOffers      []agentmodule.Offer        `json:"module_offers,omitempty"`
 }
 
 type EndpointAlert struct {

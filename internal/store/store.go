@@ -121,6 +121,7 @@ type Repository interface {
 	MarkEndpointSeen(string, time.Time) error
 	RecordEndpointCheckIn(string, model.AgentCheckIn, time.Time) error
 	SetEndpointCollectors(string, []model.CollectorID, model.AuditEvent) error
+	SetEndpointNetworkExclusions(string, model.NetworkTelemetryExclusions, model.AuditEvent) error
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
 	RevokeEndpoint(string, string, time.Time, model.AuditEvent) error
 	CreateAgentUpdateRelease(model.AgentUpdateRelease, model.AuditEvent) error
