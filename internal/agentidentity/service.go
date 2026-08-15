@@ -38,6 +38,10 @@ type ThreatIndicatorStore interface {
 	EndpointIndicatorMatches(string, time.Time) ([]model.EndpointIndicatorMatch, error)
 }
 
+type EndpointHeartbeatSettingsStore interface {
+	EndpointHeartbeatSettings() (model.EndpointHeartbeatSettings, error)
+}
+
 type EndpointStore interface {
 	CreateAgentEnrollmentToken(model.AgentEnrollmentToken, model.AuditEvent) error
 	ListAgentEnrollmentTokens(time.Time) ([]model.AgentEnrollmentToken, error)
@@ -118,13 +122,21 @@ func (s *Service) Endpoints() ([]model.Endpoint, error) {
 	if err != nil {
 		return nil, err
 	}
+	settings := defaultEndpointHeartbeatSettings()
+	if repository, ok := s.store.(EndpointHeartbeatSettingsStore); ok {
+		loaded, settingsErr := repository.EndpointHeartbeatSettings()
+		if settingsErr != nil {
+			return nil, settingsErr
+		}
+		settings = loaded
+	}
 	for index := range items {
-		items[index].Alerts = endpointAlerts(items[index], s.now())
+		items[index].Alerts = endpointAlerts(items[index], settings, s.now())
 	}
 	return items, nil
 }
 
-func endpointAlerts(endpoint model.Endpoint, now time.Time) []model.EndpointAlert {
+func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSettings, now time.Time) []model.EndpointAlert {
 	alerts := []model.EndpointAlert{}
 	if endpoint.Status == model.EndpointRevoked {
 		return append(alerts, model.EndpointAlert{Code: "certificate_revoked", Severity: "error", Message: "Endpoint certificate is revoked"})
@@ -135,7 +147,25 @@ func endpointAlerts(endpoint model.Endpoint, now time.Time) []model.EndpointAler
 	if !now.Before(endpoint.ExpiresAt.Add(-certificateRenewBefore)) {
 		alerts = append(alerts, model.EndpointAlert{Code: "certificate_expiring", Severity: "warning", Message: "Endpoint certificate expires within 30 days"})
 	}
+	if !heartbeat.Enabled {
+		return alerts
+	}
+	lastHeartbeat := endpoint.EnrolledAt
+	if endpoint.LastSeenAt != nil {
+		lastHeartbeat = *endpoint.LastSeenAt
+	}
+	age := now.Sub(lastHeartbeat)
+	if age >= time.Duration(heartbeat.StaleAfterMinutes)*time.Minute {
+		return append(alerts, model.EndpointAlert{Code: "agent_stale", Severity: "error", Message: "Endpoint agent has exceeded the stale-heartbeat threshold"})
+	}
+	if age >= time.Duration(heartbeat.MissedAfterMinutes)*time.Minute {
+		alerts = append(alerts, model.EndpointAlert{Code: "heartbeat_missed", Severity: "warning", Message: "Endpoint agent has missed its heartbeat threshold"})
+	}
 	return alerts
+}
+
+func defaultEndpointHeartbeatSettings() model.EndpointHeartbeatSettings {
+	return model.EndpointHeartbeatSettings{Enabled: true, MissedAfterMinutes: 5, StaleAfterMinutes: 30}
 }
 
 func (s *Service) Renew(endpoint model.Endpoint, csrPEM, sourceIP string) (EnrollmentResult, error) {

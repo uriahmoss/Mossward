@@ -229,6 +229,14 @@ type EndpointAlert struct {
 	Message  string `json:"message"`
 }
 
+type EndpointHeartbeatSettings struct {
+	Enabled            bool      `json:"enabled"`
+	MissedAfterMinutes int       `json:"missed_after_minutes"`
+	StaleAfterMinutes  int       `json:"stale_after_minutes"`
+	UpdatedBy          string    `json:"updated_by,omitempty"`
+	UpdatedAt          time.Time `json:"updated_at,omitempty"`
+}
+
 type AgentEnrollmentToken struct {
 	ID        string     `json:"id"`
 	Name      string     `json:"name"`

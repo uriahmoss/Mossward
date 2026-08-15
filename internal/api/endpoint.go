@@ -21,6 +21,8 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/admin/endpoints/{id}/network-exclusions", a.updateEndpointNetworkExclusions)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage", a.getEndpointCoverage)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/settings", a.updateEndpointCoverageSettings)
+	mux.HandleFunc("GET /api/admin/endpoints/heartbeat-settings", a.getEndpointHeartbeatSettings)
+	mux.HandleFunc("PUT /api/admin/endpoints/heartbeat-settings", a.updateEndpointHeartbeatSettings)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -41,6 +43,59 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) getEndpointHeartbeatSettings(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	settings, err := a.store.EndpointHeartbeatSettings()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read endpoint heartbeat settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (a *API) updateEndpointHeartbeatSettings(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	var settings model.EndpointHeartbeatSettings
+	if !decodeJSON(w, r, &settings) {
+		return
+	}
+	if settings.MissedAfterMinutes == 0 {
+		settings.MissedAfterMinutes = 5
+	}
+	if settings.StaleAfterMinutes == 0 {
+		settings.StaleAfterMinutes = 30
+	}
+	if err := validateEndpointHeartbeatSettings(settings); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	settings.UpdatedBy = actor.ID
+	settings.UpdatedAt = now
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.heartbeat_settings.updated", Severity: model.AuditInfo,
+		TargetType: "endpoint_heartbeat_settings", TargetID: "global", SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.SetEndpointHeartbeatSettings(settings, event); err != nil {
+		writeError(w, http.StatusInternalServerError, "could not update endpoint heartbeat settings")
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func validateEndpointHeartbeatSettings(settings model.EndpointHeartbeatSettings) error {
+	if settings.MissedAfterMinutes < 1 || settings.MissedAfterMinutes > 1440 {
+		return errors.New("missed-heartbeat threshold must be between 1 minute and 24 hours")
+	}
+	if settings.StaleAfterMinutes <= settings.MissedAfterMinutes || settings.StaleAfterMinutes > 10080 {
+		return errors.New("stale-agent threshold must exceed the missed-heartbeat threshold and be no more than 7 days")
+	}
+	return nil
 }
 
 func (a *API) listCoverageDiscoveryPolicies(w http.ResponseWriter, r *http.Request) {

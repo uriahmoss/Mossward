@@ -286,3 +286,9 @@ unlinked assets are counted as missing-agent coverage gaps; unknown assets are
 shown separately for review, and ineligible assets require an administrator
 reason and are excluded from gap counts. Changes require recent MFA and are
 audited.
+
+Endpoint heartbeat monitoring is enabled by default with configurable warning
+and stale thresholds. A missed heartbeat produces a warning; once the longer
+stale threshold is reached, a single stale-agent error supersedes that warning.
+For agents that have never checked in, the enrollment time starts the grace
+period. Settings changes require recent MFA and are audited.

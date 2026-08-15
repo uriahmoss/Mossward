@@ -371,7 +371,7 @@ failure and health states.
 - [x] Opt-in missing-agent coverage detection
 - [x] Authorized-segment discovery policies
 - [x] Agent-eligible and agent-ineligible classifications
-- [ ] Stale-agent and missed-heartbeat alerts
+- [x] Stale-agent and missed-heartbeat alerts
 - [ ] Agent executable, configuration, and identity integrity events
 - [ ] Signed and sequence-numbered tamper events
 - [ ] Maintenance-window suppression with retained audit history

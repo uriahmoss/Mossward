@@ -126,6 +126,8 @@ type Repository interface {
 	EndpointCoverageSettings() (model.EndpointCoverageSettings, error)
 	SetEndpointCoverageSettings(model.EndpointCoverageSettings, model.AuditEvent) error
 	EndpointCoverageReport(time.Time) (model.EndpointCoverageReport, error)
+	EndpointHeartbeatSettings() (model.EndpointHeartbeatSettings, error)
+	SetEndpointHeartbeatSettings(model.EndpointHeartbeatSettings, model.AuditEvent) error
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
