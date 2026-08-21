@@ -387,6 +387,14 @@ without disclosing connection details. A connection begun inside a window may
 finish normally; this gate does not abruptly terminate an authenticated upload
 when the window boundary passes.
 
+Delayed-heartbeat acceptance is disabled by default and can be configured for
+an endpoint or inherited from its asset groups. An explicit endpoint setting
+overrides every group setting. When overlapping groups disagree and no endpoint
+override exists, deny wins and the resolved policy exposes the conflict and its
+source group IDs. Removing an endpoint setting restores group inheritance.
+Creating, changing, or removing these policies requires recent MFA and produces
+an audit event with no heartbeat contents.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

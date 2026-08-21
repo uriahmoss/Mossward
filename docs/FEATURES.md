@@ -391,8 +391,8 @@ failure and health states.
 
 - [x] Administrator-defined relay upload windows with per-policy timezone
 - [x] Outbound relay-to-server connections only during approved windows
-- [ ] Per-node and per-group `allow delayed heartbeats` policy
-- [ ] Explicit node settings overriding inherited group heartbeat policy
+- [x] Per-node and per-group `allow delayed heartbeats` policy
+- [x] Explicit node settings overriding inherited group heartbeat policy
 - [ ] Preserve both generated-at and server-received-at heartbeat timestamps
 - [ ] Window-aware stale-node alerts with configurable post-window grace period
 - [ ] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs

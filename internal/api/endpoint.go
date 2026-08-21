@@ -9,6 +9,7 @@ import (
 
 	"mossward/internal/coveragepolicy"
 	"mossward/internal/model"
+	"mossward/internal/relayheartbeat"
 	"mossward/internal/relaytransport"
 	"mossward/internal/relaywindow"
 	"mossward/internal/store"
@@ -39,6 +40,10 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/admin/relay-upload-windows", a.listRelayUploadWindows)
 	mux.HandleFunc("POST /api/admin/relay-upload-windows", a.createRelayUploadWindow)
 	mux.HandleFunc("PUT /api/admin/relay-upload-windows/{id}", a.updateRelayUploadWindow)
+	mux.HandleFunc("GET /api/admin/delayed-heartbeat-policies", a.listDelayedHeartbeatPolicies)
+	mux.HandleFunc("PUT /api/admin/delayed-heartbeat-policies/{target_type}/{target_id}", a.updateDelayedHeartbeatPolicy)
+	mux.HandleFunc("DELETE /api/admin/delayed-heartbeat-policies/{target_type}/{target_id}", a.deleteDelayedHeartbeatPolicy)
+	mux.HandleFunc("GET /api/admin/endpoints/{id}/delayed-heartbeat-policy", a.resolvedDelayedHeartbeatPolicy)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -60,6 +65,105 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listDelayedHeartbeatPolicies(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	policies, err := a.store.ListDelayedHeartbeatPolicies()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list delayed-heartbeat policies")
+		return
+	}
+	writeJSON(w, http.StatusOK, policies)
+}
+
+func (a *API) resolvedDelayedHeartbeatPolicy(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	policy, err := a.store.ResolveDelayedHeartbeatPolicy(r.PathValue("id"))
+	if errors.Is(err, store.ErrNotFound) {
+		writeError(w, http.StatusNotFound, "endpoint not found")
+		return
+	}
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not resolve delayed-heartbeat policy")
+		return
+	}
+	writeJSON(w, http.StatusOK, policy)
+}
+
+func (a *API) updateDelayedHeartbeatPolicy(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	targetType, ok := delayedHeartbeatTargetType(w, r.PathValue("target_type"))
+	if !ok {
+		return
+	}
+	var request model.DelayedHeartbeatPolicyRequest
+	if !decodeJSON(w, r, &request) {
+		return
+	}
+	now := time.Now().UTC()
+	policy := model.DelayedHeartbeatPolicy{TargetType: targetType, TargetID: strings.TrimSpace(r.PathValue("target_id")),
+		AllowDelayedHeartbeats: request.AllowDelayedHeartbeats, Reason: strings.TrimSpace(request.Reason), UpdatedBy: actor.ID, UpdatedAt: now}
+	if err := relayheartbeat.Validate(policy); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.delayed_heartbeat_policy.updated", Severity: model.AuditWarning,
+		TargetType: string(targetType), TargetID: policy.TargetID, SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.UpsertDelayedHeartbeatPolicy(policy, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "delayed-heartbeat policy target not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not update delayed-heartbeat policy")
+		return
+	}
+	writeJSON(w, http.StatusOK, policy)
+}
+
+func (a *API) deleteDelayedHeartbeatPolicy(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	targetType, ok := delayedHeartbeatTargetType(w, r.PathValue("target_type"))
+	if !ok {
+		return
+	}
+	reason, ok := decodeRelayTransitionReason(w, r)
+	if !ok {
+		return
+	}
+	now := time.Now().UTC()
+	targetID := strings.TrimSpace(r.PathValue("target_id"))
+	details, _ := json.Marshal(map[string]string{"reason": reason})
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.delayed_heartbeat_policy.removed", Severity: model.AuditWarning,
+		TargetType: string(targetType), TargetID: targetID, SourceIP: requestIP(r), Details: string(details)}
+	if err := a.store.DeleteDelayedHeartbeatPolicy(targetType, targetID, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "delayed-heartbeat policy not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not remove delayed-heartbeat policy")
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func delayedHeartbeatTargetType(w http.ResponseWriter, value string) (model.MaintenanceTargetType, bool) {
+	targetType := model.MaintenanceTargetType(value)
+	if targetType != model.MaintenanceTargetEndpoint && targetType != model.MaintenanceTargetGroup {
+		writeError(w, http.StatusBadRequest, "delayed-heartbeat target type must be endpoint or group")
+		return "", false
+	}
+	return targetType, true
 }
 
 func (a *API) listRelayUploadWindows(w http.ResponseWriter, r *http.Request) {

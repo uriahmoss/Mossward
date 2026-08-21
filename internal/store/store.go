@@ -149,6 +149,10 @@ type Repository interface {
 	UpsertRelayUploadWindow(model.RelayUploadWindow, model.AuditEvent) error
 	ListRelayUploadWindows() ([]model.RelayUploadWindow, error)
 	RelayUploadWindowsForEndpoint(string) ([]model.RelayUploadWindow, error)
+	UpsertDelayedHeartbeatPolicy(model.DelayedHeartbeatPolicy, model.AuditEvent) error
+	DeleteDelayedHeartbeatPolicy(model.MaintenanceTargetType, string, model.AuditEvent) error
+	ListDelayedHeartbeatPolicies() ([]model.DelayedHeartbeatPolicy, error)
+	ResolveDelayedHeartbeatPolicy(string) (model.ResolvedDelayedHeartbeatPolicy, error)
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error
