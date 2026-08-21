@@ -22,27 +22,30 @@ const (
 )
 
 type Endpoint struct {
-	ID                string                     `json:"id"`
-	Name              string                     `json:"name"`
-	Status            EndpointStatus             `json:"status"`
-	CertificateSerial string                     `json:"certificate_serial"`
-	CertificatePEM    string                     `json:"-"`
-	EnrolledAt        time.Time                  `json:"enrolled_at"`
-	ExpiresAt         time.Time                  `json:"expires_at"`
-	LastSeenAt        *time.Time                 `json:"last_seen_at,omitempty"`
-	RenewedAt         *time.Time                 `json:"renewed_at,omitempty"`
-	RevokedAt         *time.Time                 `json:"revoked_at,omitempty"`
-	RevocationReason  string                     `json:"revocation_reason,omitempty"`
-	AllowedCollectors []CollectorID              `json:"allowed_collectors"`
-	NetworkExclusions NetworkTelemetryExclusions `json:"network_telemetry_exclusions"`
-	SoftwareVersion   string                     `json:"software_version,omitempty"`
-	OperatingSystem   string                     `json:"operating_system,omitempty"`
-	Architecture      string                     `json:"architecture,omitempty"`
-	Alerts            []EndpointAlert            `json:"alerts"`
+	ID                       string                     `json:"id"`
+	Name                     string                     `json:"name"`
+	Status                   EndpointStatus             `json:"status"`
+	CertificateSerial        string                     `json:"certificate_serial"`
+	CertificatePEM           string                     `json:"-"`
+	EnrolledAt               time.Time                  `json:"enrolled_at"`
+	ExpiresAt                time.Time                  `json:"expires_at"`
+	LastSeenAt               *time.Time                 `json:"last_seen_at,omitempty"`
+	LastHeartbeatGeneratedAt *time.Time                 `json:"last_heartbeat_generated_at,omitempty"`
+	LastHeartbeatReceivedAt  *time.Time                 `json:"last_heartbeat_received_at,omitempty"`
+	RenewedAt                *time.Time                 `json:"renewed_at,omitempty"`
+	RevokedAt                *time.Time                 `json:"revoked_at,omitempty"`
+	RevocationReason         string                     `json:"revocation_reason,omitempty"`
+	AllowedCollectors        []CollectorID              `json:"allowed_collectors"`
+	NetworkExclusions        NetworkTelemetryExclusions `json:"network_telemetry_exclusions"`
+	SoftwareVersion          string                     `json:"software_version,omitempty"`
+	OperatingSystem          string                     `json:"operating_system,omitempty"`
+	Architecture             string                     `json:"architecture,omitempty"`
+	Alerts                   []EndpointAlert            `json:"alerts"`
 }
 
 type AgentCheckIn struct {
 	SchemaVersion       int                           `json:"schema_version"`
+	GeneratedAt         time.Time                     `json:"generated_at,omitempty"`
 	SoftwareVersion     string                        `json:"software_version"`
 	OperatingSystem     string                        `json:"operating_system"`
 	Architecture        string                        `json:"architecture"`

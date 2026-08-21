@@ -170,7 +170,9 @@ func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSe
 		return alerts
 	}
 	lastHeartbeat := endpoint.EnrolledAt
-	if endpoint.LastSeenAt != nil {
+	if endpoint.LastHeartbeatReceivedAt != nil {
+		lastHeartbeat = *endpoint.LastHeartbeatReceivedAt
+	} else if endpoint.LastSeenAt != nil {
 		lastHeartbeat = *endpoint.LastSeenAt
 	}
 	age := now.Sub(lastHeartbeat)
@@ -311,7 +313,7 @@ func (s *Service) Handler() http.Handler {
 		var heartbeat model.AgentCheckIn
 		decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maximumAgentCheckInSize))
 		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&heartbeat); err != nil || heartbeat.SchemaVersion != 1 || decoder.Decode(&struct{}{}) != io.EOF {
+		if err := decoder.Decode(&heartbeat); err != nil || (heartbeat.SchemaVersion != 1 && heartbeat.SchemaVersion != 2) || decoder.Decode(&struct{}{}) != io.EOF {
 			http.Error(w, "invalid endpoint-agent check-in", http.StatusBadRequest)
 			return
 		}
@@ -395,6 +397,9 @@ func (s *Service) Handler() http.Handler {
 }
 
 func validateEndpointCheckIn(checkIn model.AgentCheckIn) error {
+	if checkIn.SchemaVersion == 2 && checkIn.GeneratedAt.IsZero() {
+		return errors.New("endpoint heartbeat generation time is required")
+	}
 	if strings.TrimSpace(checkIn.SoftwareVersion) == "" {
 		return errors.New("endpoint software version is required")
 	}

@@ -87,7 +87,7 @@ func (s *SQLiteStore) ConsumeAgentEnrollmentToken(hash []byte, endpoint model.En
 }
 
 func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
-	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, network_telemetry_exclusions, software_version, operating_system, architecture
+	rows, err := s.db.Query(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, last_heartbeat_generated_at, last_heartbeat_received_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, network_telemetry_exclusions, software_version, operating_system, architecture
 		FROM endpoints ORDER BY name, enrolled_at`)
 	if err != nil {
 		return nil, fmt.Errorf("list endpoints: %w", err)
@@ -105,7 +105,7 @@ func (s *SQLiteStore) ListEndpoints() ([]model.Endpoint, error) {
 }
 
 func (s *SQLiteStore) EndpointBySerial(serial string) (model.Endpoint, error) {
-	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, network_telemetry_exclusions, software_version, operating_system, architecture
+	row := s.db.QueryRow(`SELECT id, name, status, certificate_serial, enrolled_at, expires_at, last_seen_at, last_heartbeat_generated_at, last_heartbeat_received_at, renewed_at, revoked_at, revocation_reason, allowed_collectors, network_telemetry_exclusions, software_version, operating_system, architecture
 		FROM endpoints WHERE certificate_serial=?`, serial)
 	endpoint, err := scanEndpoint(row)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -171,8 +171,12 @@ func (s *SQLiteStore) RecordEndpointCheckIn(id string, heartbeat model.AgentChec
 		return err
 	}
 	defer tx.Rollback()
-	result, err := tx.Exec(`UPDATE endpoints SET last_seen_at=?,software_version=?,operating_system=?,architecture=? WHERE id=? AND status='active'`,
-		formatTime(seenAt), heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture, id)
+	var generatedAt any
+	if !heartbeat.GeneratedAt.IsZero() {
+		generatedAt = formatTime(heartbeat.GeneratedAt)
+	}
+	result, err := tx.Exec(`UPDATE endpoints SET last_seen_at=?,last_heartbeat_generated_at=?,last_heartbeat_received_at=?,software_version=?,operating_system=?,architecture=? WHERE id=? AND status='active'`,
+		formatTime(seenAt), generatedAt, formatTime(seenAt), heartbeat.SoftwareVersion, heartbeat.OperatingSystem, heartbeat.Architecture, id)
 	if err != nil {
 		return err
 	}
@@ -244,10 +248,10 @@ type endpointScanner interface {
 func scanEndpoint(row endpointScanner) (model.Endpoint, error) {
 	var endpoint model.Endpoint
 	var enrolledAt, expiresAt string
-	var lastSeen, renewedAt, revokedAt sql.NullString
+	var lastSeen, heartbeatGeneratedAt, heartbeatReceivedAt, renewedAt, revokedAt sql.NullString
 	var allowedCollectors, networkExclusions string
 	if err := row.Scan(&endpoint.ID, &endpoint.Name, &endpoint.Status, &endpoint.CertificateSerial, &enrolledAt, &expiresAt,
-		&lastSeen, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors, &networkExclusions,
+		&lastSeen, &heartbeatGeneratedAt, &heartbeatReceivedAt, &renewedAt, &revokedAt, &endpoint.RevocationReason, &allowedCollectors, &networkExclusions,
 		&endpoint.SoftwareVersion, &endpoint.OperatingSystem, &endpoint.Architecture); err != nil {
 		return model.Endpoint{}, err
 	}
@@ -260,6 +264,8 @@ func scanEndpoint(row endpointScanner) (model.Endpoint, error) {
 	endpoint.EnrolledAt, _ = parseTime(enrolledAt)
 	endpoint.ExpiresAt, _ = parseTime(expiresAt)
 	endpoint.LastSeenAt = parseNullableTime(lastSeen)
+	endpoint.LastHeartbeatGeneratedAt = parseNullableTime(heartbeatGeneratedAt)
+	endpoint.LastHeartbeatReceivedAt = parseNullableTime(heartbeatReceivedAt)
 	endpoint.RenewedAt = parseNullableTime(renewedAt)
 	endpoint.RevokedAt = parseNullableTime(revokedAt)
 	return endpoint, nil

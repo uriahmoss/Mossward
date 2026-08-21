@@ -395,6 +395,13 @@ source group IDs. Removing an endpoint setting restores group inheritance.
 Creating, changing, or removing these policies requires recent MFA and produces
 an audit event with no heartbeat contents.
 
+Version 2 agent check-ins carry the endpoint's heartbeat generation time. The
+server separately records its own receipt time and exposes both values in the
+endpoint inventory. Server receipt time remains authoritative for authentication
+and current connectivity; the agent-controlled generation time is retained as
+evidence for delayed-delivery and future clock-drift evaluation. Legacy version
+1 check-ins remain accepted with an unknown generation time.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

@@ -393,7 +393,7 @@ failure and health states.
 - [x] Outbound relay-to-server connections only during approved windows
 - [x] Per-node and per-group `allow delayed heartbeats` policy
 - [x] Explicit node settings overriding inherited group heartbeat policy
-- [ ] Preserve both generated-at and server-received-at heartbeat timestamps
+- [x] Preserve both generated-at and server-received-at heartbeat timestamps
 - [ ] Window-aware stale-node alerts with configurable post-window grace period
 - [ ] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs
 - [ ] Signed, sequenced, compressed agent-log batches with source provenance

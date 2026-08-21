@@ -152,7 +152,7 @@ func (a *App) checkIn(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("sign endpoint integrity snapshot: %w", err)
 	}
-	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: Version,
+	payload, err := json.Marshal(model.AgentCheckIn{SchemaVersion: 2, GeneratedAt: now, SoftwareVersion: Version,
 		OperatingSystem: runtime.GOOS, Architecture: runtime.GOARCH, SupportedCollectors: supportedCollectorIDs(), ModuleHealth: moduleHealth(a.config.ModuleDirectory()), OSInventory: osInventory, SoftwareInventory: softwareInventory, ListeningInventory: listeningInventory, PostureInventory: postureInventory, NetworkInventory: networkInventory, IntegritySnapshot: &signedIntegrity})
 	if err != nil {
 		return err

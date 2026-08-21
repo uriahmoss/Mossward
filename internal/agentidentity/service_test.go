@@ -27,20 +27,22 @@ import (
 )
 
 type memoryEndpointStore struct {
-	token           model.AgentEnrollmentToken
-	endpoint        model.Endpoint
-	consumed        bool
-	lastSeen        *time.Time
-	workerToken     model.WorkerEnrollmentToken
-	worker          model.ScannerWorker
-	workerConsumed  bool
-	workerLastSeen  *time.Time
-	workerJob       model.SignedWorkerJob
-	workerLeaseHash []byte
-	workerResult    model.WorkerJobResultReceipt
-	leasedWorkerJob model.SignedWorkerJob
-	workerEvidence  []model.SignedWorkerEvidenceBatch
-	dispatchEnabled bool
+	token                model.AgentEnrollmentToken
+	endpoint             model.Endpoint
+	consumed             bool
+	lastSeen             *time.Time
+	heartbeatGeneratedAt *time.Time
+	heartbeatReceivedAt  *time.Time
+	workerToken          model.WorkerEnrollmentToken
+	worker               model.ScannerWorker
+	workerConsumed       bool
+	workerLastSeen       *time.Time
+	workerJob            model.SignedWorkerJob
+	workerLeaseHash      []byte
+	workerResult         model.WorkerJobResultReceipt
+	leasedWorkerJob      model.SignedWorkerJob
+	workerEvidence       []model.SignedWorkerEvidenceBatch
+	dispatchEnabled      bool
 }
 
 func (s *memoryEndpointStore) CreateWorkerEnrollmentToken(token model.WorkerEnrollmentToken, _ model.AuditEvent) error {
@@ -199,6 +201,11 @@ func (s *memoryEndpointStore) RecordEndpointCheckIn(id string, checkIn model.Age
 		return errors.New("unknown endpoint")
 	}
 	s.lastSeen = &seenAt
+	if !checkIn.GeneratedAt.IsZero() {
+		generatedAt := checkIn.GeneratedAt
+		s.heartbeatGeneratedAt = &generatedAt
+	}
+	s.heartbeatReceivedAt = &seenAt
 	s.endpoint.SoftwareVersion = checkIn.SoftwareVersion
 	s.endpoint.OperatingSystem = checkIn.OperatingSystem
 	s.endpoint.Architecture = checkIn.Architecture
@@ -300,17 +307,30 @@ func TestEnrollmentAndMTLSIdentity(t *testing.T) {
 	if err := service.verifyConnection(connection); err != nil {
 		t.Fatalf("verify enrolled endpoint: %v", err)
 	}
-	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/agent/v1/check-in",
-		strings.NewReader(`{"schema_version":1,"software_version":"development","operating_system":"linux","architecture":"amd64","supported_collectors":[]}`))
+	generatedAt := now.Add(-time.Hour)
+	payload, _ := json.Marshal(model.AgentCheckIn{SchemaVersion: 2, GeneratedAt: generatedAt, SoftwareVersion: "development",
+		OperatingSystem: "linux", Architecture: "amd64", SupportedCollectors: []model.CollectorID{}})
+	request := httptest.NewRequest(http.MethodPost, "https://agent.mossward.test/api/agent/v1/check-in", bytes.NewReader(payload))
 	request.TLS = &connection
 	response := httptest.NewRecorder()
 	service.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || repository.lastSeen == nil {
+	if response.Code != http.StatusOK || repository.lastSeen == nil || repository.heartbeatGeneratedAt == nil || !repository.heartbeatGeneratedAt.Equal(generatedAt) || repository.heartbeatReceivedAt == nil || !repository.heartbeatReceivedAt.Equal(now) {
 		t.Fatalf("check-in failed: %d %s", response.Code, response.Body.String())
 	}
 	hash := sha256.Sum256([]byte(token))
 	if !bytes.Equal(hash[:], repository.token.TokenHash) {
 		t.Fatal("raw enrollment token was not stored as a hash")
+	}
+}
+
+func TestVersionTwoCheckInRequiresGeneratedAt(t *testing.T) {
+	checkIn := model.AgentCheckIn{SchemaVersion: 2, SoftwareVersion: "development", OperatingSystem: "linux", Architecture: "amd64"}
+	if err := validateEndpointCheckIn(checkIn); err == nil {
+		t.Fatal("version 2 check-in without generation time was accepted")
+	}
+	checkIn.GeneratedAt = time.Now().UTC()
+	if err := validateEndpointCheckIn(checkIn); err != nil {
+		t.Fatalf("valid version 2 check-in rejected: %v", err)
 	}
 }
 
