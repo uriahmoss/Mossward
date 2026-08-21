@@ -40,8 +40,19 @@ type TelemetryReport struct {
 	QueueByteUtilization      int               `json:"queue_byte_utilization_basis_points"`
 	OldestFrameAgeSeconds     int64             `json:"oldest_frame_age_seconds"`
 	Counters                  TelemetryCounters `json:"counters"`
+	Path                      *PathVisibility   `json:"path,omitempty"`
 	LastServerAcknowledgement time.Time         `json:"last_server_acknowledgement,omitempty"`
 	ObservedAt                time.Time         `json:"observed_at"`
+}
+
+type PathVisibility struct {
+	RouteID                     string    `json:"route_id"`
+	Kind                        RouteKind `json:"kind"`
+	RelayEndpointID             string    `json:"relay_endpoint_id,omitempty"`
+	PreviousRouteID             string    `json:"previous_route_id,omitempty"`
+	TransitionReason            string    `json:"transition_reason"`
+	SelectedAt                  time.Time `json:"selected_at"`
+	LastEndToEndAcknowledgement time.Time `json:"last_end_to_end_acknowledgement,omitempty"`
 }
 
 type SignedTelemetry struct {
@@ -53,6 +64,7 @@ type TelemetryMonitor struct {
 	mu                        sync.Mutex
 	counters                  TelemetryCounters
 	lastServerAcknowledgement time.Time
+	path                      *PathVisibility
 	sequence                  uint64
 }
 
@@ -77,6 +89,21 @@ func (m *TelemetryMonitor) RecordAcknowledgement(result error, observedAt time.T
 	defer m.mu.Unlock()
 	m.counters.AcknowledgedFrames++
 	m.lastServerAcknowledgement = observedAt.UTC()
+	if m.path != nil {
+		m.path.LastEndToEndAcknowledgement = observedAt.UTC()
+	}
+}
+
+func (m *TelemetryMonitor) RecordRouteDecision(decision RouteDecision) error {
+	path := PathVisibility{RouteID: decision.Route.ID, Kind: decision.Route.Kind, RelayEndpointID: decision.Route.RelayEndpointID,
+		PreviousRouteID: decision.PreviousRouteID, TransitionReason: decision.Reason, SelectedAt: decision.SelectedAt.UTC()}
+	if err := validatePathVisibility(path); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.path = &path
+	return nil
 }
 
 func (m *TelemetryMonitor) RecordExpired(count int64) {
@@ -106,10 +133,11 @@ func (m *TelemetryMonitor) Report(relayID string, stats QueueStats, limits Queue
 	sequence := m.sequence
 	counters := m.counters
 	lastAcknowledgement := m.lastServerAcknowledgement
+	path := clonePathVisibility(m.path)
 	m.mu.Unlock()
 	report := TelemetryReport{SchemaVersion: 1, RelayID: relayID, Sequence: sequence, QueueItems: stats.Items, QueueBytes: stats.Bytes,
 		QueueItemLimit: limits.MaxItems, QueueByteLimit: limits.MaxBytes, Counters: counters,
-		LastServerAcknowledgement: lastAcknowledgement, ObservedAt: observedAt.UTC()}
+		Path: path, LastServerAcknowledgement: lastAcknowledgement, ObservedAt: observedAt.UTC()}
 	report.QueueItemUtilization = utilizationBasisPoints(int64(stats.Items), int64(limits.MaxItems))
 	report.QueueByteUtilization = utilizationBasisPoints(stats.Bytes, limits.MaxBytes)
 	if !stats.OldestFrame.IsZero() && observedAt.After(stats.OldestFrame) {
@@ -117,6 +145,38 @@ func (m *TelemetryMonitor) Report(relayID string, stats QueueStats, limits Queue
 	}
 	report.Health = classifyRelayHealth(report)
 	return report, nil
+}
+
+func validatePathVisibility(path PathVisibility) error {
+	if path.RouteID == "" || len(path.RouteID) > maximumRouteIDLength || len(path.RelayEndpointID) > maximumRouteIDLength || len(path.PreviousRouteID) > maximumRouteIDLength || path.SelectedAt.IsZero() {
+		return errors.New("relay path visibility is invalid")
+	}
+	switch path.Kind {
+	case RouteRelay:
+		if path.RelayEndpointID == "" {
+			return errors.New("relayed path requires an approved relay identity")
+		}
+	case RouteDirect:
+		if path.RelayEndpointID != "" {
+			return errors.New("direct path cannot identify a relay")
+		}
+	default:
+		return errors.New("relay path kind is invalid")
+	}
+	switch path.TransitionReason {
+	case "approved_initial_route", "approved_failover", "active_route_healthy", "server_selected_approved_route":
+		return nil
+	default:
+		return errors.New("relay path transition reason is invalid")
+	}
+}
+
+func clonePathVisibility(path *PathVisibility) *PathVisibility {
+	if path == nil {
+		return nil
+	}
+	cloned := *path
+	return &cloned
 }
 
 func SignTelemetry(report TelemetryReport, key *ecdsa.PrivateKey) (SignedTelemetry, error) {
@@ -147,6 +207,11 @@ func VerifyTelemetry(signed SignedTelemetry, key *ecdsa.PublicKey, now time.Time
 	}
 	if !ecdsa.VerifyASN1(key, digest, signed.Signature) {
 		return errors.New("relay telemetry signature verification failed")
+	}
+	if signed.Report.Path != nil {
+		if err := validatePathVisibility(*signed.Report.Path); err != nil {
+			return err
+		}
 	}
 	return nil
 }

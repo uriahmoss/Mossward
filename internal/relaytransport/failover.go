@@ -17,6 +17,8 @@ const (
 	minimumObservationAge   = 10 * time.Second
 	maximumObservationAge   = time.Hour
 	maximumFailureThreshold = 10
+	maximumFailoverRoutes   = 16
+	maximumRouteIDLength    = 200
 )
 
 var ErrNoApprovedRoute = errors.New("no healthy approved relay route is available")
@@ -138,7 +140,7 @@ func (c *FailoverController) decision(routeID, previous, reason string, now time
 }
 
 func validateFailoverPolicy(policy FailoverPolicy) error {
-	if strings.TrimSpace(policy.EndpointID) == "" || len(policy.Routes) == 0 || policy.FailureThreshold < 1 || policy.FailureThreshold > maximumFailureThreshold ||
+	if strings.TrimSpace(policy.EndpointID) == "" || len(policy.EndpointID) > maximumRouteIDLength || len(policy.Routes) == 0 || len(policy.Routes) > maximumFailoverRoutes || policy.FailureThreshold < 1 || policy.FailureThreshold > maximumFailureThreshold ||
 		policy.ObservationMaxAge < minimumObservationAge || policy.ObservationMaxAge > maximumObservationAge {
 		return errors.New("relay failover policy is invalid")
 	}
@@ -146,7 +148,7 @@ func validateFailoverPolicy(policy FailoverPolicy) error {
 	priorities := make(map[int]bool, len(policy.Routes))
 	directRoutes := 0
 	for _, route := range policy.Routes {
-		if strings.TrimSpace(route.ID) == "" || route.Priority < 1 || ids[route.ID] || priorities[route.Priority] {
+		if strings.TrimSpace(route.ID) == "" || len(route.ID) > maximumRouteIDLength || len(route.RelayEndpointID) > maximumRouteIDLength || route.Priority < 1 || ids[route.ID] || priorities[route.Priority] {
 			return errors.New("relay failover routes require unique IDs and priorities")
 		}
 		ids[route.ID], priorities[route.Priority] = true, true

@@ -364,6 +364,13 @@ It stays on a healthy failover route to prevent flapping; returning to a
 preferred route requires a server selection. Route decisions retain the prior
 route, reason, failure count, and time for audit and later path visibility.
 
+The signed relay telemetry report identifies whether the endpoint is using a
+direct or relayed path. Relayed reports include only the approved relay endpoint
+identity; direct reports cannot claim a relay. The current route, previous
+route, controlled transition reason, selection time, and last successful
+end-to-end acknowledgement are visible without exposing addresses, message
+contents, local paths, or credentials.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

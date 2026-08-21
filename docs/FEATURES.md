@@ -385,7 +385,7 @@ failure and health states.
 - [x] Bounded encrypted store-and-forward queue
 - [x] Relay health, capacity, and tamper telemetry
 - [x] Approved failover behavior
-- [ ] Direct-versus-relayed path visibility
+- [x] Direct-versus-relayed path visibility
 
 ### 11. Relay communication windows and delayed telemetry
 
