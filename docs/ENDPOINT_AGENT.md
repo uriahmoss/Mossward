@@ -378,6 +378,15 @@ which they start and continue into the following day. Invalid, disabled, or
 out-of-window policies evaluate closed. Creating or changing a policy requires
 recent MFA; new policies are enabled explicitly by the creation workflow.
 
+Before initiating an outbound relay-to-server connection, the agent evaluates
+all upload windows assigned directly to it or inherited through its asset
+groups. At least one valid enabled window must be open. Missing, malformed,
+disabled, or out-of-window policy state fails closed and the connector is not
+invoked. The decision records the applicable policy IDs and a bounded reason
+without disclosing connection details. A connection begun inside a window may
+finish normally; this gate does not abruptly terminate an authenticated upload
+when the window boundary passes.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

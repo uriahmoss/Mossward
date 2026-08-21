@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 
@@ -39,7 +40,22 @@ func (s *SQLiteStore) UpsertRelayUploadWindow(window model.RelayUploadWindow, ev
 }
 
 func (s *SQLiteStore) ListRelayUploadWindows() ([]model.RelayUploadWindow, error) {
-	rows, err := s.db.Query(`SELECT id,name,target_type,target_id,timezone,days_json,start_minute,end_minute,enabled,reason,created_by,created_at,updated_by,updated_at FROM relay_upload_windows ORDER BY name,id`)
+	return listRelayUploadWindows(s.db, `SELECT id,name,target_type,target_id,timezone,days_json,start_minute,end_minute,enabled,reason,created_by,created_at,updated_by,updated_at FROM relay_upload_windows ORDER BY name,id`)
+}
+
+func (s *SQLiteStore) RelayUploadWindowsForEndpoint(endpointID string) ([]model.RelayUploadWindow, error) {
+	query := `SELECT w.id,w.name,w.target_type,w.target_id,w.timezone,w.days_json,w.start_minute,w.end_minute,w.enabled,w.reason,w.created_by,w.created_at,w.updated_by,w.updated_at
+		FROM relay_upload_windows w WHERE (w.target_type='endpoint' AND w.target_id=?) OR (w.target_type='group' AND EXISTS (
+			SELECT 1 FROM endpoints e JOIN asset_group_members m ON m.asset_id=e.asset_id WHERE e.id=? AND m.group_id=w.target_id)) ORDER BY w.name,w.id`
+	return listRelayUploadWindows(s.db, query, endpointID, endpointID)
+}
+
+type relayWindowQuerier interface {
+	Query(string, ...any) (*sql.Rows, error)
+}
+
+func listRelayUploadWindows(querier relayWindowQuerier, query string, arguments ...any) ([]model.RelayUploadWindow, error) {
+	rows, err := querier.Query(query, arguments...)
 	if err != nil {
 		return nil, err
 	}

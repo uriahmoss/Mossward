@@ -148,6 +148,7 @@ type Repository interface {
 	ListRelayDownstreamAuthorizations() ([]model.RelayDownstreamAuthorization, error)
 	UpsertRelayUploadWindow(model.RelayUploadWindow, model.AuditEvent) error
 	ListRelayUploadWindows() ([]model.RelayUploadWindow, error)
+	RelayUploadWindowsForEndpoint(string) ([]model.RelayUploadWindow, error)
 	SaveCoverageDiscoveryPolicy(model.CoverageDiscoveryPolicy, model.AuditEvent) error
 	ListCoverageDiscoveryPolicies() ([]model.CoverageDiscoveryPolicy, error)
 	RenewEndpointCertificate(string, model.Endpoint, model.AuditEvent) error

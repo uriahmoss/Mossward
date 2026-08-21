@@ -390,7 +390,7 @@ failure and health states.
 ### 11. Relay communication windows and delayed telemetry
 
 - [x] Administrator-defined relay upload windows with per-policy timezone
-- [ ] Outbound relay-to-server connections only during approved windows
+- [x] Outbound relay-to-server connections only during approved windows
 - [ ] Per-node and per-group `allow delayed heartbeats` policy
 - [ ] Explicit node settings overriding inherited group heartbeat policy
 - [ ] Preserve both generated-at and server-received-at heartbeat timestamps
