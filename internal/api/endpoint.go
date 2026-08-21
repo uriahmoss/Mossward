@@ -10,6 +10,7 @@ import (
 	"mossward/internal/coveragepolicy"
 	"mossward/internal/model"
 	"mossward/internal/relaytransport"
+	"mossward/internal/relaywindow"
 	"mossward/internal/store"
 )
 
@@ -35,6 +36,9 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/downstreams/{downstream_id}/authorize", a.authorizeRelayDownstream)
 	mux.HandleFunc("POST /api/admin/endpoints/{id}/relay/downstreams/{downstream_id}/revoke", a.revokeRelayDownstream)
 	mux.HandleFunc("GET /api/admin/relay-transport/contract", a.getRelayTransportContract)
+	mux.HandleFunc("GET /api/admin/relay-upload-windows", a.listRelayUploadWindows)
+	mux.HandleFunc("POST /api/admin/relay-upload-windows", a.createRelayUploadWindow)
+	mux.HandleFunc("PUT /api/admin/relay-upload-windows/{id}", a.updateRelayUploadWindow)
 	mux.HandleFunc("GET /api/admin/endpoint-coverage/discovery-policies", a.listCoverageDiscoveryPolicies)
 	mux.HandleFunc("POST /api/admin/endpoint-coverage/discovery-policies", a.createCoverageDiscoveryPolicy)
 	mux.HandleFunc("PUT /api/admin/endpoint-coverage/discovery-policies/{id}", a.updateCoverageDiscoveryPolicy)
@@ -56,6 +60,113 @@ func (a *API) registerAgentIdentityRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/admin/scanner-worker-enrollment-tokens", a.createScannerWorkerEnrollmentToken)
 	mux.HandleFunc("POST /api/scanner-workers/enroll", a.enrollScannerWorker)
 	mux.HandleFunc("POST /api/admin/scanner-workers/{id}/revoke", a.revokeScannerWorker)
+}
+
+func (a *API) listRelayUploadWindows(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireAdministrator(w, r); !ok {
+		return
+	}
+	windows, err := a.store.ListRelayUploadWindows()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not list relay upload windows")
+		return
+	}
+	writeJSON(w, http.StatusOK, windows)
+}
+
+func (a *API) createRelayUploadWindow(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	var window model.RelayUploadWindow
+	if !decodeJSON(w, r, &window) {
+		return
+	}
+	window.ID = ""
+	prepareRelayUploadWindow(&window)
+	if err := relaywindow.Validate(window); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	id, err := randomID()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not create relay upload window")
+		return
+	}
+	now := time.Now().UTC()
+	window.ID, window.Enabled = id, true
+	window.CreatedBy, window.CreatedAt, window.UpdatedBy, window.UpdatedAt = actor.ID, now, actor.ID, now
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.relay_upload_window.created", Severity: model.AuditWarning,
+		TargetType: "relay_upload_window", TargetID: id, SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.UpsertRelayUploadWindow(window, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "relay upload-window target not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not create relay upload window")
+		return
+	}
+	writeJSON(w, http.StatusCreated, window)
+}
+
+func (a *API) updateRelayUploadWindow(w http.ResponseWriter, r *http.Request) {
+	actor, _, ok := a.requireAdministratorWithRecentMFA(w, r)
+	if !ok {
+		return
+	}
+	existing, found, err := a.relayUploadWindow(r.PathValue("id"))
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "could not read relay upload window")
+		return
+	}
+	if !found {
+		writeError(w, http.StatusNotFound, "relay upload window not found")
+		return
+	}
+	var window model.RelayUploadWindow
+	if !decodeJSON(w, r, &window) {
+		return
+	}
+	prepareRelayUploadWindow(&window)
+	if err := relaywindow.Validate(window); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	now := time.Now().UTC()
+	window.ID, window.CreatedBy, window.CreatedAt = existing.ID, existing.CreatedBy, existing.CreatedAt
+	window.UpdatedBy, window.UpdatedAt = actor.ID, now
+	event := model.AuditEvent{OccurredAt: now, ActorID: actor.ID, Action: "endpoint.relay_upload_window.updated", Severity: model.AuditWarning,
+		TargetType: "relay_upload_window", TargetID: window.ID, SourceIP: requestIP(r), Details: "{}"}
+	if err := a.store.UpsertRelayUploadWindow(window, event); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "relay upload-window target not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, "could not update relay upload window")
+		return
+	}
+	writeJSON(w, http.StatusOK, window)
+}
+
+func (a *API) relayUploadWindow(id string) (model.RelayUploadWindow, bool, error) {
+	windows, err := a.store.ListRelayUploadWindows()
+	if err != nil {
+		return model.RelayUploadWindow{}, false, err
+	}
+	for _, window := range windows {
+		if window.ID == id {
+			return window, true, nil
+		}
+	}
+	return model.RelayUploadWindow{}, false, nil
+}
+
+func prepareRelayUploadWindow(window *model.RelayUploadWindow) {
+	window.Name = strings.TrimSpace(window.Name)
+	window.TargetID = strings.TrimSpace(window.TargetID)
+	window.Timezone = strings.TrimSpace(window.Timezone)
+	window.Reason = strings.TrimSpace(window.Reason)
 }
 
 func (a *API) getRelayTransportContract(w http.ResponseWriter, r *http.Request) {

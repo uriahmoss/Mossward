@@ -371,6 +371,13 @@ route, controlled transition reason, selection time, and last successful
 end-to-end acknowledgement are visible without exposing addresses, message
 contents, local paths, or credentials.
 
+Administrators can define audited relay upload-window policies for an endpoint
+or asset group. Each policy uses an explicit IANA timezone, unique weekdays,
+and minute-precise start and end times. Overnight windows retain the weekday on
+which they start and continue into the following day. Invalid, disabled, or
+out-of-window policies evaluate closed. Creating or changing a policy requires
+recent MFA; new policies are enabled explicitly by the creation workflow.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.
