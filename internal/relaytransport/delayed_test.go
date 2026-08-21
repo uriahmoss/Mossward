@@ -58,6 +58,18 @@ func TestDelayedQueueStoresEncryptedHeartbeatAndAgentLogs(t *testing.T) {
 	if err != nil || frame.Kind != MessageAgentLogBatch {
 		t.Fatalf("queued agent-log frame = %#v, error = %v", frame, err)
 	}
+	plaintext, err = Open(frame, serverKey, &signingKey.PublicKey, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope, err = DecodeDelayedTelemetry(frame.Kind, plaintext)
+	if err != nil || envelope.AgentLogBatch == nil {
+		t.Fatalf("compressed log envelope = %#v, error = %v", envelope, err)
+	}
+	openedLogs, err := OpenAgentLogBatch(*envelope.AgentLogBatch, "endpoint", frame.Sequence, &signingKey.PublicKey)
+	if err != nil || len(openedLogs) != 1 || openedLogs[0].Message != records[0].Message {
+		t.Fatalf("opened queued logs = %#v, error = %v", openedLogs, err)
+	}
 }
 
 func TestDelayedQueueRejectsNonAgentLogData(t *testing.T) {

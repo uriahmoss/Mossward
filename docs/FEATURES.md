@@ -396,7 +396,7 @@ failure and health states.
 - [x] Preserve both generated-at and server-received-at heartbeat timestamps
 - [x] Window-aware stale-node alerts with configurable post-window grace period
 - [x] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs
-- [ ] Signed, sequenced, compressed agent-log batches with source provenance
+- [x] Signed, sequenced, compressed agent-log batches with source provenance
 - [ ] Priority queueing for integrity and tamper alerts during closed windows
 - [ ] Acknowledge-before-delete delivery with duplicate rejection and resume
 - [ ] Queue age, capacity, dropped-record, and last-upload visibility

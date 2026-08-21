@@ -418,6 +418,14 @@ commands, destinations, Windows Event Logs, syslog, or general application
 logs. Record counts, component names, messages, payload size, age, queue bytes,
 and queue items are independently bounded.
 
+New Mossward agent-log envelopes contain a gzip-compressed record batch with an
+independent ECDSA signature, monotonically supplied sequence, random batch ID,
+fixed `mossward_agent` source, originating endpoint identity, record count,
+creation time, first and last record times, and compressed and expanded sizes.
+The server verifies the signature and provenance before bounded decompression.
+Legacy outer-signed uncompressed queue entries remain readable during upgrade,
+while newly created batches always use the signed compressed format.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

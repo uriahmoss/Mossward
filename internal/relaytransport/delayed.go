@@ -17,6 +17,7 @@ import (
 
 const (
 	delayedTelemetrySchemaVersion = 1
+	compressedLogEnvelopeVersion  = 2
 	maximumDelayedHeartbeatBytes  = 3 << 20
 	maximumAgentLogRecords        = 512
 	maximumAgentLogMessageBytes   = 2048
@@ -39,10 +40,11 @@ type AgentLogRecord struct {
 }
 
 type DelayedTelemetryEnvelope struct {
-	SchemaVersion int                 `json:"schema_version"`
-	Kind          MessageKind         `json:"kind"`
-	Heartbeat     *model.AgentCheckIn `json:"heartbeat,omitempty"`
-	AgentLogs     []AgentLogRecord    `json:"agent_logs,omitempty"`
+	SchemaVersion int                            `json:"schema_version"`
+	Kind          MessageKind                    `json:"kind"`
+	Heartbeat     *model.AgentCheckIn            `json:"heartbeat,omitempty"`
+	AgentLogs     []AgentLogRecord               `json:"agent_logs,omitempty"`
+	AgentLogBatch *SignedCompressedAgentLogBatch `json:"agent_log_batch,omitempty"`
 }
 
 type DelayedQueue struct {
@@ -77,7 +79,11 @@ func (q *DelayedQueue) EnqueueAgentLogs(records []AgentLogRecord, sequence uint6
 			return "", err
 		}
 	}
-	envelope := DelayedTelemetryEnvelope{SchemaVersion: delayedTelemetrySchemaVersion, Kind: MessageAgentLogBatch, AgentLogs: records}
+	batch, err := BuildAgentLogBatch(q.endpointID, sequence, records, generatedAt, q.signingKey)
+	if err != nil {
+		return "", err
+	}
+	envelope := DelayedTelemetryEnvelope{SchemaVersion: compressedLogEnvelopeVersion, Kind: MessageAgentLogBatch, AgentLogBatch: &batch}
 	return q.enqueue(envelope, MessageAgentLogBatch, sequence, generatedAt, now, MaximumCiphertextSize/2)
 }
 
@@ -115,16 +121,19 @@ func DecodeDelayedTelemetry(kind MessageKind, payload []byte) (DelayedTelemetryE
 	if err := decoder.Decode(&envelope); err != nil || decoder.Decode(&struct{}{}) != io.EOF {
 		return DelayedTelemetryEnvelope{}, errors.New("delayed telemetry envelope is invalid")
 	}
-	if envelope.SchemaVersion != delayedTelemetrySchemaVersion || envelope.Kind != kind {
+	if envelope.Kind != kind {
 		return DelayedTelemetryEnvelope{}, errors.New("delayed telemetry kind or schema is invalid")
 	}
 	switch kind {
 	case MessageAgentCheckIn:
-		if envelope.Heartbeat == nil || len(envelope.AgentLogs) != 0 || envelope.Heartbeat.SchemaVersion != 2 || envelope.Heartbeat.GeneratedAt.IsZero() {
+		if envelope.SchemaVersion != delayedTelemetrySchemaVersion || envelope.Heartbeat == nil || len(envelope.AgentLogs) != 0 || envelope.AgentLogBatch != nil || envelope.Heartbeat.SchemaVersion != 2 || envelope.Heartbeat.GeneratedAt.IsZero() {
 			return DelayedTelemetryEnvelope{}, errors.New("delayed heartbeat envelope is invalid")
 		}
 	case MessageAgentLogBatch:
-		if envelope.Heartbeat != nil || len(envelope.AgentLogs) == 0 || len(envelope.AgentLogs) > maximumAgentLogRecords {
+		if envelope.SchemaVersion == compressedLogEnvelopeVersion && envelope.Heartbeat == nil && len(envelope.AgentLogs) == 0 && envelope.AgentLogBatch != nil {
+			return envelope, nil
+		}
+		if envelope.SchemaVersion != delayedTelemetrySchemaVersion || envelope.Heartbeat != nil || envelope.AgentLogBatch != nil || len(envelope.AgentLogs) == 0 || len(envelope.AgentLogs) > maximumAgentLogRecords {
 			return DelayedTelemetryEnvelope{}, errors.New("delayed agent-log envelope is invalid")
 		}
 		for _, record := range envelope.AgentLogs {
