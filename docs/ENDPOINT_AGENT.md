@@ -355,6 +355,15 @@ message payload, queue path, credential, or cryptographic key material. Signed
 timestamps and monotonic sequences let the server reject altered, stale, or
 replayed reports.
 
+Relay failover is deterministic and closed to discovery. A server-issued policy
+lists each approved primary, secondary, or optional direct route with a unique
+priority, a bounded failure threshold, and a maximum health-observation age.
+The agent ignores unknown, unhealthy, and stale routes, never selects itself as
+a relay, and permits direct fallback only when it appears explicitly in policy.
+It stays on a healthy failover route to prevent flapping; returning to a
+preferred route requires a server selection. Route decisions retain the prior
+route, reason, failure count, and time for audit and later path visibility.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

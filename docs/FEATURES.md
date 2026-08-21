@@ -384,7 +384,7 @@ failure and health states.
 - [x] End-to-end signed and encrypted messages
 - [x] Bounded encrypted store-and-forward queue
 - [x] Relay health, capacity, and tamper telemetry
-- [ ] Approved failover behavior
+- [x] Approved failover behavior
 - [ ] Direct-versus-relayed path visibility
 
 ### 11. Relay communication windows and delayed telemetry
