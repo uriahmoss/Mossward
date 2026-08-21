@@ -402,6 +402,14 @@ and current connectivity; the agent-controlled generation time is retained as
 evidence for delayed-delivery and future clock-drift evaluation. Legacy version
 1 check-ins remain accepted with an unknown generation time.
 
+Heartbeat alerting understands the resolved delayed-heartbeat policy and the
+endpoint's direct and inherited upload windows. Missed and stale alerts are
+suppressed while an approved window is open and for the configured period after
+its most recent close, allowing an in-progress upload to arrive. Grace is
+bounded to 24 hours; overlapping allow policies inherit the shortest grace, and
+deny or conflict resolution has no grace. Server receipt time remains the age
+source, so an endpoint cannot suppress alerts by changing its clock.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

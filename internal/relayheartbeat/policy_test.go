@@ -32,6 +32,17 @@ func TestResolveOverlappingGroupConflictDenies(t *testing.T) {
 	}
 }
 
+func TestResolveOverlappingAllowGroupsUsesShortestGrace(t *testing.T) {
+	policies := []model.DelayedHeartbeatPolicy{
+		{TargetType: model.MaintenanceTargetGroup, TargetID: "long", AllowDelayedHeartbeats: true, PostWindowGraceMinutes: 60},
+		{TargetType: model.MaintenanceTargetGroup, TargetID: "short", AllowDelayedHeartbeats: true, PostWindowGraceMinutes: 15},
+	}
+	resolved := Resolve("endpoint", policies)
+	if !resolved.AllowDelayedHeartbeats || resolved.PostWindowGraceMinutes != 15 || resolved.Conflict {
+		t.Fatalf("overlapping allow-group grace = %#v", resolved)
+	}
+}
+
 func TestResolveAmbiguousEndpointOverridesDeny(t *testing.T) {
 	policies := []model.DelayedHeartbeatPolicy{
 		{TargetType: model.MaintenanceTargetEndpoint, TargetID: "endpoint", AllowDelayedHeartbeats: true},

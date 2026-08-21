@@ -44,13 +44,13 @@ func TestDelayedHeartbeatPolicyInheritanceConflictAndEndpointOverride(t *testing
 		t.Fatalf("group conflict policy = %#v, error = %v", resolved, err)
 	}
 	override := model.DelayedHeartbeatPolicy{TargetType: model.MaintenanceTargetEndpoint, TargetID: "endpoint",
-		AllowDelayedHeartbeats: true, Reason: "explicit endpoint override", UpdatedBy: "admin", UpdatedAt: now.Add(time.Minute)}
+		AllowDelayedHeartbeats: true, PostWindowGraceMinutes: 15, Reason: "explicit endpoint override", UpdatedBy: "admin", UpdatedAt: now.Add(time.Minute)}
 	event.TargetType, event.TargetID = string(override.TargetType), override.TargetID
 	if err := repository.UpsertDelayedHeartbeatPolicy(override, event); err != nil {
 		t.Fatal(err)
 	}
 	resolved, err = repository.ResolveDelayedHeartbeatPolicy("endpoint")
-	if err != nil || !resolved.AllowDelayedHeartbeats || resolved.Source != "endpoint_override" || resolved.Conflict {
+	if err != nil || !resolved.AllowDelayedHeartbeats || resolved.PostWindowGraceMinutes != 15 || resolved.Source != "endpoint_override" || resolved.Conflict {
 		t.Fatalf("endpoint override policy = %#v, error = %v", resolved, err)
 	}
 	event.Action = "endpoint.delayed_heartbeat_policy.removed"

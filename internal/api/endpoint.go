@@ -110,7 +110,8 @@ func (a *API) updateDelayedHeartbeatPolicy(w http.ResponseWriter, r *http.Reques
 	}
 	now := time.Now().UTC()
 	policy := model.DelayedHeartbeatPolicy{TargetType: targetType, TargetID: strings.TrimSpace(r.PathValue("target_id")),
-		AllowDelayedHeartbeats: request.AllowDelayedHeartbeats, Reason: strings.TrimSpace(request.Reason), UpdatedBy: actor.ID, UpdatedAt: now}
+		AllowDelayedHeartbeats: request.AllowDelayedHeartbeats, PostWindowGraceMinutes: request.PostWindowGraceMinutes,
+		Reason: strings.TrimSpace(request.Reason), UpdatedBy: actor.ID, UpdatedAt: now}
 	if err := relayheartbeat.Validate(policy); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return

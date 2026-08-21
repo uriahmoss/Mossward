@@ -20,6 +20,7 @@ import (
 	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 	"mossward/internal/networkpolicy"
+	"mossward/internal/relaywindow"
 	"mossward/internal/store"
 	"mossward/internal/workerjob"
 )
@@ -51,6 +52,11 @@ type EndpointIntegrityStore interface {
 
 type EndpointMaintenanceStore interface {
 	EndpointInMaintenance(string, time.Time) (bool, error)
+}
+
+type EndpointDelayedHeartbeatStore interface {
+	ResolveDelayedHeartbeatPolicy(string) (model.ResolvedDelayedHeartbeatPolicy, error)
+	RelayUploadWindowsForEndpoint(string) ([]model.RelayUploadWindow, error)
 }
 
 type EndpointStore interface {
@@ -150,12 +156,30 @@ func (s *Service) Endpoints() ([]model.Endpoint, error) {
 				return nil, err
 			}
 		}
-		items[index].Alerts = endpointAlerts(items[index], settings, inMaintenance, now)
+		relaySuppressed := false
+		if repository, ok := s.store.(EndpointDelayedHeartbeatStore); ok {
+			policy, policyErr := repository.ResolveDelayedHeartbeatPolicy(items[index].ID)
+			if policyErr != nil {
+				return nil, policyErr
+			}
+			if policy.AllowDelayedHeartbeats {
+				windows, windowErr := repository.RelayUploadWindowsForEndpoint(items[index].ID)
+				if windowErr != nil {
+					return nil, windowErr
+				}
+				suppression, suppressionErr := relaywindow.HeartbeatAlertSuppression(windows, policy, now)
+				if suppressionErr != nil {
+					return nil, suppressionErr
+				}
+				relaySuppressed = suppression.Suppressed
+			}
+		}
+		items[index].Alerts = endpointAlerts(items[index], settings, inMaintenance, relaySuppressed, now)
 	}
 	return items, nil
 }
 
-func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSettings, inMaintenance bool, now time.Time) []model.EndpointAlert {
+func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSettings, inMaintenance, relayWindowSuppressed bool, now time.Time) []model.EndpointAlert {
 	alerts := []model.EndpointAlert{}
 	if endpoint.Status == model.EndpointRevoked {
 		return append(alerts, model.EndpointAlert{Code: "certificate_revoked", Severity: "error", Message: "Endpoint certificate is revoked"})
@@ -178,6 +202,9 @@ func endpointAlerts(endpoint model.Endpoint, heartbeat model.EndpointHeartbeatSe
 	age := now.Sub(lastHeartbeat)
 	if inMaintenance && age >= time.Duration(heartbeat.MissedAfterMinutes)*time.Minute {
 		return append(alerts, model.EndpointAlert{Code: "heartbeat_suppressed_maintenance", Severity: "info", Message: "Heartbeat alert is suppressed by an active maintenance window"})
+	}
+	if relayWindowSuppressed && age >= time.Duration(heartbeat.MissedAfterMinutes)*time.Minute {
+		return append(alerts, model.EndpointAlert{Code: "heartbeat_suppressed_upload_window", Severity: "info", Message: "Heartbeat alert is suppressed by an approved relay upload window or grace period"})
 	}
 	if age >= time.Duration(heartbeat.StaleAfterMinutes)*time.Minute {
 		return append(alerts, model.EndpointAlert{Code: "agent_stale", Severity: "error", Message: "Endpoint agent has exceeded the stale-heartbeat threshold"})
