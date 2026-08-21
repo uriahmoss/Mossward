@@ -410,6 +410,14 @@ bounded to 24 hours; overlapping allow policies inherit the shortest grace, and
 deny or conflict resolution has no grace. Server receipt time remains the age
 source, so an endpoint cannot suppress alerts by changing its clock.
 
+Delayed heartbeat and Mossward agent-log records use a narrow facade over the
+bounded relay queue. The facade accepts only version 2 heartbeats or bounded
+Mossward-owned info, warning, and error records, then signs and encrypts each
+payload end to end for the server before persistence. It cannot enqueue files,
+commands, destinations, Windows Event Logs, syslog, or general application
+logs. Record counts, component names, messages, payload size, age, queue bytes,
+and queue items are independently bounded.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

@@ -395,7 +395,7 @@ failure and health states.
 - [x] Explicit node settings overriding inherited group heartbeat policy
 - [x] Preserve both generated-at and server-received-at heartbeat timestamps
 - [x] Window-aware stale-node alerts with configurable post-window grace period
-- [ ] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs
+- [x] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs
 - [ ] Signed, sequenced, compressed agent-log batches with source provenance
 - [ ] Priority queueing for integrity and tamper alerts during closed windows
 - [ ] Acknowledge-before-delete delivery with duplicate rejection and resume
