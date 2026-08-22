@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 4
+	postgresFoundationSchemaVersion = 5
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -118,11 +118,43 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 5 {
+		if err := migratePostgreSQLAuditRetention(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLAuditRetention(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE OR REPLACE FUNCTION protect_audit_events() RETURNS trigger LANGUAGE plpgsql AS $$
+		BEGIN
+			IF TG_OP='DELETE' AND current_setting('mossward.audit_retention',TRUE)='enabled' THEN RETURN OLD; END IF;
+			RAISE EXCEPTION 'audit events are append-only';
+		END $$`,
+		`CREATE OR REPLACE FUNCTION apply_audit_retention(cutoff TIMESTAMPTZ) RETURNS BIGINT LANGUAGE plpgsql AS $$
+		DECLARE removed BIGINT;
+		BEGIN
+			PERFORM set_config('mossward.audit_retention','enabled',TRUE);
+			DELETE FROM audit_events WHERE occurred_at<cutoff;
+			GET DIAGNOSTICS removed=ROW_COUNT;
+			RETURN removed;
+		END $$`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL audit retention: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(5,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL audit-retention migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLAuthenticationSchema(ctx context.Context, tx *sql.Tx) error {

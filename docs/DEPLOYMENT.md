@@ -196,6 +196,13 @@ group-derived role updates. Resolution locks each provider/subject pair and
 relevant identity rows so concurrent callbacks cannot duplicate or cross-link
 accounts; identity changes and audit records commit atomically.
 
+PostgreSQL migration version 5 and its repository methods add authentication
+policy storage, MFA-role policy reads, filtered audit queries, and controlled
+retention. Ordinary audit updates and deletes remain blocked by the append-only
+trigger. Retention deletion is available only through the dedicated database
+routine invoked in the same transaction that stores the new policy and appends
+its audit event.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
