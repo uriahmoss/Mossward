@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 12
+	postgresFoundationSchemaVersion = 13
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -158,11 +158,57 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 13 {
+		if err := migratePostgreSQLEndpointInventory(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLEndpointInventory(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE endpoint_os_inventory (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,family TEXT NOT NULL,name TEXT NOT NULL,
+			version TEXT NOT NULL,build TEXT NOT NULL,kernel TEXT NOT NULL,architecture TEXT NOT NULL,
+			collected_at TIMESTAMPTZ NOT NULL,received_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE endpoint_os_patches (
+			endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,patch_id TEXT NOT NULL,
+			description TEXT NOT NULL,installed_at TIMESTAMPTZ,PRIMARY KEY(endpoint_id,patch_id)
+		)`,
+		`CREATE INDEX endpoint_os_inventory_received_idx ON endpoint_os_inventory(received_at DESC)`,
+		`CREATE TABLE endpoint_software_inventory (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,
+			collected_at TIMESTAMPTZ NOT NULL,received_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE endpoint_installed_software (
+			endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			name TEXT NOT NULL,version TEXT NOT NULL,publisher TEXT NOT NULL,architecture TEXT NOT NULL,source TEXT NOT NULL,
+			PRIMARY KEY(endpoint_id,ordinal)
+		)`,
+		`CREATE INDEX endpoint_installed_software_lookup_idx ON endpoint_installed_software(name,version)`,
+		`CREATE TABLE endpoint_cve_matches (
+			endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE,product TEXT NOT NULL,version TEXT NOT NULL,
+			package_source TEXT NOT NULL,confidence TEXT NOT NULL,evidence TEXT NOT NULL,matched_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY(endpoint_id,cve_id,product,version,package_source)
+		)`,
+		`CREATE INDEX endpoint_cve_matches_cve_idx ON endpoint_cve_matches(cve_id,endpoint_id)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL endpoint inventory: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(13,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL endpoint-inventory migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLEndpointFoundation(ctx context.Context, tx *sql.Tx) error {

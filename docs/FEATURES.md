@@ -451,6 +451,8 @@ failure and health states.
             - [x] Enrollment tokens, endpoint reads, renewal, revocation, seen state, and policy updates
             - [ ] Atomic heartbeat and agent-update installation reconciliation
           - [ ] Endpoint inventory and CVE relevance persistence
+            - [x] OS, patch, installed-software, and endpoint CVE-match schema
+            - [ ] Atomic inventory replacement and environment-aware CVE matching operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

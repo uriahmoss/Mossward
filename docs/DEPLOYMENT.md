@@ -240,6 +240,10 @@ PostgreSQL migration version 12 establishes endpoint enrollment tokens,
 certificate identities and lifecycle state, heartbeat timestamps, collector and
 network-exclusion policy, platform version fields, and optional asset linkage.
 
+PostgreSQL migration version 13 adds endpoint OS and patch inventory, ordered
+installed-software snapshots, and endpoint-to-CVE matches with collection and
+receipt timestamps kept separately.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
