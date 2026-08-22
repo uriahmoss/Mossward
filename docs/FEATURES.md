@@ -426,6 +426,8 @@ failure and health states.
     - [ ] Core scan persistence parity
       - [x] Scan, target, port, observation, finding, and checkpoint schema foundation
       - [ ] Transactional scan save, load, listing, and interrupted-run reconciliation
+        - [x] Core scan graph persistence and interrupted-run state handling
+        - [ ] CVE-match persistence and asset inventory projection side effects
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
