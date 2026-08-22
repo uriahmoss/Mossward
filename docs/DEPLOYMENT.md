@@ -177,6 +177,12 @@ activity timestamp updates, logout, session listing, current-session marking,
 single and bulk revocation, and recent-MFA timestamps. Session changes that are
 security events share a transaction with the append-only audit record.
 
+PostgreSQL authentication-state parity now includes progressive bounded login
+throttling, atomic TOTP counter advancement, and single-use recovery codes with
+audit events. Failed-login updates take a transaction advisory lock derived
+from the already-hashed throttle key, preventing concurrent attempts from
+losing increments without storing or exposing the original login identifier.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

@@ -417,6 +417,7 @@ failure and health states.
     - [x] Local-user access and invitation lifecycle repository parity
     - [x] Race-safe first-administrator bootstrap and local identity lookup parity
     - [x] Session lifecycle, activity, MFA timestamp, and revocation parity
+    - [x] Login throttling, TOTP replay prevention, and recovery-code parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
