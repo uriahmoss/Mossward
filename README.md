@@ -6,6 +6,8 @@ It does not exploit services, guess credentials, evade monitoring, or scan publi
 
 Implementation status and the maintained roadmap are tracked in
 [`docs/FEATURES.md`](docs/FEATURES.md).
+Instructions for continuing development from another computer are in
+[`docs/CONTINUE_ON_ANOTHER_PC.md`](docs/CONTINUE_ON_ANOTHER_PC.md).
 Hosted transport configuration and reverse-proxy examples are documented in
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 Linux and Windows Server installation is covered in
