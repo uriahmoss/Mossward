@@ -95,6 +95,14 @@ reserved for a future explicit administrator policy.
 
 For multi-user deployment, separate the control plane from scanner workers. The control plane owns authentication, authorization, inventory, scheduling, and findings. Workers receive short-lived, signed jobs limited to an organization and approved scope. PostgreSQL can replace SQLite as the source of truth, and an append-only audit log records policy and scan lifecycle events.
 
+Mossward currently uses one organization per installation. The installation has
+one randomly generated, immutable organization identity stored inside its
+protected database; deletion, replacement, or a mismatched identity fails
+closed. Assets, users, scans, policies, agents, workers, signing keys, and trust
+roots belong to that physical installation boundary. An Entra tenant setting is
+an authentication restriction and is not treated as a data-isolation boundary.
+Hosting unrelated organizations in one database is unsupported.
+
 ## Future endpoint agent
 
 A hosted Mossward deployment may optionally enroll a small endpoint agent for
