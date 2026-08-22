@@ -30,6 +30,9 @@ func (s *PostgreSQLStore) Save(scan model.Scan) error {
 	if err := savePostgreSQLScanChildren(tx, scan); err != nil {
 		return err
 	}
+	if err := projectPostgreSQLScanAssets(tx, scan); err != nil {
+		return err
+	}
 	return tx.Commit()
 }
 

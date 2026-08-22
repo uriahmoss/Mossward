@@ -433,7 +433,8 @@ failure and health states.
           - [ ] Endpoint-software CVE relevance refresh
           - [ ] Asset inventory projection
             - [x] Asset identity, aliases, lifecycle, service history, evidence, and aging schema
-            - [ ] Transactional scan-to-asset correlation and service-history projection
+            - [x] Transactional scan-to-asset identity and alias correlation
+            - [ ] Service-history and provenance projection after worker-source parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
