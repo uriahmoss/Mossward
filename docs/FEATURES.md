@@ -430,7 +430,7 @@ failure and health states.
         - [ ] CVE-match persistence and asset inventory projection side effects
           - [x] CVE catalog, affected products, references, scan matches, and feed-state schema
           - [x] CVE repository queries, feed state, critical news, and scan-match round trips
-          - [ ] Endpoint-software CVE relevance refresh
+          - [x] Endpoint-software CVE relevance refresh
           - [ ] Asset inventory projection
             - [x] Asset identity, aliases, lifecycle, service history, evidence, and aging schema
             - [x] Transactional scan-to-asset identity and alias correlation
@@ -452,7 +452,7 @@ failure and health states.
             - [ ] Atomic heartbeat and agent-update installation reconciliation
           - [ ] Endpoint inventory and CVE relevance persistence
             - [x] OS, patch, installed-software, and endpoint CVE-match schema
-            - [ ] Atomic inventory replacement and environment-aware CVE matching operations
+            - [x] Atomic inventory replacement and environment-aware CVE matching operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
