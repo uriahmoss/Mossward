@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 15
+	postgresFoundationSchemaVersion = 16
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -173,11 +173,42 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 16 {
+		if err := migratePostgreSQLEndpointIntegrity(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLEndpointIntegrity(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE endpoint_integrity_snapshots (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,executable_sha256 TEXT NOT NULL,
+			configuration_sha256 TEXT NOT NULL,identity_sha256 TEXT NOT NULL,observed_at TIMESTAMPTZ NOT NULL,
+			received_at TIMESTAMPTZ NOT NULL,sequence BIGINT NOT NULL DEFAULT 0 CHECK(sequence >= 0),signature TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE endpoint_integrity_events (
+			id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,
+			component TEXT NOT NULL CHECK(component IN ('executable','configuration','identity')),
+			previous_sha256 TEXT NOT NULL,current_sha256 TEXT NOT NULL,observed_at TIMESTAMPTZ NOT NULL,
+			received_at TIMESTAMPTZ NOT NULL,sequence BIGINT NOT NULL DEFAULT 0 CHECK(sequence >= 0),signature TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE INDEX endpoint_integrity_events_endpoint_idx ON endpoint_integrity_events(endpoint_id,received_at DESC,id DESC)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL endpoint integrity: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(16,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL endpoint-integrity migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLEndpointNetwork(ctx context.Context, tx *sql.Tx) error {

@@ -252,6 +252,10 @@ PostgreSQL migration version 15 adds endpoint connection snapshots, process and
 hostname context, expiring IP/hostname threat indicators, and referentially
 bound indicator matches that are removed with their source connection.
 
+PostgreSQL migration version 16 adds signed integrity snapshots, monotonic
+sequence state, and append-only component-change events for executable,
+configuration, and endpoint identity hashes.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
