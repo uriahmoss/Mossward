@@ -183,6 +183,12 @@ audit events. Failed-login updates take a transaction advisory lock derived
 from the already-hashed throttle key, preventing concurrent attempts from
 losing increments without storing or exposing the original login identifier.
 
+PostgreSQL WebAuthn parity now includes encrypted credential creation, listing,
+state updates, and deletion. WebAuthn and OIDC ceremonies are consumed through
+one atomic `DELETE ... RETURNING` statement, so simultaneous callbacks cannot
+both obtain the same encrypted challenge state and kind substitution remains
+rejected.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
