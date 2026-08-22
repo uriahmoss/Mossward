@@ -450,6 +450,14 @@ operational aggregates only: message contents, destinations, local paths, and
 credentials are never included. Capacity rejection and expiration counters
 remain separate so administrators can distinguish pressure from retention.
 
+Upload authorization compares the endpoint timestamp with authenticated server
+time and fails closed when absolute drift exceeds five minutes. The approved
+window is always evaluated with server time, never the endpoint's claimed time,
+and the decision exposes only the drift magnitude. This makes clock problems
+visible while preventing a changed endpoint clock from silently opening a
+closed upload window. Time synchronization remains an administrator-operated
+system function; Mossward detects drift but does not change endpoint clocks.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

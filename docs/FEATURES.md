@@ -400,7 +400,7 @@ failure and health states.
 - [x] Priority queueing for integrity and tamper alerts during closed windows
 - [x] Acknowledge-before-delete delivery with duplicate rejection and resume
 - [x] Queue age, capacity, dropped-record, and last-upload visibility
-- [ ] Clock-drift detection so incorrect endpoint time cannot silently bypass windows
+- [x] Clock-drift detection so incorrect endpoint time cannot silently bypass windows
 - [ ] Exclude Windows Event Logs, syslog, and general application-log collection
       unless Mossward's product scope is explicitly expanded later
 
