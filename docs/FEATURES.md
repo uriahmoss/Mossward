@@ -435,6 +435,7 @@ failure and health states.
             - [x] Asset identity, aliases, lifecycle, service history, evidence, and aging schema
             - [x] Transactional scan-to-asset identity and alias correlation
             - [x] Asset inventory reads and audited metadata, lifecycle, eligibility, and aging controls
+            - [x] Asset service timelines, evidence provenance reads, and validated evidence ingestion
             - [ ] Service-history and provenance projection after worker-source parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
