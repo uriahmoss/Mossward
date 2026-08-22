@@ -159,6 +159,12 @@ external identities, and application metadata. It uses native `BYTEA`,
 the same role and identity-kind constraints. Repository method parity remains
 required before PostgreSQL can serve authentication traffic.
 
+The PostgreSQL repository now supports listing users, role and status changes,
+session revocation after access changes, invitations, token lookup, and atomic
+local invitation acceptance with encrypted TOTP material and recovery-code
+hashes. Final-local-administrator protection locks the relevant PostgreSQL rows
+before counting, preventing concurrent changes from bypassing the safeguard.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

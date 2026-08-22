@@ -414,6 +414,7 @@ failure and health states.
     - [x] SQL placeholder dialect and organization/scope-policy schema parity
     - [x] User/audit foundation and transactional scope-policy CRUD parity
     - [x] Authentication, MFA, WebAuthn, invitation, and OIDC schema parity
+    - [x] Local-user access and invitation lifecycle repository parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
