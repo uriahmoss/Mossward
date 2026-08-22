@@ -437,6 +437,9 @@ failure and health states.
             - [x] Asset inventory reads and audited metadata, lifecycle, eligibility, and aging controls
             - [x] Asset service timelines, evidence provenance reads, and validated evidence ingestion
             - [ ] Service-history and provenance projection after worker-source parity
+        - [ ] Asset-group and reusable scan-policy parity
+          - [x] Group membership, policy targeting, schedule, and execution-mode schema
+          - [ ] Audited group and reusable-policy repository operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

@@ -228,6 +228,10 @@ lifecycle and aging state, service history, and evidence provenance. Scan-save
 projection into these tables remains gated until its transactional repository
 helpers are complete.
 
+PostgreSQL migration version 10 adds asset groups, audited membership
+relationships, reusable scan policies, ordered group targeting, scheduling
+windows, missed-run behavior, rate limits, and local or remote execution mode.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

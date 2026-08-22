@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 9
+	postgresFoundationSchemaVersion = 10
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -143,11 +143,56 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 10 {
+		if err := migratePostgreSQLAssetGroups(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLAssetGroups(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE asset_groups (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,description TEXT NOT NULL DEFAULT '',
+			created_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE asset_group_members (
+			group_id TEXT NOT NULL REFERENCES asset_groups(id) ON DELETE CASCADE,
+			asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,added_at TIMESTAMPTZ NOT NULL,
+			added_by TEXT NOT NULL REFERENCES users(id),PRIMARY KEY(group_id,asset_id)
+		)`,
+		`CREATE INDEX asset_group_members_asset_idx ON asset_group_members(asset_id,group_id)`,
+		`CREATE TABLE reusable_scan_policies (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL UNIQUE,scope_policy_id TEXT NOT NULL REFERENCES scope_policies(id),
+			ports JSONB NOT NULL,enabled BOOLEAN NOT NULL DEFAULT TRUE,created_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL,
+			schedule_kind TEXT NOT NULL DEFAULT 'manual',schedule_expression TEXT NOT NULL DEFAULT '',
+			schedule_timezone TEXT NOT NULL DEFAULT 'UTC',window_start TEXT NOT NULL DEFAULT '',window_end TEXT NOT NULL DEFAULT '',
+			run_missed BOOLEAN NOT NULL DEFAULT FALSE,long_run_alert_seconds BIGINT NOT NULL DEFAULT 0 CHECK(long_run_alert_seconds >= 0),
+			next_run_at TIMESTAMPTZ,last_scheduled_at TIMESTAMPTZ,
+			rate_limit_per_second INTEGER NOT NULL DEFAULT 0 CHECK(rate_limit_per_second BETWEEN 0 AND 1000),
+			execution_mode TEXT NOT NULL DEFAULT 'local' CHECK(execution_mode IN ('local','remote')),
+			worker_site_id TEXT NOT NULL DEFAULT ''
+		)`,
+		`CREATE TABLE reusable_scan_policy_groups (
+			scan_policy_id TEXT NOT NULL REFERENCES reusable_scan_policies(id) ON DELETE CASCADE,
+			group_id TEXT NOT NULL REFERENCES asset_groups(id) ON DELETE RESTRICT,ordinal INTEGER NOT NULL,
+			PRIMARY KEY(scan_policy_id,group_id)
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL asset groups: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(10,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL asset-group migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLAssetFoundation(ctx context.Context, tx *sql.Tx) error {
