@@ -440,6 +440,10 @@ failure and health states.
         - [x] Asset-group and reusable scan-policy parity
           - [x] Group membership, policy targeting, schedule, and execution-mode schema
           - [x] Audited group and reusable-policy repository operations
+        - [ ] Finding workflow and reporting parity
+          - [x] Workflow index, approval exceptions, reminders, and retention schema
+          - [x] Audited finding workflow updates and active-assignee validation
+          - [ ] Exception approval, reminders, retention controls, and evidence purge operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

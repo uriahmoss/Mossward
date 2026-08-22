@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 10
+	postgresFoundationSchemaVersion = 11
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -148,11 +148,44 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 11 {
+		if err := migratePostgreSQLReporting(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLReporting(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE INDEX findings_workflow_idx ON findings(status,assigned_to)`,
+		`CREATE TABLE finding_exceptions (
+			id TEXT PRIMARY KEY,finding_id TEXT NOT NULL REFERENCES findings(id) ON DELETE CASCADE,
+			reason TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pending','approved','rejected')),
+			requested_by TEXT NOT NULL REFERENCES users(id),approved_by TEXT REFERENCES users(id),
+			created_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ,
+			reminder_days INTEGER NOT NULL DEFAULT 30 CHECK(reminder_days BETWEEN 1 AND 365),last_reminder_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX finding_exceptions_due_idx ON finding_exceptions(status,expires_at,last_reminder_at)`,
+		`CREATE TABLE evidence_retention_settings (
+			id SMALLINT PRIMARY KEY CHECK(id=1),retention_days INTEGER NOT NULL CHECK(retention_days BETWEEN 30 AND 3650),
+			updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`INSERT INTO evidence_retention_settings(id,retention_days,updated_at) VALUES(1,365,NOW())`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL reporting: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(11,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL reporting migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLAssetGroups(ctx context.Context, tx *sql.Tx) error {

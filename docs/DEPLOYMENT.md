@@ -232,6 +232,10 @@ PostgreSQL migration version 10 adds asset groups, audited membership
 relationships, reusable scan policies, ordered group targeting, scheduling
 windows, missed-run behavior, rate limits, and local or remote execution mode.
 
+PostgreSQL migration version 11 adds finding workflow indexes, administrator-
+approved finding exceptions and reminder state, plus a default 365-day evidence
+retention policy with configurable 30-to-3650-day bounds.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
