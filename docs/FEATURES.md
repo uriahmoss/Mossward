@@ -409,6 +409,10 @@ failure and health states.
 - [x] One-organization-per-install boundary with immutable installation identity
 - [x] Per-organization scope policies
 - [ ] PostgreSQL storage option
+  - [x] Secure backend configuration, maintained driver, connection checks, and migration foundation
+  - [ ] Full PostgreSQL schema and repository query parity
+  - [ ] PostgreSQL backup, restore, and deployment verification
+  - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,

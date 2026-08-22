@@ -55,6 +55,9 @@ func run(stop <-chan string) error {
 	if err != nil {
 		return err
 	}
+	if cfg.DatabaseBackend == config.DatabasePostgreSQL {
+		return errors.New("PostgreSQL backend foundation is installed but full schema and query parity are not complete")
+	}
 	if len(os.Args) > 2 && os.Args[1] == "backup" && (os.Args[2] == "restore" || os.Args[2] == "inspect") {
 		return runBackupCommand(cfg, nil, os.Args[2:])
 	}

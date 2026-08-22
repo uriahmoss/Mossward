@@ -29,6 +29,8 @@ type Config struct {
 	AgentUpdateKeyID     string
 	AgentUpdatePublicKey string
 	DatabaseFile         string
+	DatabaseBackend      DatabaseBackend
+	DatabaseURL          string
 	LegacyDataFile       string
 	IdentityKeyFile      string
 	WebAuthnRPID         string
@@ -41,6 +43,13 @@ type Config struct {
 	QueueSize            int
 	ConnectTimeout       time.Duration
 }
+
+type DatabaseBackend string
+
+const (
+	DatabaseSQLite     DatabaseBackend = "sqlite"
+	DatabasePostgreSQL DatabaseBackend = "postgresql"
+)
 
 func Load() (Config, error) {
 	cfg := Config{
@@ -59,6 +68,8 @@ func Load() (Config, error) {
 		AgentUpdateKeyID:     env("MOSSWARD_AGENT_UPDATE_KEY_ID", ""),
 		AgentUpdatePublicKey: env("MOSSWARD_AGENT_UPDATE_PUBLIC_KEY", ""),
 		DatabaseFile:         env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
+		DatabaseBackend:      DatabaseBackend(env("MOSSWARD_DATABASE_BACKEND", string(DatabaseSQLite))),
+		DatabaseURL:          env("MOSSWARD_DATABASE_URL", ""),
 		LegacyDataFile:       env("MOSSWARD_DATA_FILE", "data/scans.json"),
 		IdentityKeyFile:      env("MOSSWARD_IDENTITY_KEY_FILE", "data/identity.key"),
 		WebAuthnRPID:         env("MOSSWARD_WEBAUTHN_RP_ID", "localhost"),
@@ -115,7 +126,34 @@ func Load() (Config, error) {
 	if _, _, err := cfg.AgentUpdateTrust(); err != nil {
 		return Config{}, err
 	}
+	if err := validateDatabase(cfg); err != nil {
+		return Config{}, err
+	}
 	return cfg, nil
+}
+
+func validateDatabase(cfg Config) error {
+	switch cfg.DatabaseBackend {
+	case DatabaseSQLite:
+		if strings.TrimSpace(cfg.DatabaseFile) == "" {
+			return fmt.Errorf("MOSSWARD_DATABASE_FILE is required for SQLite")
+		}
+		if cfg.DatabaseURL != "" {
+			return fmt.Errorf("MOSSWARD_DATABASE_URL cannot be set for SQLite")
+		}
+		return nil
+	case DatabasePostgreSQL:
+		parsed, err := url.Parse(cfg.DatabaseURL)
+		if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" || strings.Trim(parsed.Path, "/") == "" {
+			return fmt.Errorf("MOSSWARD_DATABASE_URL must be a valid PostgreSQL URL with a host and database name")
+		}
+		if parsed.Query().Get("sslmode") != "verify-full" {
+			return fmt.Errorf("PostgreSQL requires sslmode=verify-full")
+		}
+		return nil
+	default:
+		return fmt.Errorf("MOSSWARD_DATABASE_BACKEND must be sqlite or postgresql")
+	}
 }
 
 func (c Config) AgentUpdateTrust() (string, ed25519.PublicKey, error) {

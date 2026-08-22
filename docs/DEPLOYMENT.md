@@ -122,6 +122,22 @@ requests without a trusted HTTPS indication are rejected.
 Use readiness, not liveness, to decide whether a load balancer should send
 production traffic to Mossward.
 
+## PostgreSQL foundation
+
+SQLite remains the production storage backend. PostgreSQL support is being
+introduced in verified slices and is not yet selectable for a production
+Mossward server. The foundation uses pgx, requires PostgreSQL 14 or newer,
+serializes schema changes with an advisory transaction lock, and creates the
+same immutable one-organization installation identity.
+
+Future PostgreSQL deployments will use `MOSSWARD_DATABASE_BACKEND=postgresql`
+and `MOSSWARD_DATABASE_URL`. The URL must identify a host and database and use
+`sslmode=verify-full`; Mossward does not silently downgrade transport or fall
+back to SQLite. Keep the URL in a service secret rather than a checked-in file
+or command-line argument. Fresh installations will be supported first. Existing
+SQLite databases will require the later offline migration utility and will
+never be converted automatically at server startup.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

@@ -59,6 +59,26 @@ func TestLoadUsesConfiguredSQLiteAndLegacyPaths(t *testing.T) {
 	}
 }
 
+func TestLoadValidatesPostgreSQLConfiguration(t *testing.T) {
+	t.Setenv("MOSSWARD_DATABASE_BACKEND", "postgresql")
+	t.Setenv("MOSSWARD_DATABASE_URL", "postgresql://mossward@db.example.test/mossward?sslmode=verify-full")
+	cfg, err := Load()
+	if err != nil || cfg.DatabaseBackend != DatabasePostgreSQL {
+		t.Fatalf("PostgreSQL configuration = %#v, error = %v", cfg, err)
+	}
+	t.Setenv("MOSSWARD_DATABASE_URL", "postgresql://mossward@db.example.test/mossward?sslmode=disable")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "sslmode=verify-full") {
+		t.Fatalf("insecure PostgreSQL transport result = %v", err)
+	}
+}
+
+func TestLoadRejectsAmbiguousDatabaseConfiguration(t *testing.T) {
+	t.Setenv("MOSSWARD_DATABASE_URL", "postgresql://mossward@db.example.test/mossward?sslmode=verify-full")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "cannot be set for SQLite") {
+		t.Fatalf("ambiguous database configuration result = %v", err)
+	}
+}
+
 func TestLoadRejectsInsecureRemoteWebAuthnOrigin(t *testing.T) {
 	t.Setenv("MOSSWARD_WEBAUTHN_RP_ID", "mossward.example.com")
 	t.Setenv("MOSSWARD_WEBAUTHN_ORIGINS", "http://mossward.example.com")
