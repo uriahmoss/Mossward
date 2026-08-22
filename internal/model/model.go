@@ -197,14 +197,15 @@ type CreateScanRequest struct {
 }
 
 type ScopePolicy struct {
-	ID            string    `json:"id"`
-	Name          string    `json:"name"`
-	AllowedCIDRs  []string  `json:"allowed_cidrs"`
-	AllowedPorts  []int     `json:"allowed_ports"`
-	MaxTargets    int       `json:"max_targets"`
-	MaxConcurrent int       `json:"max_concurrent"`
-	Enabled       bool      `json:"enabled"`
-	CreatedBy     string    `json:"created_by,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	OrganizationID string    `json:"organization_id"`
+	ID             string    `json:"id"`
+	Name           string    `json:"name"`
+	AllowedCIDRs   []string  `json:"allowed_cidrs"`
+	AllowedPorts   []int     `json:"allowed_ports"`
+	MaxTargets     int       `json:"max_targets"`
+	MaxConcurrent  int       `json:"max_concurrent"`
+	Enabled        bool      `json:"enabled"`
+	CreatedBy      string    `json:"created_by,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }

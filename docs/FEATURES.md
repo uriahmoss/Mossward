@@ -407,7 +407,7 @@ failure and health states.
 ### 12. Later platform scale and worker operations
 
 - [x] One-organization-per-install boundary with immutable installation identity
-- [ ] Per-organization scope policies
+- [x] Per-organization scope policies
 - [ ] PostgreSQL storage option
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback

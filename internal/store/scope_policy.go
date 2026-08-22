@@ -11,7 +11,7 @@ import (
 
 func (s *SQLiteStore) EnsureDefaultScopePolicy(policy model.ScopePolicy) error {
 	var count int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scope_policies`).Scan(&count); err != nil {
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM scope_policies WHERE organization_id=(SELECT id FROM installation_organization WHERE singleton=1)`).Scan(&count); err != nil {
 		return fmt.Errorf("count scope policies: %w", err)
 	}
 	if count > 0 {
@@ -22,7 +22,7 @@ func (s *SQLiteStore) EnsureDefaultScopePolicy(policy model.ScopePolicy) error {
 		return err
 	}
 	_, err = s.db.Exec(`INSERT INTO scope_policies(id, name, allowed_cidrs, allowed_ports, max_targets,
-		max_concurrent, enabled, created_by, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, 1, NULL, ?, ?)`,
+		max_concurrent, enabled, created_by, created_at, updated_at, organization_id) VALUES(?, ?, ?, ?, ?, ?, 1, NULL, ?, ?, (SELECT id FROM installation_organization WHERE singleton=1))`,
 		policy.ID, policy.Name, cidrs, ports, policy.MaxTargets, policy.MaxConcurrent,
 		formatTime(policy.CreatedAt), formatTime(policy.UpdatedAt))
 	if err != nil {
@@ -46,7 +46,7 @@ func (s *SQLiteStore) UpsertScopePolicy(policy model.ScopePolicy, event model.Au
 	}
 	defer tx.Rollback()
 	_, err = tx.Exec(`INSERT INTO scope_policies(id, name, allowed_cidrs, allowed_ports, max_targets,
-		max_concurrent, enabled, created_by, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		max_concurrent, enabled, created_by, created_at, updated_at, organization_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, (SELECT id FROM installation_organization WHERE singleton=1))
 		ON CONFLICT(id) DO UPDATE SET name=excluded.name, allowed_cidrs=excluded.allowed_cidrs,
 		allowed_ports=excluded.allowed_ports, max_targets=excluded.max_targets,
 		max_concurrent=excluded.max_concurrent, enabled=excluded.enabled, updated_at=excluded.updated_at`,
@@ -65,7 +65,7 @@ func (s *SQLiteStore) UpsertScopePolicy(policy model.ScopePolicy, event model.Au
 }
 
 func (s *SQLiteStore) ScopePolicy(id string) (model.ScopePolicy, error) {
-	policy, err := scanScopePolicy(s.db.QueryRow(scopePolicySelect+` WHERE id=?`, id))
+	policy, err := scanScopePolicy(s.db.QueryRow(scopePolicySelect+` AND id=?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.ScopePolicy{}, ErrNotFound
 	}
@@ -75,7 +75,7 @@ func (s *SQLiteStore) ScopePolicy(id string) (model.ScopePolicy, error) {
 func (s *SQLiteStore) ListScopePolicies(enabledOnly bool) ([]model.ScopePolicy, error) {
 	query := scopePolicySelect
 	if enabledOnly {
-		query += ` WHERE enabled=1`
+		query += ` AND enabled=1`
 	}
 	rows, err := s.db.Query(query + ` ORDER BY name`)
 	if err != nil {
@@ -94,13 +94,14 @@ func (s *SQLiteStore) ListScopePolicies(enabledOnly bool) ([]model.ScopePolicy, 
 }
 
 const scopePolicySelect = `SELECT id, name, allowed_cidrs, allowed_ports, max_targets, max_concurrent,
-	enabled, COALESCE(created_by,''), created_at, updated_at FROM scope_policies`
+	enabled, COALESCE(created_by,''), created_at, updated_at, organization_id FROM scope_policies
+	WHERE organization_id=(SELECT id FROM installation_organization WHERE singleton=1)`
 
 func scanScopePolicy(scanner interface{ Scan(...any) error }) (model.ScopePolicy, error) {
 	var policy model.ScopePolicy
 	var cidrs, ports, createdAt, updatedAt string
 	err := scanner.Scan(&policy.ID, &policy.Name, &cidrs, &ports, &policy.MaxTargets, &policy.MaxConcurrent,
-		&policy.Enabled, &policy.CreatedBy, &createdAt, &updatedAt)
+		&policy.Enabled, &policy.CreatedBy, &createdAt, &updatedAt, &policy.OrganizationID)
 	if err != nil {
 		return model.ScopePolicy{}, err
 	}

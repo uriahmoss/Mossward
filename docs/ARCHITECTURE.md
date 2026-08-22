@@ -103,6 +103,12 @@ roots belong to that physical installation boundary. An Entra tenant setting is
 an authentication restriction and is not treated as a data-isolation boundary.
 Hosting unrelated organizations in one database is unsupported.
 
+Every scan scope policy is owned by the installation organization. Existing
+policies are assigned during migration, normal reads and writes are filtered by
+the current organization, and database triggers reject foreign ownership or
+later reassignment. This organization check complements CIDR, port, target, and
+concurrency restrictions; it does not broaden any scanning authorization.
+
 ## Future endpoint agent
 
 A hosted Mossward deployment may optionally enroll a small endpoint agent for
