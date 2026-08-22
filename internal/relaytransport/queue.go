@@ -59,6 +59,7 @@ type QueueStats struct {
 	RoutineItems  int       `json:"routine_items"`
 	ElevatedItems int       `json:"elevated_items"`
 	CriticalItems int       `json:"critical_items"`
+	LeasedItems   int       `json:"leased_items"`
 	OldestFrame   time.Time `json:"oldest_frame,omitempty"`
 }
 
@@ -255,8 +256,8 @@ func (q *Queue) Stats() (QueueStats, error) {
 	var oldest sql.NullInt64
 	err := q.db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(frame_size),0),
 		COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),
-		COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),MIN(created_at) FROM relay_frames`,
-		QueuePriorityRoutine, QueuePriorityElevated, QueuePriorityCritical).Scan(&stats.Items, &stats.Bytes, &stats.RoutineItems, &stats.ElevatedItems, &stats.CriticalItems, &oldest)
+		COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN delivery_token IS NOT NULL THEN 1 ELSE 0 END),0),MIN(created_at) FROM relay_frames`,
+		QueuePriorityRoutine, QueuePriorityElevated, QueuePriorityCritical).Scan(&stats.Items, &stats.Bytes, &stats.RoutineItems, &stats.ElevatedItems, &stats.CriticalItems, &stats.LeasedItems, &oldest)
 	if err != nil {
 		return stats, fmt.Errorf("read relay queue statistics: %w", err)
 	}

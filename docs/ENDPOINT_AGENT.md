@@ -443,6 +443,13 @@ tokens fail closed. A failed attempt can be explicitly released, and an expired
 lease becomes eligible after process restart so interrupted uploads resume.
 Duplicate message IDs remain rejected at enqueue time.
 
+Signed relay health telemetry exposes queue item and byte capacity, configured
+maximum age, oldest-item age, priority counts, active delivery leases, aggregate
+dropped-record count, and the last upload attempt and success times. These are
+operational aggregates only: message contents, destinations, local paths, and
+credentials are never included. Capacity rejection and expiration counters
+remain separate so administrators can distinguish pressure from retention.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

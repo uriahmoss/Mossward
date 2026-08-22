@@ -25,6 +25,7 @@ type TelemetryCounters struct {
 	CapacityRejections uint64 `json:"capacity_rejections"`
 	ExpiredFrames      uint64 `json:"expired_frames"`
 	IntegrityFailures  uint64 `json:"integrity_failures"`
+	DroppedRecords     uint64 `json:"dropped_records"`
 }
 
 type TelemetryReport struct {
@@ -36,12 +37,19 @@ type TelemetryReport struct {
 	QueueBytes                int64             `json:"queue_bytes"`
 	QueueItemLimit            int               `json:"queue_item_limit"`
 	QueueByteLimit            int64             `json:"queue_byte_limit"`
+	QueueMaximumAgeSeconds    int64             `json:"queue_maximum_age_seconds"`
 	QueueItemUtilization      int               `json:"queue_item_utilization_basis_points"`
 	QueueByteUtilization      int               `json:"queue_byte_utilization_basis_points"`
+	QueueRoutineItems         int               `json:"queue_routine_items"`
+	QueueElevatedItems        int               `json:"queue_elevated_items"`
+	QueueCriticalItems        int               `json:"queue_critical_items"`
+	QueueLeasedItems          int               `json:"queue_leased_items"`
 	OldestFrameAgeSeconds     int64             `json:"oldest_frame_age_seconds"`
 	Counters                  TelemetryCounters `json:"counters"`
 	Path                      *PathVisibility   `json:"path,omitempty"`
 	LastServerAcknowledgement time.Time         `json:"last_server_acknowledgement,omitempty"`
+	LastUploadAttempt         time.Time         `json:"last_upload_attempt,omitempty"`
+	LastSuccessfulUpload      time.Time         `json:"last_successful_upload,omitempty"`
 	ObservedAt                time.Time         `json:"observed_at"`
 }
 
@@ -64,6 +72,8 @@ type TelemetryMonitor struct {
 	mu                        sync.Mutex
 	counters                  TelemetryCounters
 	lastServerAcknowledgement time.Time
+	lastUploadAttempt         time.Time
+	lastSuccessfulUpload      time.Time
 	path                      *PathVisibility
 	sequence                  uint64
 }
@@ -89,9 +99,28 @@ func (m *TelemetryMonitor) RecordAcknowledgement(result error, observedAt time.T
 	defer m.mu.Unlock()
 	m.counters.AcknowledgedFrames++
 	m.lastServerAcknowledgement = observedAt.UTC()
+	m.lastSuccessfulUpload = observedAt.UTC()
 	if m.path != nil {
 		m.path.LastEndToEndAcknowledgement = observedAt.UTC()
 	}
+}
+
+func (m *TelemetryMonitor) RecordUploadAttempt(observedAt time.Time) {
+	if observedAt.IsZero() {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.lastUploadAttempt = observedAt.UTC()
+}
+
+func (m *TelemetryMonitor) RecordDropped(count uint64) {
+	if count == 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.counters.DroppedRecords += count
 }
 
 func (m *TelemetryMonitor) RecordRouteDecision(decision RouteDecision) error {
@@ -133,11 +162,15 @@ func (m *TelemetryMonitor) Report(relayID string, stats QueueStats, limits Queue
 	sequence := m.sequence
 	counters := m.counters
 	lastAcknowledgement := m.lastServerAcknowledgement
+	lastUploadAttempt := m.lastUploadAttempt
+	lastSuccessfulUpload := m.lastSuccessfulUpload
 	path := clonePathVisibility(m.path)
 	m.mu.Unlock()
 	report := TelemetryReport{SchemaVersion: 1, RelayID: relayID, Sequence: sequence, QueueItems: stats.Items, QueueBytes: stats.Bytes,
-		QueueItemLimit: limits.MaxItems, QueueByteLimit: limits.MaxBytes, Counters: counters,
-		Path: path, LastServerAcknowledgement: lastAcknowledgement, ObservedAt: observedAt.UTC()}
+		QueueItemLimit: limits.MaxItems, QueueByteLimit: limits.MaxBytes, QueueMaximumAgeSeconds: int64(limits.MaxAge.Seconds()),
+		QueueRoutineItems: stats.RoutineItems, QueueElevatedItems: stats.ElevatedItems, QueueCriticalItems: stats.CriticalItems,
+		QueueLeasedItems: stats.LeasedItems, Counters: counters, Path: path, LastServerAcknowledgement: lastAcknowledgement,
+		LastUploadAttempt: lastUploadAttempt, LastSuccessfulUpload: lastSuccessfulUpload, ObservedAt: observedAt.UTC()}
 	report.QueueItemUtilization = utilizationBasisPoints(int64(stats.Items), int64(limits.MaxItems))
 	report.QueueByteUtilization = utilizationBasisPoints(stats.Bytes, limits.MaxBytes)
 	if !stats.OldestFrame.IsZero() && observedAt.After(stats.OldestFrame) {
@@ -239,7 +272,7 @@ func classifyRelayHealth(report TelemetryReport) HealthState {
 	if report.Counters.IntegrityFailures > 0 {
 		return HealthCritical
 	}
-	if report.Counters.CapacityRejections > 0 || report.QueueItemUtilization >= 9000 || report.QueueByteUtilization >= 9000 {
+	if report.Counters.CapacityRejections > 0 || report.Counters.ExpiredFrames > 0 || report.Counters.DroppedRecords > 0 || report.QueueItemUtilization >= 9000 || report.QueueByteUtilization >= 9000 {
 		return HealthDegraded
 	}
 	return HealthHealthy

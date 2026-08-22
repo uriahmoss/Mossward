@@ -15,14 +15,22 @@ func TestTelemetryReportsCapacityAndSignedHealthWithoutMessageContent(t *testing
 	monitor.RecordEnqueue(nil)
 	monitor.RecordEnqueue(ErrQueueDuplicate)
 	monitor.RecordEnqueue(ErrQueueFull)
+	monitor.RecordDropped(7)
+	monitor.RecordUploadAttempt(now.Add(-2 * time.Minute))
 	monitor.RecordAcknowledgement(nil, now.Add(-time.Minute))
-	report, err := monitor.Report("relay-1", QueueStats{Items: 9, Bytes: 90, OldestFrame: now.Add(-time.Hour)},
+	report, err := monitor.Report("relay-1", QueueStats{Items: 9, Bytes: 90, RoutineItems: 5, ElevatedItems: 2, CriticalItems: 2, LeasedItems: 1, OldestFrame: now.Add(-time.Hour)},
 		QueueLimits{MaxItems: 10, MaxBytes: 100, MaxAge: time.Hour}, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.Health != HealthDegraded || report.Sequence != 1 || report.QueueItemUtilization != 9000 || report.QueueByteUtilization != 9000 || report.OldestFrameAgeSeconds != 3600 {
 		t.Fatalf("unexpected relay telemetry report: %#v", report)
+	}
+	if report.QueueMaximumAgeSeconds != 3600 || report.QueueRoutineItems != 5 || report.QueueElevatedItems != 2 || report.QueueCriticalItems != 2 || report.QueueLeasedItems != 1 || report.Counters.DroppedRecords != 7 {
+		t.Fatalf("incomplete queue visibility: %#v", report)
+	}
+	if !report.LastUploadAttempt.Equal(now.Add(-2*time.Minute)) || !report.LastSuccessfulUpload.Equal(now.Add(-time.Minute)) {
+		t.Fatalf("upload visibility is incorrect: %#v", report)
 	}
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -54,6 +62,18 @@ func TestTelemetryTreatsTamperEvidenceAsCritical(t *testing.T) {
 	monitor.RecordEnqueue(errors.New("unrelated failure"))
 	if report.Counters.CapacityRejections != 0 {
 		t.Fatal("unrelated failure changed capacity telemetry")
+	}
+}
+
+func TestTelemetryTreatsDroppedRecordsAsDegraded(t *testing.T) {
+	monitor := &TelemetryMonitor{}
+	monitor.RecordDropped(1)
+	report, err := monitor.Report("relay-1", QueueStats{}, QueueLimits{MaxItems: 10, MaxBytes: 100, MaxAge: time.Hour}, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Health != HealthDegraded {
+		t.Fatalf("dropped records did not degrade relay health: %#v", report)
 	}
 }
 

@@ -140,6 +140,10 @@ func TestQueueRequiresMatchingAcknowledgementAndResumesExpiredDelivery(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
+	stats, err := queue.Stats()
+	if err != nil || stats.LeasedItems != 1 {
+		t.Fatalf("leased queue stats = %#v, error = %v", stats, err)
+	}
 	if err := queue.Acknowledge(frame.MessageID, "incorrect-token"); !errors.Is(err, ErrQueueAckRejected) {
 		t.Fatalf("incorrect acknowledgement result = %v", err)
 	}
