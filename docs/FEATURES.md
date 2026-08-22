@@ -445,6 +445,10 @@ failure and health states.
           - [x] Workflow index, approval exceptions, reminders, and retention schema
           - [x] Audited finding workflow updates and active-assignee validation
           - [x] Exception approval, reminders, retention controls, and evidence purge operations
+        - [ ] Endpoint storage parity
+          - [x] Enrollment token, certificate identity, lifecycle, heartbeat, collector, and platform schema
+          - [ ] Audited enrollment, certificate lifecycle, endpoint policy, and check-in operations
+          - [ ] Endpoint inventory and CVE relevance persistence
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

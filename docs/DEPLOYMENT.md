@@ -236,6 +236,10 @@ PostgreSQL migration version 11 adds finding workflow indexes, administrator-
 approved finding exceptions and reminder state, plus a default 365-day evidence
 retention policy with configurable 30-to-3650-day bounds.
 
+PostgreSQL migration version 12 establishes endpoint enrollment tokens,
+certificate identities and lifecycle state, heartbeat timestamps, collector and
+network-exclusion policy, platform version fields, and optional asset linkage.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

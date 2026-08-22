@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 11
+	postgresFoundationSchemaVersion = 12
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -153,11 +153,46 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 12 {
+		if err := migratePostgreSQLEndpointFoundation(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLEndpointFoundation(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE agent_enrollment_tokens (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL,token_hash BYTEA NOT NULL UNIQUE,created_by TEXT NOT NULL REFERENCES users(id),
+			created_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ NOT NULL,used_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX agent_enrollment_tokens_expiry_idx ON agent_enrollment_tokens(expires_at,used_at)`,
+		`CREATE TABLE endpoints (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('active','revoked')),
+			certificate_serial TEXT NOT NULL UNIQUE,certificate_pem TEXT NOT NULL,enrolled_at TIMESTAMPTZ NOT NULL,
+			expires_at TIMESTAMPTZ NOT NULL,last_seen_at TIMESTAMPTZ,last_heartbeat_generated_at TIMESTAMPTZ,
+			last_heartbeat_received_at TIMESTAMPTZ,renewed_at TIMESTAMPTZ,revoked_at TIMESTAMPTZ,
+			revocation_reason TEXT NOT NULL DEFAULT '',allowed_collectors JSONB NOT NULL DEFAULT '[]'::jsonb,
+			network_telemetry_exclusions JSONB NOT NULL DEFAULT '{"applications":[],"destinations":[]}'::jsonb,
+			software_version TEXT NOT NULL DEFAULT '',operating_system TEXT NOT NULL DEFAULT '',architecture TEXT NOT NULL DEFAULT '',
+			asset_id TEXT REFERENCES assets(id)
+		)`,
+		`CREATE INDEX endpoints_status_idx ON endpoints(status,name)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL endpoint foundation: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(12,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL endpoint-foundation migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLReporting(ctx context.Context, tx *sql.Tx) error {
