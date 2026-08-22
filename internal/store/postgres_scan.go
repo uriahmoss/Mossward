@@ -55,6 +55,15 @@ func savePostgreSQLScanChildren(tx *sql.Tx, scan model.Scan) error {
 	if err := savePostgreSQLFindings(tx, scan); err != nil {
 		return err
 	}
+	for ordinal, match := range scan.CVEMatches {
+		_, err := tx.Exec(`INSERT INTO cve_matches(scan_id,observation_id,cve_id,ordinal,target,address,port,product,
+			version,confidence,evidence,matched_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`, scan.ID,
+			match.ObservationID, match.CVEID, ordinal, match.Target, match.Address, match.Port, match.Product,
+			match.Version, match.Confidence, match.Evidence, match.MatchedAt)
+		if err != nil {
+			return fmt.Errorf("insert PostgreSQL CVE match: %w", err)
+		}
+	}
 	for _, checkpoint := range scan.Checkpoints {
 		if _, err := tx.Exec(`INSERT INTO scan_checkpoints(scan_id,address,port,completed_at) VALUES($1,$2,$3,$4)`,
 			scan.ID, checkpoint.Address, checkpoint.Port, checkpoint.CompletedAt); err != nil {
@@ -116,7 +125,7 @@ func (s *PostgreSQLStore) Get(id string) (model.Scan, error) {
 	scan.CompletedAt = nullablePostgreSQLTime(completed)
 	scan.WindowEnd = nullablePostgreSQLTime(windowEnd)
 	loaders := []func(*model.Scan) error{s.loadPostgreSQLTargets, s.loadPostgreSQLPorts, s.loadPostgreSQLObservations,
-		s.loadPostgreSQLFindings, s.loadPostgreSQLCheckpoints}
+		s.loadPostgreSQLFindings, s.loadPostgreSQLCVEMatches, s.loadPostgreSQLCheckpoints}
 	for _, load := range loaders {
 		if err := load(&scan); err != nil {
 			return model.Scan{}, err
@@ -127,7 +136,6 @@ func (s *PostgreSQLStore) Get(id string) (model.Scan, error) {
 		return model.Scan{}, fmt.Errorf("load PostgreSQL scan alert state: %w", err)
 	}
 	scan.LongAlertSent = alertCount > 0
-	scan.CVEMatches = []model.CVEMatch{}
 	return scan, nil
 }
 
@@ -309,6 +317,27 @@ func (s *PostgreSQLStore) loadPostgreSQLCheckpoints(scan *model.Scan) error {
 			return fmt.Errorf("read PostgreSQL scan checkpoint: %w", err)
 		}
 		scan.Checkpoints = append(scan.Checkpoints, checkpoint)
+	}
+	return rows.Err()
+}
+
+func (s *PostgreSQLStore) loadPostgreSQLCVEMatches(scan *model.Scan) error {
+	rows, err := s.db.Query(`SELECT m.cve_id,m.observation_id,m.target,m.address,m.port,m.product,m.version,
+		c.severity,c.cvss_score,c.description,m.confidence,m.evidence,c.known_exploited,c.source_url,m.matched_at
+		FROM cve_matches m JOIN cves c ON c.id=m.cve_id WHERE m.scan_id=$1 ORDER BY m.ordinal`, scan.ID)
+	if err != nil {
+		return fmt.Errorf("load PostgreSQL CVE matches: %w", err)
+	}
+	defer rows.Close()
+	scan.CVEMatches = []model.CVEMatch{}
+	for rows.Next() {
+		var match model.CVEMatch
+		if err := rows.Scan(&match.CVEID, &match.ObservationID, &match.Target, &match.Address, &match.Port,
+			&match.Product, &match.Version, &match.Severity, &match.CVSSScore, &match.Description, &match.Confidence,
+			&match.Evidence, &match.KnownExploited, &match.SourceURL, &match.MatchedAt); err != nil {
+			return fmt.Errorf("read PostgreSQL CVE match: %w", err)
+		}
+		scan.CVEMatches = append(scan.CVEMatches, match)
 	}
 	return rows.Err()
 }

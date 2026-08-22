@@ -218,6 +218,11 @@ targets, ports, service observations and metadata, findings, and resumable scan
 checkpoints. Repository query parity remains gated until the transactional scan
 save and load methods are complete.
 
+PostgreSQL migration version 8 adds the CVE catalog, affected-product ranges,
+references, scan-linked CVE matches, and feed synchronization state. Endpoint
+software relevance remains dependent on the later endpoint-inventory parity
+slice.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

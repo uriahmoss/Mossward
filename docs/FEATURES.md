@@ -428,6 +428,10 @@ failure and health states.
       - [ ] Transactional scan save, load, listing, and interrupted-run reconciliation
         - [x] Core scan graph persistence and interrupted-run state handling
         - [ ] CVE-match persistence and asset inventory projection side effects
+          - [x] CVE catalog, affected products, references, scan matches, and feed-state schema
+          - [x] CVE repository queries, feed state, critical news, and scan-match round trips
+          - [ ] Endpoint-software CVE relevance refresh
+          - [ ] Asset inventory projection
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 7
+	postgresFoundationSchemaVersion = 8
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -133,11 +133,61 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 8 {
+		if err := migratePostgreSQLIntelligence(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLIntelligence(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE cves (
+			id TEXT PRIMARY KEY,description TEXT NOT NULL,published_at TIMESTAMPTZ NOT NULL,modified_at TIMESTAMPTZ NOT NULL,
+			cvss_score DOUBLE PRECISION NOT NULL DEFAULT 0,cvss_vector TEXT NOT NULL DEFAULT '',severity TEXT NOT NULL,
+			known_exploited BOOLEAN NOT NULL DEFAULT FALSE,source_url TEXT NOT NULL
+		)`,
+		`CREATE INDEX cves_news_idx ON cves(severity,known_exploited,published_at DESC)`,
+		`CREATE TABLE cve_products (
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,cpe23 TEXT NOT NULL,
+			part TEXT NOT NULL,vendor TEXT NOT NULL,product TEXT NOT NULL,version TEXT NOT NULL DEFAULT '',
+			version_start_including TEXT NOT NULL DEFAULT '',version_start_excluding TEXT NOT NULL DEFAULT '',
+			version_end_including TEXT NOT NULL DEFAULT '',version_end_excluding TEXT NOT NULL DEFAULT '',
+			vulnerable BOOLEAN NOT NULL,PRIMARY KEY(cve_id,ordinal)
+		)`,
+		`CREATE INDEX cve_products_lookup_idx ON cve_products(vendor,product,vulnerable)`,
+		`CREATE TABLE cve_references (
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			url TEXT NOT NULL,source TEXT NOT NULL DEFAULT '',PRIMARY KEY(cve_id,ordinal)
+		)`,
+		`CREATE TABLE cve_matches (
+			scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,
+			observation_id TEXT NOT NULL REFERENCES service_observations(id) ON DELETE CASCADE,
+			cve_id TEXT NOT NULL REFERENCES cves(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,target TEXT NOT NULL,
+			address TEXT NOT NULL,port INTEGER NOT NULL,product TEXT NOT NULL,version TEXT NOT NULL,
+			confidence TEXT NOT NULL,evidence TEXT NOT NULL,matched_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY(scan_id,observation_id,cve_id)
+		)`,
+		`CREATE INDEX cve_matches_cve_idx ON cve_matches(cve_id)`,
+		`CREATE TABLE feed_sync_status (
+			source TEXT PRIMARY KEY,status TEXT NOT NULL,last_started TIMESTAMPTZ,last_success TIMESTAMPTZ,
+			records INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT ''
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL intelligence: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(8,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL intelligence migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLScanFoundation(ctx context.Context, tx *sql.Tx) error {
