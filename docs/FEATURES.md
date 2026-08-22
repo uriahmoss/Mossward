@@ -421,6 +421,7 @@ failure and health states.
     - [x] WebAuthn credential and one-time authentication ceremony parity
     - [x] OIDC provider, invite-only, and JIT identity repository parity
     - [x] Authentication policy, audit query, and controlled retention parity
+    - [x] Transactional authentication ciphertext rotation parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

@@ -35,7 +35,7 @@ func (s *SQLiteStore) RotateIdentityCiphertexts(cipher IdentityCipher, now time.
 	defer tx.Rollback()
 	rotated := 0
 	for _, column := range identityEncryptedColumns {
-		count, err := rotateEncryptedColumn(tx, cipher, column)
+		count, err := rotateEncryptedColumn(tx, cipher, column, dialectSQLite)
 		if err != nil {
 			return 0, err
 		}
@@ -52,7 +52,7 @@ func (s *SQLiteStore) RotateIdentityCiphertexts(cipher IdentityCipher, now time.
 	return rotated, nil
 }
 
-func rotateEncryptedColumn(tx *sql.Tx, cipher IdentityCipher, column encryptedColumn) (int, error) {
+func rotateEncryptedColumn(tx *sql.Tx, cipher IdentityCipher, column encryptedColumn, dialect sqlDialect) (int, error) {
 	query := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s IS NOT NULL AND length(%s)>0",
 		column.keyColumn, column.value, column.table, column.value, column.value)
 	rows, err := tx.Query(query)
@@ -75,7 +75,7 @@ func rotateEncryptedColumn(tx *sql.Tx, cipher IdentityCipher, column encryptedCo
 	if err := rows.Close(); err != nil {
 		return 0, err
 	}
-	update := fmt.Sprintf("UPDATE %s SET %s=? WHERE %s=?", column.table, column.value, column.keyColumn)
+	update := bindQuery(dialect, fmt.Sprintf("UPDATE %s SET %s=? WHERE %s=?", column.table, column.value, column.keyColumn))
 	for _, item := range records {
 		plaintext, err := cipher.Decrypt(item.ciphertext)
 		if err != nil {

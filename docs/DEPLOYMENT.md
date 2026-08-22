@@ -203,6 +203,12 @@ trigger. Retention deletion is available only through the dedicated database
 routine invoked in the same transaction that stores the new policy and appends
 its audit event.
 
+PostgreSQL identity-key maintenance can now re-encrypt TOTP secrets, WebAuthn
+credentials, active ceremony state, and OIDC client secrets in one transaction.
+Any decrypt, encrypt, update, or audit failure rolls the entire rotation back.
+SMTP password rotation remains tied to the later PostgreSQL notification-store
+parity slice because that table does not yet exist in PostgreSQL.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
