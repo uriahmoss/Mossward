@@ -436,6 +436,7 @@ failure and health states.
             - [x] Transactional scan-to-asset identity and alias correlation
             - [x] Asset inventory reads and audited metadata, lifecycle, eligibility, and aging controls
             - [x] Asset service timelines, evidence provenance reads, and validated evidence ingestion
+            - [x] Administrator-directed asset merging with history and relationship preservation
             - [ ] Service-history and provenance projection after worker-source parity
         - [x] Asset-group and reusable scan-policy parity
           - [x] Group membership, policy targeting, schedule, and execution-mode schema
