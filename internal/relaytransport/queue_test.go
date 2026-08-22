@@ -5,8 +5,10 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -89,6 +91,88 @@ func TestQueueRejectsExpiredFramesAndReportsPurges(t *testing.T) {
 	}
 }
 
+func TestQueueDeliversSecurityAlertsBeforeRoutineTelemetry(t *testing.T) {
+	now := time.Now().UTC()
+	queue, err := OpenQueue(filepath.Join(t.TempDir(), "relay", "queue.db"), QueueLimits{MaxItems: 4, MaxBytes: 8 << 20, MaxAge: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queue.Close()
+	frames := []Frame{
+		testSealedFrameKind(t, now, "00000000000000000000000000000001", MessageAgentLogBatch),
+		testSealedFrameKind(t, now, "00000000000000000000000000000002", MessageTamperAlert),
+		testSealedFrameKind(t, now, "00000000000000000000000000000003", MessageAgentCheckIn),
+		testSealedFrameKind(t, now, "00000000000000000000000000000004", MessageIntegrityAlert),
+	}
+	for _, frame := range frames {
+		if err := queue.Enqueue(frame, now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, expected := range []MessageKind{MessageTamperAlert, MessageIntegrityAlert, MessageAgentCheckIn, MessageAgentLogBatch} {
+		frame, err := queue.Peek(now)
+		if err != nil || frame.Kind != expected {
+			t.Fatalf("priority dequeue = %s, expected %s, error = %v", frame.Kind, expected, err)
+		}
+		if err := queue.Acknowledge(frame.MessageID); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestQueueMigratesLegacyFramesWithoutDataLoss(t *testing.T) {
+	now := time.Now().UTC()
+	directory := filepath.Join(t.TempDir(), "relay")
+	if err := os.Mkdir(directory, queueDirectoryMode); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(directory, "queue.db")
+	dsn, err := queueDSN(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := testSealedFrameKind(t, now, "00112233445566778899aabbccddeeff", MessageTamperAlert)
+	encoded, err := json.Marshal(frame)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, statement := range []string{
+		`CREATE TABLE relay_queue_metadata (schema_version INTEGER NOT NULL)`,
+		`INSERT INTO relay_queue_metadata(schema_version) VALUES(1)`,
+		`CREATE TABLE relay_frames (message_id TEXT PRIMARY KEY,frame_json BLOB NOT NULL,frame_size INTEGER NOT NULL CHECK(frame_size>0),created_at INTEGER NOT NULL)`,
+	} {
+		if _, err := database.Exec(statement); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.Exec(`INSERT INTO relay_frames(message_id,frame_json,frame_size,created_at) VALUES(?,?,?,?)`, frame.MessageID, encoded, len(encoded), now.UnixNano()); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(path, queueFileMode); err != nil {
+		t.Fatal(err)
+	}
+	queue, err := OpenQueue(path, QueueLimits{MaxItems: 2, MaxBytes: 1 << 20, MaxAge: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queue.Close()
+	loaded, err := queue.Peek(now)
+	if err != nil || loaded.MessageID != frame.MessageID {
+		t.Fatalf("migrated relay frame = %#v, error = %v", loaded, err)
+	}
+	stats, err := queue.Stats()
+	if err != nil || stats.RoutineItems != 0 || stats.CriticalItems != 1 {
+		t.Fatalf("migrated queue stats = %#v, error = %v", stats, err)
+	}
+}
+
 func testSealedFrame(t *testing.T, createdAt time.Time, messageID string, plaintext []byte) Frame {
 	t.Helper()
 	signingKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -102,6 +186,25 @@ func testSealedFrame(t *testing.T, createdAt time.Time, messageID string, plaint
 	frame := Frame{MessageID: messageID, Kind: MessageAgentLogBatch, DownstreamEndpointID: "endpoint",
 		SenderID: "endpoint", RecipientID: "server", Sequence: 1, CreatedAt: createdAt}
 	sealed, err := Seal(frame, plaintext, signingKey, recipientKey.PublicKey())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sealed
+}
+
+func testSealedFrameKind(t *testing.T, createdAt time.Time, messageID string, kind MessageKind) Frame {
+	t.Helper()
+	signingKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recipientKey, err := GenerateEncryptionKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := Frame{MessageID: messageID, Kind: kind, DownstreamEndpointID: "endpoint",
+		SenderID: "endpoint", RecipientID: "server", Sequence: 1, CreatedAt: createdAt}
+	sealed, err := Seal(frame, []byte("encrypted telemetry"), signingKey, recipientKey.PublicKey())
 	if err != nil {
 		t.Fatal(err)
 	}

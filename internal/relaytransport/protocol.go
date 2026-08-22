@@ -15,10 +15,11 @@ const (
 type MessageKind string
 
 const (
-	MessageAgentCheckIn  MessageKind = "agent_check_in"
-	MessageServerReply   MessageKind = "server_reply"
-	MessageAgentLogBatch MessageKind = "agent_log_batch"
-	MessageTamperAlert   MessageKind = "tamper_alert"
+	MessageAgentCheckIn   MessageKind = "agent_check_in"
+	MessageServerReply    MessageKind = "server_reply"
+	MessageAgentLogBatch  MessageKind = "agent_log_batch"
+	MessageIntegrityAlert MessageKind = "integrity_alert"
+	MessageTamperAlert    MessageKind = "tamper_alert"
 )
 
 type Frame struct {
@@ -53,7 +54,7 @@ type Contract struct {
 func ProtocolContract() Contract {
 	return Contract{ProtocolVersion: ProtocolVersion, MediaType: MediaType, MaximumCiphertextSize: MaximumCiphertextSize, EndToEndProtection: true,
 		EncryptionSuite: "X25519-HKDF-SHA256-AES-256-GCM", SignatureAlgorithm: "ECDSA-P256-SHA256",
-		AllowedMessageKinds: []MessageKind{MessageAgentCheckIn, MessageServerReply, MessageAgentLogBatch, MessageTamperAlert}}
+		AllowedMessageKinds: []MessageKind{MessageAgentCheckIn, MessageServerReply, MessageAgentLogBatch, MessageIntegrityAlert, MessageTamperAlert}}
 }
 
 func ValidateFrame(frame Frame, now time.Time) error {

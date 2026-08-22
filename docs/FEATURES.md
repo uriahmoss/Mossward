@@ -397,7 +397,7 @@ failure and health states.
 - [x] Window-aware stale-node alerts with configurable post-window grace period
 - [x] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs
 - [x] Signed, sequenced, compressed agent-log batches with source provenance
-- [ ] Priority queueing for integrity and tamper alerts during closed windows
+- [x] Priority queueing for integrity and tamper alerts during closed windows
 - [ ] Acknowledge-before-delete delivery with duplicate rejection and resume
 - [ ] Queue age, capacity, dropped-record, and last-upload visibility
 - [ ] Clock-drift detection so incorrect endpoint time cannot silently bypass windows

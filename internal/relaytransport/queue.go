@@ -16,10 +16,18 @@ import (
 )
 
 const (
-	queueSchemaVersion = 1
+	queueSchemaVersion = 2
 	queueFileMode      = 0o600
 	queueDirectoryMode = 0o700
 	maximumQueueAge    = 30 * 24 * time.Hour
+)
+
+type QueuePriority int
+
+const (
+	QueuePriorityRoutine  QueuePriority = 100
+	QueuePriorityElevated QueuePriority = 200
+	QueuePriorityCritical QueuePriority = 300
 )
 
 var (
@@ -35,9 +43,12 @@ type QueueLimits struct {
 }
 
 type QueueStats struct {
-	Items       int       `json:"items"`
-	Bytes       int64     `json:"bytes"`
-	OldestFrame time.Time `json:"oldest_frame,omitempty"`
+	Items         int       `json:"items"`
+	Bytes         int64     `json:"bytes"`
+	RoutineItems  int       `json:"routine_items"`
+	ElevatedItems int       `json:"elevated_items"`
+	CriticalItems int       `json:"critical_items"`
+	OldestFrame   time.Time `json:"oldest_frame,omitempty"`
 }
 
 type Queue struct {
@@ -108,8 +119,8 @@ func (q *Queue) Enqueue(frame Frame, now time.Time) error {
 	if items >= q.limits.MaxItems || bytesUsed+int64(len(encoded)) > q.limits.MaxBytes {
 		return ErrQueueFull
 	}
-	_, err = tx.Exec(`INSERT INTO relay_frames(message_id,frame_json,frame_size,created_at) VALUES(?,?,?,?)`,
-		frame.MessageID, encoded, len(encoded), frame.CreatedAt.UTC().UnixNano())
+	_, err = tx.Exec(`INSERT INTO relay_frames(message_id,frame_json,frame_size,created_at,priority) VALUES(?,?,?,?,?)`,
+		frame.MessageID, encoded, len(encoded), frame.CreatedAt.UTC().UnixNano(), priorityForFrame(frame))
 	if err != nil {
 		return fmt.Errorf("enqueue encrypted relay frame: %w", err)
 	}
@@ -119,7 +130,7 @@ func (q *Queue) Enqueue(frame Frame, now time.Time) error {
 func (q *Queue) Peek(now time.Time) (Frame, error) {
 	var frame Frame
 	var encoded []byte
-	err := q.db.QueryRow(`SELECT frame_json FROM relay_frames ORDER BY rowid LIMIT 1`).Scan(&encoded)
+	err := q.db.QueryRow(`SELECT frame_json FROM relay_frames ORDER BY priority DESC,rowid LIMIT 1`).Scan(&encoded)
 	if errors.Is(err, sql.ErrNoRows) {
 		return frame, ErrQueueEmpty
 	}
@@ -166,7 +177,10 @@ func (q *Queue) PurgeExpired(now time.Time) (int64, error) {
 func (q *Queue) Stats() (QueueStats, error) {
 	var stats QueueStats
 	var oldest sql.NullInt64
-	err := q.db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(frame_size),0),MIN(created_at) FROM relay_frames`).Scan(&stats.Items, &stats.Bytes, &oldest)
+	err := q.db.QueryRow(`SELECT COUNT(*),COALESCE(SUM(frame_size),0),
+		COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(CASE WHEN priority=? THEN 1 ELSE 0 END),0),MIN(created_at) FROM relay_frames`,
+		QueuePriorityRoutine, QueuePriorityElevated, QueuePriorityCritical).Scan(&stats.Items, &stats.Bytes, &stats.RoutineItems, &stats.ElevatedItems, &stats.CriticalItems, &oldest)
 	if err != nil {
 		return stats, fmt.Errorf("read relay queue statistics: %w", err)
 	}
@@ -195,9 +209,81 @@ func (q *Queue) migrate() error {
 		return fmt.Errorf("read relay queue schema: %w", err)
 	}
 	if version != queueSchemaVersion {
-		return fmt.Errorf("unsupported relay queue schema %d", version)
+		if version > queueSchemaVersion {
+			return fmt.Errorf("unsupported relay queue schema %d", version)
+		}
+		if err := q.migratePriorityQueue(version); err != nil {
+			return err
+		}
 	}
 	return nil
+}
+
+func (q *Queue) migratePriorityQueue(version int) error {
+	if version != 1 {
+		return fmt.Errorf("unsupported relay queue schema %d", version)
+	}
+	tx, err := q.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin relay priority-queue migration: %w", err)
+	}
+	defer tx.Rollback()
+	if _, err := tx.Exec(`ALTER TABLE relay_frames ADD COLUMN priority INTEGER NOT NULL DEFAULT 100`); err != nil {
+		return fmt.Errorf("migrate relay priority queue: %w", err)
+	}
+	rows, err := tx.Query(`SELECT message_id,frame_json FROM relay_frames`)
+	if err != nil {
+		return fmt.Errorf("read legacy relay priorities: %w", err)
+	}
+	type legacyPriority struct {
+		messageID string
+		priority  QueuePriority
+	}
+	priorities := []legacyPriority{}
+	for rows.Next() {
+		var item legacyPriority
+		var encoded []byte
+		if err := rows.Scan(&item.messageID, &encoded); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan legacy relay priority: %w", err)
+		}
+		var frame Frame
+		if json.Unmarshal(encoded, &frame) == nil {
+			item.priority = priorityForFrame(frame)
+		} else {
+			item.priority = QueuePriorityRoutine
+		}
+		priorities = append(priorities, item)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("read legacy relay priority rows: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return fmt.Errorf("close legacy relay priority rows: %w", err)
+	}
+	for _, item := range priorities {
+		if _, err := tx.Exec(`UPDATE relay_frames SET priority=? WHERE message_id=?`, item.priority, item.messageID); err != nil {
+			return fmt.Errorf("update legacy relay priority: %w", err)
+		}
+	}
+	for _, statement := range []string{`CREATE INDEX relay_frames_priority_idx ON relay_frames(priority DESC,created_at,message_id)`, `UPDATE relay_queue_metadata SET schema_version=2`} {
+		if _, err := tx.Exec(statement); err != nil {
+			return fmt.Errorf("finish relay priority-queue migration: %w", err)
+		}
+	}
+	return tx.Commit()
+}
+
+func priorityForFrame(frame Frame) QueuePriority {
+	switch frame.Kind {
+	case MessageIntegrityAlert, MessageTamperAlert:
+		return QueuePriorityCritical
+	case MessageAgentCheckIn, MessageServerReply:
+		return QueuePriorityElevated
+	default:
+		return QueuePriorityRoutine
+	}
 }
 
 func validateQueueLimits(limits QueueLimits) error {

@@ -426,6 +426,15 @@ The server verifies the signature and provenance before bounded decompression.
 Legacy outer-signed uncompressed queue entries remain readable during upgrade,
 while newly created batches always use the signed compressed format.
 
+The encrypted queue assigns priority from the closed Mossward message kind,
+never from caller-supplied numeric input. Integrity and tamper alerts are
+critical, heartbeats and server replies are elevated, and routine agent logs
+are normal. Delivery is FIFO within each priority and always selects the
+highest available priority first. Queue statistics expose counts by priority.
+Existing encrypted frames migrate in place and receive priority from their
+authenticated Mossward message kind; no queued evidence is silently evicted or
+overwritten to make room for an alert.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.
