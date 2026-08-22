@@ -454,7 +454,7 @@ failure and health states.
             - [x] OS, patch, installed-software, and endpoint CVE-match schema
             - [x] Atomic inventory replacement and environment-aware CVE matching operations
             - [x] Listening-service and security-posture schema
-            - [ ] Atomic listening-service and posture inventory operations
+            - [x] Atomic listening-service and posture inventory operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
