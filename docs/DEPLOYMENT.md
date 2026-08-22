@@ -165,6 +165,13 @@ local invitation acceptance with encrypted TOTP material and recovery-code
 hashes. Final-local-administrator protection locks the relevant PostgreSQL rows
 before counting, preventing concurrent changes from bypassing the safeguard.
 
+First-time PostgreSQL setup now has repository parity for initialization checks,
+administrator creation, encrypted TOTP material, recovery-code hashes, and
+normalized local identity lookup. Bootstrap takes a transaction-scoped advisory
+lock before checking for existing users, so concurrent setup requests cannot
+both create the first administrator. The account and audit event commit
+together.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

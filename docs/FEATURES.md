@@ -415,6 +415,7 @@ failure and health states.
     - [x] User/audit foundation and transactional scope-policy CRUD parity
     - [x] Authentication, MFA, WebAuthn, invitation, and OIDC schema parity
     - [x] Local-user access and invitation lifecycle repository parity
+    - [x] Race-safe first-administrator bootstrap and local identity lookup parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
