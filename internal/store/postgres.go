@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 13
+	postgresFoundationSchemaVersion = 14
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -163,11 +163,51 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 14 {
+		if err := migratePostgreSQLEndpointListeningPosture(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLEndpointListeningPosture(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE endpoint_listening_inventory (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,
+			collected_at TIMESTAMPTZ NOT NULL,received_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE endpoint_listening_services (
+			endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			protocol TEXT NOT NULL,address TEXT NOT NULL,port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+			process_id INTEGER NOT NULL,process_name TEXT NOT NULL,executable TEXT NOT NULL,
+			PRIMARY KEY(endpoint_id,ordinal)
+		)`,
+		`CREATE INDEX endpoint_listening_service_lookup_idx ON endpoint_listening_services(protocol,port,process_name)`,
+		`CREATE TABLE endpoint_posture_inventory (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,
+			collected_at TIMESTAMPTZ NOT NULL,received_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE endpoint_posture_evidence (
+			endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,evidence_id TEXT NOT NULL,
+			title TEXT NOT NULL,status TEXT NOT NULL CHECK(status IN ('pass','fail','unknown')),detail TEXT NOT NULL,
+			PRIMARY KEY(endpoint_id,evidence_id)
+		)`,
+		`CREATE INDEX endpoint_posture_status_idx ON endpoint_posture_evidence(status,evidence_id)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL endpoint listening and posture inventory: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(14,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL endpoint listening/posture migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLEndpointInventory(ctx context.Context, tx *sql.Tx) error {

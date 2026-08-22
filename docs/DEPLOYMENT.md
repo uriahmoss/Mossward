@@ -244,6 +244,10 @@ PostgreSQL migration version 13 adds endpoint OS and patch inventory, ordered
 installed-software snapshots, and endpoint-to-CVE matches with collection and
 receipt timestamps kept separately.
 
+PostgreSQL migration version 14 adds listening-service snapshots with process
+ownership and executable evidence, plus pass/fail/unknown security-posture
+evidence. Collection and server receipt times remain distinct.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
