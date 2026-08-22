@@ -448,6 +448,8 @@ failure and health states.
         - [ ] Endpoint storage parity
           - [x] Enrollment token, certificate identity, lifecycle, heartbeat, collector, and platform schema
           - [ ] Audited enrollment, certificate lifecycle, endpoint policy, and check-in operations
+            - [x] Enrollment tokens, endpoint reads, renewal, revocation, seen state, and policy updates
+            - [ ] Atomic heartbeat and agent-update installation reconciliation
           - [ ] Endpoint inventory and CVE relevance persistence
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
