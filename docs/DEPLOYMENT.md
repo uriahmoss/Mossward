@@ -172,6 +172,11 @@ lock before checking for existing users, so concurrent setup requests cannot
 both create the first administrator. The account and audit event commit
 together.
 
+PostgreSQL session parity now covers creation, active-user resolution, bounded
+activity timestamp updates, logout, session listing, current-session marking,
+single and bulk revocation, and recent-MFA timestamps. Session changes that are
+security events share a transaction with the append-only audit record.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
