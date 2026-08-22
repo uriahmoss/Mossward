@@ -457,9 +457,9 @@ failure and health states.
             - [x] Atomic listening-service and posture inventory operations
             - [x] Network connection, threat-indicator, and indicator-match schema
             - [x] Atomic network inventory and threat-indicator matching operations
-          - [ ] Endpoint integrity and tamper-event parity
+          - [x] Endpoint integrity and tamper-event parity
             - [x] Signed integrity snapshot, sequence, and component-change event schema
-            - [ ] Serialized replay-resistant snapshot and event operations
+            - [x] Serialized replay-resistant snapshot and event operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
