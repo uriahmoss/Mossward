@@ -213,6 +213,11 @@ ciphertexts are now included in PostgreSQL identity-key rotation, completing
 rotation parity for every encrypted identity and notification column currently
 available in that backend.
 
+PostgreSQL migration version 7 establishes the core scan data model: scans,
+targets, ports, service observations and metadata, findings, and resumable scan
+checkpoints. Repository query parity remains gated until the transactional scan
+save and load methods are complete.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

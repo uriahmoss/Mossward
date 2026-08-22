@@ -423,6 +423,9 @@ failure and health states.
     - [x] Authentication policy, audit query, and controlled retention parity
     - [x] Transactional authentication ciphertext rotation parity
     - [x] SMTP settings, recipients, alert deduplication, and credential rotation parity
+    - [ ] Core scan persistence parity
+      - [x] Scan, target, port, observation, finding, and checkpoint schema foundation
+      - [ ] Transactional scan save, load, listing, and interrupted-run reconciliation
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

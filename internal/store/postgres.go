@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 6
+	postgresFoundationSchemaVersion = 7
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -128,11 +128,76 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 7 {
+		if err := migratePostgreSQLScanFoundation(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLScanFoundation(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE scans (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL,status TEXT NOT NULL,error TEXT NOT NULL DEFAULT '',
+			total_checks INTEGER NOT NULL DEFAULT 0,done_checks INTEGER NOT NULL DEFAULT 0,
+			created_at TIMESTAMPTZ NOT NULL,started_at TIMESTAMPTZ,completed_at TIMESTAMPTZ,
+			scope_policy_id TEXT NOT NULL DEFAULT '',max_concurrent INTEGER NOT NULL DEFAULT 1 CHECK(max_concurrent > 0),
+			scan_policy_id TEXT NOT NULL DEFAULT '',active_seconds BIGINT NOT NULL DEFAULT 0 CHECK(active_seconds >= 0),
+			window_end TIMESTAMPTZ,long_alert_sent BOOLEAN NOT NULL DEFAULT FALSE,
+			rate_limit_per_second INTEGER NOT NULL DEFAULT 0 CHECK(rate_limit_per_second BETWEEN 0 AND 1000)
+		)`,
+		`CREATE INDEX scans_created_at_idx ON scans(created_at DESC)`,
+		`CREATE TABLE scan_targets (
+			scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			name TEXT NOT NULL,address TEXT NOT NULL,group_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+			PRIMARY KEY(scan_id,ordinal)
+		)`,
+		`CREATE INDEX scan_targets_address_idx ON scan_targets(address)`,
+		`CREATE TABLE scan_ports (
+			scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),PRIMARY KEY(scan_id,ordinal)
+		)`,
+		`CREATE TABLE service_observations (
+			id TEXT PRIMARY KEY,scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			target TEXT NOT NULL,address TEXT NOT NULL,port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+			protocol TEXT NOT NULL,product TEXT NOT NULL DEFAULT '',version TEXT NOT NULL DEFAULT '',
+			confidence TEXT NOT NULL,evidence TEXT NOT NULL,observed_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE INDEX observations_product_version_idx ON service_observations(product,version)`,
+		`CREATE INDEX observations_scan_idx ON service_observations(scan_id,ordinal)`,
+		`CREATE TABLE observation_metadata (
+			observation_id TEXT NOT NULL REFERENCES service_observations(id) ON DELETE CASCADE,
+			key TEXT NOT NULL,value TEXT NOT NULL,PRIMARY KEY(observation_id,key)
+		)`,
+		`CREATE TABLE findings (
+			id TEXT PRIMARY KEY,scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			check_id TEXT NOT NULL,target TEXT NOT NULL,address TEXT NOT NULL,port INTEGER NOT NULL,
+			service TEXT NOT NULL,severity TEXT NOT NULL,title TEXT NOT NULL,evidence TEXT NOT NULL,
+			remediation TEXT NOT NULL,observed_at TIMESTAMPTZ NOT NULL,status TEXT NOT NULL DEFAULT 'open'
+				CHECK(status IN ('open','in_progress','resolved')),assigned_to TEXT,workflow_updated_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX findings_scan_idx ON findings(scan_id,ordinal)`,
+		`CREATE INDEX findings_check_severity_idx ON findings(check_id,severity)`,
+		`CREATE TABLE scan_checkpoints (
+			scan_id TEXT NOT NULL REFERENCES scans(id) ON DELETE CASCADE,address TEXT NOT NULL,
+			port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),completed_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY(scan_id,address,port)
+		)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL scan foundation: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(7,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL scan-foundation migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLNotifications(ctx context.Context, tx *sql.Tx) error {
