@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 1
+	postgresFoundationSchemaVersion = 2
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -62,10 +62,10 @@ func (s *PostgreSQLStore) initialize(ctx context.Context) error {
 	if err != nil || version/10000 < minimumPostgreSQLMajorVersion {
 		return fmt.Errorf("PostgreSQL %d or newer is required", minimumPostgreSQLMajorVersion)
 	}
-	return s.migrateFoundation(ctx)
+	return s.migrate(ctx)
 }
 
-func (s *PostgreSQLStore) migrateFoundation(ctx context.Context) error {
+func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 	organizationID, err := newOrganizationID()
 	if err != nil {
 		return err
@@ -83,7 +83,7 @@ func (s *PostgreSQLStore) migrateFoundation(ctx context.Context) error {
 		`DROP TRIGGER IF EXISTS installation_organization_immutable ON installation_organization`,
 		`CREATE TRIGGER installation_organization_immutable BEFORE UPDATE OF id OR DELETE ON installation_organization FOR EACH ROW EXECUTE FUNCTION protect_installation_organization()`,
 		`INSERT INTO installation_organization(singleton,id,name,created_at) VALUES(TRUE,$1,$2,$3) ON CONFLICT(singleton) DO NOTHING`,
-		`INSERT INTO schema_migrations(version,applied_at) VALUES($1,$2) ON CONFLICT(version) DO NOTHING`,
+		`INSERT INTO schema_migrations(version,applied_at) VALUES(1,$1) ON CONFLICT(version) DO NOTHING`,
 	}
 	if _, err := tx.ExecContext(ctx, statements[0], postgresMigrationLockID); err != nil {
 		return fmt.Errorf("lock PostgreSQL migrations: %w", err)
@@ -96,15 +96,50 @@ func (s *PostgreSQLStore) migrateFoundation(ctx context.Context) error {
 	if _, err := tx.ExecContext(ctx, statements[6], organizationID, defaultOrganizationName, time.Now().UTC()); err != nil {
 		return fmt.Errorf("initialize PostgreSQL organization: %w", err)
 	}
-	if _, err := tx.ExecContext(ctx, statements[7], postgresFoundationSchemaVersion, time.Now().UTC()); err != nil {
+	if _, err := tx.ExecContext(ctx, statements[7], time.Now().UTC()); err != nil {
 		return fmt.Errorf("record PostgreSQL foundation migration: %w", err)
 	}
-	var version, organizations int
+	var version int
 	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&version); err != nil || version > postgresFoundationSchemaVersion {
 		return errors.New("PostgreSQL foundation schema is newer than this Mossward build")
 	}
+	if version < 2 {
+		if err := migratePostgreSQLScopePolicies(ctx, tx); err != nil {
+			return err
+		}
+	}
+	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLScopePolicies(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE scope_policies (
+			id TEXT PRIMARY KEY,
+			organization_id TEXT NOT NULL REFERENCES installation_organization(id),
+			name TEXT NOT NULL,
+			allowed_cidrs JSONB NOT NULL,
+			allowed_ports JSONB NOT NULL,
+			max_targets INTEGER NOT NULL CHECK(max_targets>0),
+			max_concurrent INTEGER NOT NULL CHECK(max_concurrent>0),
+			enabled BOOLEAN NOT NULL DEFAULT TRUE,
+			created_by TEXT,
+			created_at TIMESTAMPTZ NOT NULL,
+			updated_at TIMESTAMPTZ NOT NULL,
+			UNIQUE(organization_id,name)
+		)`,
+		`CREATE INDEX scope_policies_organization_idx ON scope_policies(organization_id,name)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL scope policies: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(2,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL scope-policy migration: %w", err)
+	}
+	return nil
 }

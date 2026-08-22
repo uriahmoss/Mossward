@@ -411,6 +411,7 @@ failure and health states.
 - [ ] PostgreSQL storage option
   - [x] Secure backend configuration, maintained driver, connection checks, and migration foundation
   - [ ] Full PostgreSQL schema and repository query parity
+    - [x] SQL placeholder dialect and organization/scope-policy schema parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

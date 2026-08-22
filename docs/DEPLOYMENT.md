@@ -138,6 +138,13 @@ or command-line argument. Fresh installations will be supported first. Existing
 SQLite databases will require the later offline migration utility and will
 never be converted automatically at server startup.
 
+The parity layer now includes PostgreSQL-native installation organization and
+scope-policy tables using `TIMESTAMPTZ`, `JSONB`, relational ownership, and
+database constraints. A tested SQL binder converts Mossward placeholders for
+PostgreSQL while preserving quoted literal and identifier text. PostgreSQL
+server startup remains blocked until every repository and audit dependency has
+equivalent behavior.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
