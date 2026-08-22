@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 8
+	postgresFoundationSchemaVersion = 9
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -138,11 +138,83 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 9 {
+		if err := migratePostgreSQLAssetFoundation(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLAssetFoundation(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE assets (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL,address TEXT NOT NULL UNIQUE,first_seen TIMESTAMPTZ NOT NULL,
+			last_seen TIMESTAMPTZ NOT NULL,last_scan_id TEXT NOT NULL,owner TEXT NOT NULL DEFAULT '',
+			environment TEXT NOT NULL DEFAULT '',classification TEXT NOT NULL DEFAULT '',
+			lifecycle_status TEXT NOT NULL DEFAULT 'active' CHECK(lifecycle_status IN ('active','retired')),
+			retired_at TIMESTAMPTZ,retired_by TEXT NOT NULL DEFAULT '',retirement_reason TEXT NOT NULL DEFAULT '',
+			agent_eligibility TEXT NOT NULL DEFAULT 'unknown' CHECK(agent_eligibility IN ('unknown','eligible','ineligible')),
+			agent_eligibility_reason TEXT NOT NULL DEFAULT '',agent_eligibility_updated_by TEXT NOT NULL DEFAULT '',
+			agent_eligibility_updated_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX assets_last_seen_idx ON assets(last_seen DESC)`,
+		`CREATE INDEX assets_lifecycle_last_seen_idx ON assets(lifecycle_status,last_seen DESC)`,
+		`CREATE TABLE asset_addresses (
+			asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,address TEXT NOT NULL UNIQUE,
+			first_seen TIMESTAMPTZ NOT NULL,last_seen TIMESTAMPTZ NOT NULL,last_scan_id TEXT NOT NULL,
+			PRIMARY KEY(asset_id,address)
+		)`,
+		`CREATE INDEX asset_addresses_asset_idx ON asset_addresses(asset_id,last_seen DESC)`,
+		`CREATE TABLE asset_names (
+			asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,name TEXT NOT NULL,normalized_name TEXT NOT NULL UNIQUE,
+			PRIMARY KEY(asset_id,normalized_name)
+		)`,
+		`CREATE INDEX asset_names_asset_idx ON asset_names(asset_id,name)`,
+		`CREATE TABLE asset_services (
+			asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,address TEXT NOT NULL,
+			port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),protocol TEXT NOT NULL,product TEXT NOT NULL DEFAULT '',
+			version TEXT NOT NULL DEFAULT '',confidence TEXT NOT NULL,state TEXT NOT NULL CHECK(state IN ('observed','not_observed')),
+			first_seen TIMESTAMPTZ NOT NULL,last_seen TIMESTAMPTZ NOT NULL,last_checked TIMESTAMPTZ NOT NULL,
+			last_scan_id TEXT NOT NULL,observation_count INTEGER NOT NULL CHECK(observation_count >= 0),
+			PRIMARY KEY(asset_id,address,port,protocol)
+		)`,
+		`CREATE INDEX asset_services_asset_state_idx ON asset_services(asset_id,state,last_seen DESC)`,
+		`CREATE TABLE asset_service_events (
+			observation_id TEXT PRIMARY KEY,asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+			scan_id TEXT NOT NULL,address TEXT NOT NULL,port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+			protocol TEXT NOT NULL,product TEXT NOT NULL DEFAULT '',version TEXT NOT NULL DEFAULT '',confidence TEXT NOT NULL,
+			observed_at TIMESTAMPTZ NOT NULL,finding_ids JSONB NOT NULL DEFAULT '[]'::jsonb,cve_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+			source_type TEXT NOT NULL DEFAULT 'scanner' CHECK(source_type IN ('scanner','endpoint')),
+			source_id TEXT NOT NULL DEFAULT 'scanner/local'
+		)`,
+		`CREATE INDEX asset_service_events_lookup_idx ON asset_service_events(asset_id,address,port,protocol,observed_at DESC)`,
+		`CREATE TABLE asset_evidence (
+			id TEXT PRIMARY KEY,asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+			source_type TEXT NOT NULL CHECK(source_type IN ('scanner','endpoint')),source_id TEXT NOT NULL,
+			record_type TEXT NOT NULL,record_id TEXT NOT NULL,scan_id TEXT NOT NULL DEFAULT '',address TEXT NOT NULL DEFAULT '',
+			summary TEXT NOT NULL,collected_at TIMESTAMPTZ NOT NULL,UNIQUE(source_type,source_id,record_type,record_id)
+		)`,
+		`CREATE INDEX asset_evidence_asset_time_idx ON asset_evidence(asset_id,collected_at DESC)`,
+		`CREATE TABLE asset_aging_settings (
+			singleton SMALLINT PRIMARY KEY CHECK(singleton=1),
+			stale_after_days INTEGER NOT NULL CHECK(stale_after_days BETWEEN 1 AND 3650)
+		)`,
+		`INSERT INTO asset_aging_settings(singleton,stale_after_days) VALUES(1,30)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL asset foundation: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(9,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL asset-foundation migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLIntelligence(ctx context.Context, tx *sql.Tx) error {

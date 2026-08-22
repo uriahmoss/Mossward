@@ -432,6 +432,8 @@ failure and health states.
           - [x] CVE repository queries, feed state, critical news, and scan-match round trips
           - [ ] Endpoint-software CVE relevance refresh
           - [ ] Asset inventory projection
+            - [x] Asset identity, aliases, lifecycle, service history, evidence, and aging schema
+            - [ ] Transactional scan-to-asset correlation and service-history projection
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

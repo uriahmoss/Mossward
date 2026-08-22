@@ -223,6 +223,11 @@ references, scan-linked CVE matches, and feed synchronization state. Endpoint
 software relevance remains dependent on the later endpoint-inventory parity
 slice.
 
+PostgreSQL migration version 9 establishes asset identities and aliases,
+lifecycle and aging state, service history, and evidence provenance. Scan-save
+projection into these tables remains gated until its transactional repository
+helpers are complete.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
