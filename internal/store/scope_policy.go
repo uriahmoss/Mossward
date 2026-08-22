@@ -105,11 +105,8 @@ func scanScopePolicy(scanner interface{ Scan(...any) error }) (model.ScopePolicy
 	if err != nil {
 		return model.ScopePolicy{}, err
 	}
-	if err := json.Unmarshal([]byte(cidrs), &policy.AllowedCIDRs); err != nil {
-		return model.ScopePolicy{}, fmt.Errorf("decode scope-policy CIDRs: %w", err)
-	}
-	if err := json.Unmarshal([]byte(ports), &policy.AllowedPorts); err != nil {
-		return model.ScopePolicy{}, fmt.Errorf("decode scope-policy ports: %w", err)
+	if err := decodeScopePolicyLists(&policy, []byte(cidrs), []byte(ports)); err != nil {
+		return model.ScopePolicy{}, err
 	}
 	if policy.CreatedAt, err = parseTime(createdAt); err != nil {
 		return model.ScopePolicy{}, err
@@ -118,6 +115,16 @@ func scanScopePolicy(scanner interface{ Scan(...any) error }) (model.ScopePolicy
 		return model.ScopePolicy{}, err
 	}
 	return policy, nil
+}
+
+func decodeScopePolicyLists(policy *model.ScopePolicy, cidrs, ports []byte) error {
+	if err := json.Unmarshal(cidrs, &policy.AllowedCIDRs); err != nil {
+		return fmt.Errorf("decode scope-policy CIDRs: %w", err)
+	}
+	if err := json.Unmarshal(ports, &policy.AllowedPorts); err != nil {
+		return fmt.Errorf("decode scope-policy ports: %w", err)
+	}
+	return nil
 }
 
 func encodeScopePolicyLists(policy model.ScopePolicy) ([]byte, []byte, error) {

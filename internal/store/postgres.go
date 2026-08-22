@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 2
+	postgresFoundationSchemaVersion = 3
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -108,11 +108,49 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 3 {
+		if err := migratePostgreSQLIdentityAudit(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLIdentityAudit(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE users (
+			id TEXT PRIMARY KEY,email TEXT NOT NULL,display_name TEXT NOT NULL,
+			role TEXT NOT NULL CHECK(role IN ('administrator','analyst','viewer')),
+			status TEXT NOT NULL CHECK(status IN ('invited','active','disabled')),
+			password_hash TEXT NOT NULL DEFAULT '',mfa_required BOOLEAN NOT NULL DEFAULT FALSE,
+			created_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL,last_login_at TIMESTAMPTZ
+		)`,
+		`CREATE UNIQUE INDEX users_email_normalized_idx ON users(LOWER(email))`,
+		`CREATE TABLE audit_events (
+			id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,occurred_at TIMESTAMPTZ NOT NULL,
+			actor_id TEXT REFERENCES users(id) ON DELETE SET NULL,action TEXT NOT NULL,
+			severity TEXT NOT NULL CHECK(severity IN ('info','warning','error')),
+			target_type TEXT NOT NULL DEFAULT '',target_id TEXT NOT NULL DEFAULT '',
+			source_ip TEXT NOT NULL DEFAULT '',details JSONB NOT NULL DEFAULT '{}'::jsonb
+		)`,
+		`CREATE INDEX audit_events_time_idx ON audit_events(occurred_at DESC)`,
+		`CREATE OR REPLACE FUNCTION protect_audit_events() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit events are append-only'; END $$`,
+		`CREATE TRIGGER audit_events_append_only BEFORE UPDATE OR DELETE ON audit_events FOR EACH ROW EXECUTE FUNCTION protect_audit_events()`,
+		`ALTER TABLE scope_policies ADD CONSTRAINT scope_policies_created_by_fk FOREIGN KEY(created_by) REFERENCES users(id)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL identity and audit schema: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(3,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL identity and audit migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLScopePolicies(ctx context.Context, tx *sql.Tx) error {

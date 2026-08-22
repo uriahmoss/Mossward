@@ -412,6 +412,7 @@ failure and health states.
   - [x] Secure backend configuration, maintained driver, connection checks, and migration foundation
   - [ ] Full PostgreSQL schema and repository query parity
     - [x] SQL placeholder dialect and organization/scope-policy schema parity
+    - [x] User/audit foundation and transactional scope-policy CRUD parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

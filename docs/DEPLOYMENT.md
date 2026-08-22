@@ -145,6 +145,12 @@ PostgreSQL while preserving quoted literal and identifier text. PostgreSQL
 server startup remains blocked until every repository and audit dependency has
 equivalent behavior.
 
+PostgreSQL migration version 3 adds the foundational user table and an
+append-only audit stream protected from update or deletion by a database
+trigger. Organization scope-policy creation, updates, reads, and lists now have
+PostgreSQL implementations; changes and their audit event commit in the same
+transaction, matching the SQLite security boundary.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
