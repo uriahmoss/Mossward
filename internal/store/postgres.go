@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 14
+	postgresFoundationSchemaVersion = 15
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -168,11 +168,56 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 15 {
+		if err := migratePostgreSQLEndpointNetwork(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLEndpointNetwork(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE endpoint_network_inventory (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,
+			collected_at TIMESTAMPTZ NOT NULL,received_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE endpoint_network_connections (
+			endpoint_id TEXT NOT NULL REFERENCES endpoints(id) ON DELETE CASCADE,ordinal INTEGER NOT NULL,
+			protocol TEXT NOT NULL,local_address TEXT NOT NULL,local_port INTEGER NOT NULL,remote_address TEXT NOT NULL,
+			remote_port INTEGER NOT NULL,process_id INTEGER NOT NULL,process_name TEXT NOT NULL,direction TEXT NOT NULL,
+			executable TEXT NOT NULL DEFAULT '',remote_hostname TEXT NOT NULL DEFAULT '',hostname_source TEXT NOT NULL DEFAULT '',
+			tls_server_name TEXT NOT NULL DEFAULT '',PRIMARY KEY(endpoint_id,ordinal)
+		)`,
+		`CREATE INDEX endpoint_network_remote_idx ON endpoint_network_connections(remote_address,remote_port)`,
+		`CREATE TABLE threat_indicators (
+			id TEXT PRIMARY KEY,type TEXT NOT NULL CHECK(type IN ('ip','hostname')),value TEXT NOT NULL,source TEXT NOT NULL,
+			confidence TEXT NOT NULL CHECK(confidence IN ('low','medium','high')),observed_at TIMESTAMPTZ NOT NULL,
+			expires_at TIMESTAMPTZ NOT NULL,enabled BOOLEAN NOT NULL,created_by TEXT NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL,UNIQUE(type,value,source)
+		)`,
+		`CREATE INDEX threat_indicators_active_idx ON threat_indicators(enabled,expires_at,type,value)`,
+		`CREATE TABLE endpoint_indicator_matches (
+			endpoint_id TEXT NOT NULL,indicator_id TEXT NOT NULL REFERENCES threat_indicators(id) ON DELETE CASCADE,
+			connection_ordinal INTEGER NOT NULL,matched_at TIMESTAMPTZ NOT NULL,
+			PRIMARY KEY(endpoint_id,indicator_id,connection_ordinal),
+			FOREIGN KEY(endpoint_id,connection_ordinal) REFERENCES endpoint_network_connections(endpoint_id,ordinal) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX endpoint_indicator_matches_endpoint_idx ON endpoint_indicator_matches(endpoint_id,matched_at)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL endpoint network inventory: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(15,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL endpoint network migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLEndpointListeningPosture(ctx context.Context, tx *sql.Tx) error {

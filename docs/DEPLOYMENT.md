@@ -248,6 +248,10 @@ PostgreSQL migration version 14 adds listening-service snapshots with process
 ownership and executable evidence, plus pass/fail/unknown security-posture
 evidence. Collection and server receipt times remain distinct.
 
+PostgreSQL migration version 15 adds endpoint connection snapshots, process and
+hostname context, expiring IP/hostname threat indicators, and referentially
+bound indicator matches that are removed with their source connection.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

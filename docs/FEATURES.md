@@ -455,6 +455,8 @@ failure and health states.
             - [x] Atomic inventory replacement and environment-aware CVE matching operations
             - [x] Listening-service and security-posture schema
             - [x] Atomic listening-service and posture inventory operations
+            - [x] Network connection, threat-indicator, and indicator-match schema
+            - [ ] Atomic network inventory and threat-indicator matching operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
