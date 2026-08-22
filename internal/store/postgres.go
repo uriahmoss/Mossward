@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 3
+	postgresFoundationSchemaVersion = 4
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -113,11 +113,85 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 4 {
+		if err := migratePostgreSQLAuthenticationSchema(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLAuthenticationSchema(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE invitations (
+			id TEXT PRIMARY KEY,email TEXT NOT NULL,role TEXT NOT NULL CHECK(role IN ('administrator','analyst','viewer')),
+			token_hash BYTEA NOT NULL UNIQUE,invited_by TEXT NOT NULL REFERENCES users(id),expires_at TIMESTAMPTZ NOT NULL,
+			accepted_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL,identity_kind TEXT NOT NULL DEFAULT 'local' CHECK(identity_kind IN ('local','sso'))
+		)`,
+		`CREATE INDEX invitations_email_idx ON invitations(LOWER(email),accepted_at)`,
+		`CREATE UNIQUE INDEX invitations_pending_email_idx ON invitations(LOWER(email)) WHERE accepted_at IS NULL`,
+		`CREATE TABLE sessions (
+			id_hash BYTEA PRIMARY KEY,public_id TEXT NOT NULL UNIQUE,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			created_at TIMESTAMPTZ NOT NULL,expires_at TIMESTAMPTZ NOT NULL,last_seen_at TIMESTAMPTZ NOT NULL,
+			mfa_verified_at TIMESTAMPTZ,source_ip TEXT NOT NULL DEFAULT '',user_agent_hash BYTEA
+		)`,
+		`CREATE INDEX sessions_user_idx ON sessions(user_id,expires_at)`,
+		`CREATE TABLE login_attempts (
+			key_hash BYTEA PRIMARY KEY,failures INTEGER NOT NULL DEFAULT 0 CHECK(failures>=0),
+			window_started_at TIMESTAMPTZ NOT NULL,blocked_until TIMESTAMPTZ
+		)`,
+		`CREATE TABLE totp_credentials (
+			user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,secret_ciphertext BYTEA NOT NULL,
+			created_at TIMESTAMPTZ NOT NULL,verified_at TIMESTAMPTZ NOT NULL,last_counter BIGINT NOT NULL DEFAULT -1
+		)`,
+		`CREATE TABLE recovery_codes (
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,code_hash BYTEA NOT NULL,
+			used_at TIMESTAMPTZ,created_at TIMESTAMPTZ NOT NULL,PRIMARY KEY(user_id,code_hash)
+		)`,
+		`CREATE TABLE webauthn_credentials (
+			credential_id BYTEA PRIMARY KEY,user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+			public_key BYTEA NOT NULL,credential_ciphertext BYTEA,attestation_type TEXT NOT NULL DEFAULT '',
+			transports JSONB NOT NULL DEFAULT '[]'::jsonb,sign_count BIGINT NOT NULL DEFAULT 0 CHECK(sign_count>=0),
+			backup_eligible BOOLEAN NOT NULL DEFAULT FALSE,backup_state BOOLEAN NOT NULL DEFAULT FALSE,
+			name TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL,last_used_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX webauthn_credentials_user_idx ON webauthn_credentials(user_id)`,
+		`CREATE TABLE authentication_ceremonies (
+			id_hash BYTEA PRIMARY KEY,user_id TEXT REFERENCES users(id) ON DELETE CASCADE,
+			kind TEXT NOT NULL CHECK(kind IN ('webauthn_register','webauthn_login','oidc')),
+			state_ciphertext BYTEA NOT NULL,expires_at TIMESTAMPTZ NOT NULL,created_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE oidc_providers (
+			id TEXT PRIMARY KEY,name TEXT NOT NULL,issuer_url TEXT NOT NULL UNIQUE,client_id TEXT NOT NULL,
+			client_secret_ciphertext BYTEA NOT NULL,provisioning_mode TEXT NOT NULL CHECK(provisioning_mode IN ('invite_only','jit')),
+			allowed_tenant_id TEXT NOT NULL DEFAULT '',allowed_email_domains JSONB NOT NULL DEFAULT '[]'::jsonb,
+			allowed_groups JSONB NOT NULL DEFAULT '[]'::jsonb,role_mappings JSONB NOT NULL DEFAULT '{}'::jsonb,
+			default_role TEXT NOT NULL DEFAULT 'viewer' CHECK(default_role IN ('administrator','analyst','viewer')),
+			enabled BOOLEAN NOT NULL DEFAULT FALSE,redirect_url TEXT NOT NULL DEFAULT '',tested_at TIMESTAMPTZ,
+			created_at TIMESTAMPTZ NOT NULL,updated_at TIMESTAMPTZ NOT NULL
+		)`,
+		`CREATE TABLE external_identities (
+			provider_id TEXT NOT NULL REFERENCES oidc_providers(id) ON DELETE CASCADE,subject TEXT NOT NULL,
+			user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,tenant_id TEXT NOT NULL DEFAULT '',
+			email TEXT NOT NULL,created_at TIMESTAMPTZ NOT NULL,last_login_at TIMESTAMPTZ,
+			PRIMARY KEY(provider_id,subject),UNIQUE(provider_id,user_id)
+		)`,
+		`CREATE INDEX external_identities_email_idx ON external_identities(LOWER(email))`,
+		`CREATE TABLE app_metadata (key TEXT PRIMARY KEY,value TEXT NOT NULL)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL authentication schema: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(4,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL authentication migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLIdentityAudit(ctx context.Context, tx *sql.Tx) error {

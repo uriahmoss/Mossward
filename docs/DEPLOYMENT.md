@@ -151,6 +151,14 @@ trigger. Organization scope-policy creation, updates, reads, and lists now have
 PostgreSQL implementations; changes and their audit event commit in the same
 transaction, matching the SQLite security boundary.
 
+PostgreSQL migration version 4 provides the current fresh-install schema for
+invitations, sessions, login throttling, TOTP, recovery codes, encrypted
+WebAuthn credentials, one-time authentication ceremonies, OIDC providers,
+external identities, and application metadata. It uses native `BYTEA`,
+`BOOLEAN`, `JSONB`, and `TIMESTAMPTZ` types plus normalized-email indexes and
+the same role and identity-kind constraints. Repository method parity remains
+required before PostgreSQL can serve authentication traffic.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
