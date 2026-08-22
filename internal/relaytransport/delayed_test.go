@@ -54,7 +54,7 @@ func TestDelayedQueueStoresEncryptedHeartbeatAndAgentLogs(t *testing.T) {
 	if err := queue.Acknowledge(frame.MessageID, delivery.Token); err != nil {
 		t.Fatal(err)
 	}
-	records := []AgentLogRecord{{GeneratedAt: now, Level: AgentLogWarning, Component: "integrity", Message: "configuration changed"}}
+	records := []AgentLogRecord{{GeneratedAt: now, Source: AgentLogSourceMossward, Level: AgentLogWarning, Component: AgentComponentIntegrity, Message: "configuration changed"}}
 	if _, err := delayed.EnqueueAgentLogs(records, 2, now, now); err != nil {
 		t.Fatal(err)
 	}
@@ -77,9 +77,15 @@ func TestDelayedQueueStoresEncryptedHeartbeatAndAgentLogs(t *testing.T) {
 }
 
 func TestDelayedQueueRejectsNonAgentLogData(t *testing.T) {
-	record := AgentLogRecord{GeneratedAt: time.Now(), Level: "syslog", Component: "external", Message: "unsupported"}
-	if err := validateAgentLogRecord(record); err == nil {
-		t.Fatal("unsupported external log type was accepted")
+	for _, record := range []AgentLogRecord{
+		{GeneratedAt: time.Now(), Source: "syslog", Level: AgentLogInfo, Component: AgentComponentAgent, Message: "unsupported"},
+		{GeneratedAt: time.Now(), Source: "windows_event_log", Level: AgentLogInfo, Component: AgentComponentAgent, Message: "unsupported"},
+		{GeneratedAt: time.Now(), Source: "application_log", Level: AgentLogInfo, Component: "third_party_app", Message: "unsupported"},
+		{GeneratedAt: time.Now(), Source: AgentLogSourceMossward, Level: AgentLogInfo, Component: "third_party_app", Message: "unsupported"},
+	} {
+		if err := validateAgentLogRecord(record); err == nil {
+			t.Fatalf("unsupported external log was accepted: %#v", record)
+		}
 	}
 }
 
@@ -87,7 +93,7 @@ func TestDelayedTelemetryDecoderRejectsMixedKinds(t *testing.T) {
 	now := time.Now().UTC()
 	mixed := DelayedTelemetryEnvelope{SchemaVersion: delayedTelemetrySchemaVersion, Kind: MessageAgentCheckIn,
 		Heartbeat: &model.AgentCheckIn{SchemaVersion: 2, GeneratedAt: now},
-		AgentLogs: []AgentLogRecord{{GeneratedAt: now, Level: AgentLogInfo, Component: "agent", Message: "started"}}}
+		AgentLogs: []AgentLogRecord{{GeneratedAt: now, Level: AgentLogInfo, Component: AgentComponentAgent, Message: "started"}}}
 	payload, err := json.Marshal(mixed)
 	if err != nil {
 		t.Fatal(err)

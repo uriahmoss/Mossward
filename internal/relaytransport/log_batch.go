@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	agentLogBatchSchemaVersion = 1
+	agentLogBatchSchemaVersion = 2
+	legacyAgentLogBatchVersion = 1
 	agentLogSource             = "mossward_agent"
 	agentLogCompression        = "gzip"
 	maximumCompressedLogBytes  = 1 << 20
@@ -86,7 +87,7 @@ func BuildAgentLogBatch(endpointID string, sequence uint64, records []AgentLogRe
 }
 
 func OpenAgentLogBatch(batch SignedCompressedAgentLogBatch, expectedEndpointID string, expectedSequence uint64, key *ecdsa.PublicKey) ([]AgentLogRecord, error) {
-	if key == nil || batch.Header.SchemaVersion != agentLogBatchSchemaVersion || batch.Header.Source != agentLogSource || batch.Header.SourceEndpointID != expectedEndpointID ||
+	if key == nil || !supportedAgentLogBatchVersion(batch.Header.SchemaVersion) || batch.Header.Source != agentLogSource || batch.Header.SourceEndpointID != expectedEndpointID ||
 		batch.Header.BatchID == "" || expectedSequence == 0 || batch.Header.Sequence != expectedSequence || batch.Header.RecordCount < 1 || batch.Header.RecordCount > maximumAgentLogRecords ||
 		batch.Header.CreatedAt.IsZero() || batch.Header.FirstGeneratedAt.IsZero() || batch.Header.LastGeneratedAt.Before(batch.Header.FirstGeneratedAt) ||
 		batch.Header.Compression != agentLogCompression || batch.Header.UncompressedBytes < 1 || batch.Header.UncompressedBytes > maximumExpandedLogBytes ||
@@ -112,7 +113,7 @@ func OpenAgentLogBatch(batch SignedCompressedAgentLogBatch, expectedEndpointID s
 	}
 	first, last := records[0].GeneratedAt, records[0].GeneratedAt
 	for _, record := range records {
-		if err := validateAgentLogRecord(record); err != nil {
+		if err := validateAgentLogRecordVersion(record, batch.Header.SchemaVersion); err != nil {
 			return nil, err
 		}
 		if record.GeneratedAt.Before(first) {
@@ -126,6 +127,17 @@ func OpenAgentLogBatch(batch SignedCompressedAgentLogBatch, expectedEndpointID s
 		return nil, errors.New("Mossward agent-log batch time provenance is invalid")
 	}
 	return records, nil
+}
+
+func supportedAgentLogBatchVersion(version int) bool {
+	return version == legacyAgentLogBatchVersion || version == agentLogBatchSchemaVersion
+}
+
+func validateAgentLogRecordVersion(record AgentLogRecord, version int) error {
+	if version == legacyAgentLogBatchVersion {
+		return validateLegacyAgentLogRecord(record)
+	}
+	return validateAgentLogRecord(record)
 }
 
 func compressAgentLogs(encoded []byte) ([]byte, error) {

@@ -401,7 +401,7 @@ failure and health states.
 - [x] Acknowledge-before-delete delivery with duplicate rejection and resume
 - [x] Queue age, capacity, dropped-record, and last-upload visibility
 - [x] Clock-drift detection so incorrect endpoint time cannot silently bypass windows
-- [ ] Exclude Windows Event Logs, syslog, and general application-log collection
+- [x] Exclude Windows Event Logs, syslog, and general application-log collection
       unless Mossward's product scope is explicitly expanded later
 
 ### 12. Later platform scale and worker operations

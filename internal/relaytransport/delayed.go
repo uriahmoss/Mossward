@@ -25,6 +25,8 @@ const (
 )
 
 type AgentLogLevel string
+type AgentLogSource string
+type AgentLogComponent string
 
 const (
 	AgentLogInfo    AgentLogLevel = "info"
@@ -32,11 +34,24 @@ const (
 	AgentLogError   AgentLogLevel = "error"
 )
 
+const (
+	AgentLogSourceMossward   AgentLogSource    = "mossward_agent"
+	AgentComponentAgent      AgentLogComponent = "agent"
+	AgentComponentIdentity   AgentLogComponent = "identity"
+	AgentComponentIntegrity  AgentLogComponent = "integrity"
+	AgentComponentModuleHost AgentLogComponent = "module_host"
+	AgentComponentRelay      AgentLogComponent = "relay"
+	AgentComponentScanner    AgentLogComponent = "scanner"
+	AgentComponentTransport  AgentLogComponent = "transport"
+	AgentComponentUpdater    AgentLogComponent = "updater"
+)
+
 type AgentLogRecord struct {
-	GeneratedAt time.Time     `json:"generated_at"`
-	Level       AgentLogLevel `json:"level"`
-	Component   string        `json:"component"`
-	Message     string        `json:"message"`
+	GeneratedAt time.Time         `json:"generated_at"`
+	Source      AgentLogSource    `json:"source,omitempty"`
+	Level       AgentLogLevel     `json:"level"`
+	Component   AgentLogComponent `json:"component"`
+	Message     string            `json:"message"`
 }
 
 type DelayedTelemetryEnvelope struct {
@@ -137,7 +152,7 @@ func DecodeDelayedTelemetry(kind MessageKind, payload []byte) (DelayedTelemetryE
 			return DelayedTelemetryEnvelope{}, errors.New("delayed agent-log envelope is invalid")
 		}
 		for _, record := range envelope.AgentLogs {
-			if err := validateAgentLogRecord(record); err != nil {
+			if err := validateLegacyAgentLogRecord(record); err != nil {
 				return DelayedTelemetryEnvelope{}, err
 			}
 		}
@@ -148,7 +163,23 @@ func DecodeDelayedTelemetry(kind MessageKind, payload []byte) (DelayedTelemetryE
 }
 
 func validateAgentLogRecord(record AgentLogRecord) error {
-	if record.GeneratedAt.IsZero() || strings.TrimSpace(record.Component) == "" || len(record.Component) > maximumAgentLogComponentBytes ||
+	if record.Source != AgentLogSourceMossward {
+		return errors.New("external log sources are outside the Mossward agent-log scope")
+	}
+	if err := validateLegacyAgentLogRecord(record); err != nil {
+		return err
+	}
+	switch record.Component {
+	case AgentComponentAgent, AgentComponentIdentity, AgentComponentIntegrity, AgentComponentModuleHost,
+		AgentComponentRelay, AgentComponentScanner, AgentComponentTransport, AgentComponentUpdater:
+		return nil
+	default:
+		return errors.New("external log components are outside the Mossward agent-log scope")
+	}
+}
+
+func validateLegacyAgentLogRecord(record AgentLogRecord) error {
+	if record.GeneratedAt.IsZero() || strings.TrimSpace(string(record.Component)) == "" || len(record.Component) > maximumAgentLogComponentBytes ||
 		strings.TrimSpace(record.Message) == "" || len(record.Message) > maximumAgentLogMessageBytes {
 		return errors.New("Mossward agent-log record is invalid")
 	}

@@ -458,6 +458,14 @@ visible while preventing a changed endpoint clock from silently opening a
 closed upload window. Time synchronization remains an administrator-operated
 system function; Mossward detects drift but does not change endpoint clocks.
 
+New agent-log batches require the fixed `mossward_agent` source and a closed set
+of Mossward-owned components. Windows Event Logs, syslog, third-party
+application logs, and caller-invented components are rejected before queueing.
+Version 1 batches already in a queue remain readable for upgrade continuity;
+all newly produced batches use version 2 provenance enforcement. Adding an
+external log collector requires an explicit future product-scope decision and a
+separate ingestion design.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.
