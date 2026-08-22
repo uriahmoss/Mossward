@@ -189,6 +189,13 @@ one atomic `DELETE ... RETURNING` statement, so simultaneous callbacks cannot
 both obtain the same encrypted challenge state and kind substitution remains
 rejected.
 
+PostgreSQL OIDC parity now covers encrypted provider configuration, JSONB
+tenant/domain/group/role policy, mandatory provider testing before enablement,
+invite-only provisioning, JIT provisioning, external identity linking, and
+group-derived role updates. Resolution locks each provider/subject pair and
+relevant identity rows so concurrent callbacks cannot duplicate or cross-link
+accounts; identity changes and audit records commit atomically.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

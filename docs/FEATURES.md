@@ -419,6 +419,7 @@ failure and health states.
     - [x] Session lifecycle, activity, MFA timestamp, and revocation parity
     - [x] Login throttling, TOTP replay prevention, and recovery-code parity
     - [x] WebAuthn credential and one-time authentication ceremony parity
+    - [x] OIDC provider, invite-only, and JIT identity repository parity
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
