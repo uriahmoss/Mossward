@@ -435,6 +435,14 @@ Existing encrypted frames migrate in place and receive priority from their
 authenticated Mossward message kind; no queued evidence is silently evicted or
 overwritten to make room for an alert.
 
+Relay delivery uses a durable claim lease. Claiming a frame assigns a random,
+single-attempt token and increments its attempt count without removing the
+encrypted evidence. The server acknowledgement must return the matching message
+ID and attempt token before deletion is permitted. Missing, stale, or forged
+tokens fail closed. A failed attempt can be explicitly released, and an expired
+lease becomes eligible after process restart so interrupted uploads resume.
+Duplicate message IDs remain rejected at enqueue time.
+
 Endpoint heartbeat monitoring is enabled by default with configurable warning
 and stale thresholds. A missed heartbeat produces a warning; once the longer
 stale threshold is reached, a single stale-agent error supersedes that warning.

@@ -47,7 +47,11 @@ func TestDelayedQueueStoresEncryptedHeartbeatAndAgentLogs(t *testing.T) {
 	if err != nil || envelope.Heartbeat == nil || envelope.Heartbeat.SoftwareVersion != "1.0.0" {
 		t.Fatalf("decrypted heartbeat envelope = %#v, error = %v", envelope, err)
 	}
-	if err := queue.Acknowledge(frame.MessageID); err != nil {
+	delivery, err := queue.Claim(now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Acknowledge(frame.MessageID, delivery.Token); err != nil {
 		t.Fatal(err)
 	}
 	records := []AgentLogRecord{{GeneratedAt: now, Level: AgentLogWarning, Component: "integrity", Message: "configuration changed"}}

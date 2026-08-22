@@ -59,7 +59,11 @@ func TestQueuePersistsOnlyEncryptedBoundedFrames(t *testing.T) {
 	if err != nil || stats.Items != 1 || stats.Bytes != int64(len(encoded)) || stats.OldestFrame.IsZero() {
 		t.Fatalf("queue stats = %#v, error = %v", stats, err)
 	}
-	if err := queue.Acknowledge(frame.MessageID); err != nil {
+	delivery, err := queue.Claim(now, time.Minute)
+	if err != nil || delivery.Frame.MessageID != frame.MessageID {
+		t.Fatalf("claimed frame = %#v, error = %v", delivery, err)
+	}
+	if err := queue.Acknowledge(frame.MessageID, delivery.Token); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := queue.Peek(now); !errors.Is(err, ErrQueueEmpty) {
@@ -110,13 +114,79 @@ func TestQueueDeliversSecurityAlertsBeforeRoutineTelemetry(t *testing.T) {
 		}
 	}
 	for _, expected := range []MessageKind{MessageTamperAlert, MessageIntegrityAlert, MessageAgentCheckIn, MessageAgentLogBatch} {
-		frame, err := queue.Peek(now)
-		if err != nil || frame.Kind != expected {
-			t.Fatalf("priority dequeue = %s, expected %s, error = %v", frame.Kind, expected, err)
+		delivery, err := queue.Claim(now, time.Minute)
+		if err != nil || delivery.Frame.Kind != expected {
+			t.Fatalf("priority dequeue = %s, expected %s, error = %v", delivery.Frame.Kind, expected, err)
 		}
-		if err := queue.Acknowledge(frame.MessageID); err != nil {
+		if err := queue.Acknowledge(delivery.Frame.MessageID, delivery.Token); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestQueueRequiresMatchingAcknowledgementAndResumesExpiredDelivery(t *testing.T) {
+	now := time.Now().UTC()
+	path := filepath.Join(t.TempDir(), "relay", "queue.db")
+	limits := QueueLimits{MaxItems: 2, MaxBytes: 1 << 20, MaxAge: time.Hour}
+	queue, err := OpenQueue(path, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame := testSealedFrame(t, now, "00112233445566778899aabbccddeeff", []byte("resume"))
+	if err := queue.Enqueue(frame, now); err != nil {
+		t.Fatal(err)
+	}
+	first, err := queue.Claim(now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Acknowledge(frame.MessageID, "incorrect-token"); !errors.Is(err, ErrQueueAckRejected) {
+		t.Fatalf("incorrect acknowledgement result = %v", err)
+	}
+	if _, err := queue.Claim(now.Add(30*time.Second), time.Minute); !errors.Is(err, ErrQueueEmpty) {
+		t.Fatalf("active lease was claimed again: %v", err)
+	}
+	if err := queue.Close(); err != nil {
+		t.Fatal(err)
+	}
+	queue, err = OpenQueue(path, limits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queue.Close()
+	resumed, err := queue.Claim(now.Add(2*time.Minute), time.Minute)
+	if err != nil || resumed.Frame.MessageID != frame.MessageID || resumed.Attempt != 2 || resumed.Token == first.Token {
+		t.Fatalf("resumed delivery = %#v, error = %v", resumed, err)
+	}
+	if err := queue.Acknowledge(frame.MessageID, resumed.Token); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := queue.Peek(now); !errors.Is(err, ErrQueueEmpty) {
+		t.Fatalf("acknowledged frame remained: %v", err)
+	}
+}
+
+func TestQueueReleaseMakesDeliveryImmediatelyAvailable(t *testing.T) {
+	now := time.Now().UTC()
+	queue, err := OpenQueue(filepath.Join(t.TempDir(), "relay", "queue.db"), QueueLimits{MaxItems: 1, MaxBytes: 1 << 20, MaxAge: time.Hour})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer queue.Close()
+	frame := testSealedFrame(t, now, "00112233445566778899aabbccddeeff", []byte("retry"))
+	if err := queue.Enqueue(frame, now); err != nil {
+		t.Fatal(err)
+	}
+	delivery, err := queue.Claim(now, time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := queue.Release(frame.MessageID, delivery.Token); err != nil {
+		t.Fatal(err)
+	}
+	retry, err := queue.Claim(now, time.Minute)
+	if err != nil || retry.Attempt != 2 {
+		t.Fatalf("released delivery retry = %#v, error = %v", retry, err)
 	}
 }
 

@@ -398,7 +398,7 @@ failure and health states.
 - [x] Encrypted, bounded queue for delayed heartbeats and Mossward agent logs
 - [x] Signed, sequenced, compressed agent-log batches with source provenance
 - [x] Priority queueing for integrity and tamper alerts during closed windows
-- [ ] Acknowledge-before-delete delivery with duplicate rejection and resume
+- [x] Acknowledge-before-delete delivery with duplicate rejection and resume
 - [ ] Queue age, capacity, dropped-record, and last-upload visibility
 - [ ] Clock-drift detection so incorrect endpoint time cannot silently bypass windows
 - [ ] Exclude Windows Event Logs, syslog, and general application-log collection

@@ -1,7 +1,9 @@
 package relaytransport
 
 import (
+	"crypto/rand"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,10 +18,11 @@ import (
 )
 
 const (
-	queueSchemaVersion = 2
+	queueSchemaVersion = 3
 	queueFileMode      = 0o600
 	queueDirectoryMode = 0o700
 	maximumQueueAge    = 30 * 24 * time.Hour
+	deliveryTokenBytes = 16
 )
 
 type QueuePriority int
@@ -31,10 +34,18 @@ const (
 )
 
 var (
-	ErrQueueDuplicate = errors.New("relay queue message already exists")
-	ErrQueueEmpty     = errors.New("relay queue is empty")
-	ErrQueueFull      = errors.New("relay queue capacity is exhausted")
+	ErrQueueDuplicate   = errors.New("relay queue message already exists")
+	ErrQueueEmpty       = errors.New("relay queue is empty")
+	ErrQueueFull        = errors.New("relay queue capacity is exhausted")
+	ErrQueueAckRejected = errors.New("relay queue acknowledgement was rejected")
 )
+
+type Delivery struct {
+	Frame      Frame
+	Token      string
+	Attempt    int
+	LeaseUntil time.Time
+}
 
 type QueueLimits struct {
 	MaxItems int
@@ -146,8 +157,60 @@ func (q *Queue) Peek(now time.Time) (Frame, error) {
 	return frame, nil
 }
 
-func (q *Queue) Acknowledge(messageID string) error {
-	result, err := q.db.Exec(`DELETE FROM relay_frames WHERE message_id=?`, messageID)
+func (q *Queue) Claim(now time.Time, leaseDuration time.Duration) (Delivery, error) {
+	if leaseDuration <= 0 {
+		return Delivery{}, errors.New("relay delivery lease duration must be positive")
+	}
+	token, err := newDeliveryToken()
+	if err != nil {
+		return Delivery{}, err
+	}
+	tx, err := q.db.Begin()
+	if err != nil {
+		return Delivery{}, fmt.Errorf("begin relay delivery claim: %w", err)
+	}
+	defer tx.Rollback()
+	var delivery Delivery
+	var encoded []byte
+	err = tx.QueryRow(`SELECT message_id,frame_json,attempt_count FROM relay_frames
+		WHERE delivery_token IS NULL OR lease_until<=? ORDER BY priority DESC,rowid LIMIT 1`, now.UTC().UnixNano()).
+		Scan(&delivery.Frame.MessageID, &encoded, &delivery.Attempt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Delivery{}, ErrQueueEmpty
+	}
+	if err != nil {
+		return Delivery{}, fmt.Errorf("select relay delivery: %w", err)
+	}
+	delivery.Attempt++
+	delivery.Token = token
+	delivery.LeaseUntil = now.Add(leaseDuration).UTC()
+	result, err := tx.Exec(`UPDATE relay_frames SET delivery_token=?,lease_until=?,attempt_count=?
+		WHERE message_id=? AND (delivery_token IS NULL OR lease_until<=?)`, delivery.Token, delivery.LeaseUntil.UnixNano(),
+		delivery.Attempt, delivery.Frame.MessageID, now.UTC().UnixNano())
+	if err != nil {
+		return Delivery{}, fmt.Errorf("claim relay delivery: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return Delivery{}, ErrQueueEmpty
+	}
+	if err := json.Unmarshal(encoded, &delivery.Frame); err != nil {
+		return Delivery{}, errors.New("stored relay frame is invalid")
+	}
+	if err := ValidateFrame(delivery.Frame, now); err != nil {
+		return Delivery{}, fmt.Errorf("validate claimed relay frame: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Delivery{}, fmt.Errorf("commit relay delivery claim: %w", err)
+	}
+	return delivery, nil
+}
+
+func (q *Queue) Acknowledge(messageID, token string) error {
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(token) == "" {
+		return ErrQueueAckRejected
+	}
+	result, err := q.db.Exec(`DELETE FROM relay_frames WHERE message_id=? AND delivery_token=?`, messageID, token)
 	if err != nil {
 		return fmt.Errorf("acknowledge relay queue frame: %w", err)
 	}
@@ -156,7 +219,20 @@ func (q *Queue) Acknowledge(messageID string) error {
 		return fmt.Errorf("read relay queue acknowledgement: %w", err)
 	}
 	if changed != 1 {
-		return ErrQueueEmpty
+		return ErrQueueAckRejected
+	}
+	return nil
+}
+
+func (q *Queue) Release(messageID, token string) error {
+	result, err := q.db.Exec(`UPDATE relay_frames SET delivery_token=NULL,lease_until=NULL
+		WHERE message_id=? AND delivery_token=?`, messageID, token)
+	if err != nil {
+		return fmt.Errorf("release relay queue delivery: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrQueueAckRejected
 	}
 	return nil
 }
@@ -208,15 +284,42 @@ func (q *Queue) migrate() error {
 	if err := q.db.QueryRow(`SELECT schema_version FROM relay_queue_metadata LIMIT 1`).Scan(&version); err != nil {
 		return fmt.Errorf("read relay queue schema: %w", err)
 	}
-	if version != queueSchemaVersion {
-		if version > queueSchemaVersion {
-			return fmt.Errorf("unsupported relay queue schema %d", version)
-		}
+	if version > queueSchemaVersion {
+		return fmt.Errorf("unsupported relay queue schema %d", version)
+	}
+	if version == 1 {
 		if err := q.migratePriorityQueue(version); err != nil {
+			return err
+		}
+		version = 2
+	}
+	if version == 2 {
+		if err := q.migrateDeliveryQueue(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (q *Queue) migrateDeliveryQueue() error {
+	tx, err := q.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin relay delivery migration: %w", err)
+	}
+	defer tx.Rollback()
+	statements := []string{
+		`ALTER TABLE relay_frames ADD COLUMN delivery_token TEXT`,
+		`ALTER TABLE relay_frames ADD COLUMN lease_until INTEGER`,
+		`ALTER TABLE relay_frames ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX relay_frames_delivery_idx ON relay_frames(priority DESC,lease_until,created_at,message_id)`,
+		`UPDATE relay_queue_metadata SET schema_version=3`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.Exec(statement); err != nil {
+			return fmt.Errorf("migrate relay delivery queue: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 func (q *Queue) migratePriorityQueue(version int) error {
@@ -284,6 +387,14 @@ func priorityForFrame(frame Frame) QueuePriority {
 	default:
 		return QueuePriorityRoutine
 	}
+}
+
+func newDeliveryToken() (string, error) {
+	buffer := make([]byte, deliveryTokenBytes)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", fmt.Errorf("create relay delivery token: %w", err)
+	}
+	return hex.EncodeToString(buffer), nil
 }
 
 func validateQueueLimits(limits QueueLimits) error {
