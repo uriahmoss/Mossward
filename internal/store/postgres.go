@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 5
+	postgresFoundationSchemaVersion = 6
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -123,11 +123,37 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 6 {
+		if err := migratePostgreSQLNotifications(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLNotifications(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE smtp_settings (
+			id SMALLINT PRIMARY KEY CHECK(id=1),enabled BOOLEAN NOT NULL,host TEXT NOT NULL,
+			port INTEGER NOT NULL CHECK(port BETWEEN 0 AND 65535),username TEXT NOT NULL,password_ciphertext BYTEA,
+			from_address TEXT NOT NULL,tls_mode TEXT NOT NULL
+		)`,
+		`CREATE TABLE smtp_recipients (user_id TEXT PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE)`,
+		`CREATE TABLE scan_long_alerts (scan_id TEXT PRIMARY KEY,sent_at TIMESTAMPTZ NOT NULL)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL notifications: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(6,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL notification migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLAuditRetention(ctx context.Context, tx *sql.Tx) error {

@@ -206,8 +206,12 @@ its audit event.
 PostgreSQL identity-key maintenance can now re-encrypt TOTP secrets, WebAuthn
 credentials, active ceremony state, and OIDC client secrets in one transaction.
 Any decrypt, encrypt, update, or audit failure rolls the entire rotation back.
-SMTP password rotation remains tied to the later PostgreSQL notification-store
-parity slice because that table does not yet exist in PostgreSQL.
+PostgreSQL migration version 6 adds encrypted SMTP settings, administrator
+recipient references, and per-scan long-running alert deduplication. SMTP
+updates and recipient replacement are audited atomically. SMTP password
+ciphertexts are now included in PostgreSQL identity-key rotation, completing
+rotation parity for every encrypted identity and notification column currently
+available in that backend.
 
 ## Endpoint identity and mTLS listener
 

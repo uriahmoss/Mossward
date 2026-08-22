@@ -12,6 +12,7 @@ var postgresIdentityEncryptedColumns = []encryptedColumn{
 	{table: "webauthn_credentials", keyColumn: "credential_id", value: "credential_ciphertext"},
 	{table: "authentication_ceremonies", keyColumn: "id_hash", value: "state_ciphertext"},
 	{table: "oidc_providers", keyColumn: "id", value: "client_secret_ciphertext"},
+	{table: "smtp_settings", keyColumn: "id", value: "password_ciphertext"},
 }
 
 func (s *PostgreSQLStore) RotateIdentityCiphertexts(cipher IdentityCipher, now time.Time) (int, error) {
