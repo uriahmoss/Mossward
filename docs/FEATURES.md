@@ -460,6 +460,9 @@ failure and health states.
           - [x] Endpoint integrity and tamper-event parity
             - [x] Signed integrity snapshot, sequence, and component-change event schema
             - [x] Serialized replay-resistant snapshot and event operations
+          - [ ] Endpoint agent-update storage parity
+            - [x] Signed release approval/revocation and endpoint assignment schema
+            - [ ] Audited release lifecycle, assignment, offer, and installed-state operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 16
+	postgresFoundationSchemaVersion = 17
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -178,11 +178,47 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 			return err
 		}
 	}
+	if version < 17 {
+		if err := migratePostgreSQLAgentUpdates(ctx, tx); err != nil {
+			return err
+		}
+	}
 	var organizations int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
 	return tx.Commit()
+}
+
+func migratePostgreSQLAgentUpdates(ctx context.Context, tx *sql.Tx) error {
+	statements := []string{
+		`CREATE TABLE agent_update_releases (
+			id TEXT PRIMARY KEY,version TEXT NOT NULL,operating_system TEXT NOT NULL,architecture TEXT NOT NULL,
+			artifact_sha256 TEXT NOT NULL,artifact_size BIGINT NOT NULL CHECK(artifact_size >= 0),signing_key_id TEXT NOT NULL,
+			envelope BYTEA NOT NULL,status TEXT NOT NULL CHECK(status IN ('staged','approved','revoked')),
+			created_by TEXT NOT NULL REFERENCES users(id),created_at TIMESTAMPTZ NOT NULL,
+			approved_by TEXT REFERENCES users(id),approved_at TIMESTAMPTZ,revoked_by TEXT REFERENCES users(id),
+			revoked_at TIMESTAMPTZ,revocation_reason TEXT NOT NULL DEFAULT '',UNIQUE(version,operating_system,architecture)
+		)`,
+		`CREATE INDEX agent_update_releases_status_idx ON agent_update_releases(status,operating_system,architecture,created_at DESC)`,
+		`CREATE TABLE agent_update_assignments (
+			endpoint_id TEXT PRIMARY KEY REFERENCES endpoints(id) ON DELETE CASCADE,
+			release_id TEXT NOT NULL REFERENCES agent_update_releases(id),
+			status TEXT NOT NULL CHECK(status IN ('assigned','offered','installed')),
+			assigned_by TEXT NOT NULL REFERENCES users(id),assigned_at TIMESTAMPTZ NOT NULL,
+			offered_at TIMESTAMPTZ,installed_at TIMESTAMPTZ
+		)`,
+		`CREATE INDEX agent_update_assignments_release_idx ON agent_update_assignments(release_id,status)`,
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("migrate PostgreSQL agent updates: %w", err)
+		}
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO schema_migrations(version,applied_at) VALUES(17,$1)`, time.Now().UTC()); err != nil {
+		return fmt.Errorf("record PostgreSQL agent-update migration: %w", err)
+	}
+	return nil
 }
 
 func migratePostgreSQLEndpointIntegrity(ctx context.Context, tx *sql.Tx) error {

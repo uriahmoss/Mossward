@@ -256,6 +256,10 @@ PostgreSQL migration version 16 adds signed integrity snapshots, monotonic
 sequence state, and append-only component-change events for executable,
 configuration, and endpoint identity hashes.
 
+PostgreSQL migration version 17 adds signed endpoint-agent update releases,
+separate approval and revocation actors, platform-specific uniqueness, and one
+active assignment state per endpoint through assigned, offered, and installed.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
