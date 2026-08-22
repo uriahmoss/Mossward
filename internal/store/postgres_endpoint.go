@@ -179,6 +179,36 @@ func (s *PostgreSQLStore) MarkEndpointSeen(id string, seenAt time.Time) error {
 	return nil
 }
 
+func (s *PostgreSQLStore) RecordEndpointCheckIn(id string, heartbeat model.AgentCheckIn, seenAt time.Time) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("begin PostgreSQL endpoint check-in: %w", err)
+	}
+	defer tx.Rollback()
+	var generatedAt any
+	if !heartbeat.GeneratedAt.IsZero() {
+		generatedAt = heartbeat.GeneratedAt
+	}
+	result, err := tx.Exec(`UPDATE endpoints SET last_seen_at=$1,last_heartbeat_generated_at=$2,
+		last_heartbeat_received_at=$1,software_version=$3,operating_system=$4,architecture=$5
+		WHERE id=$6 AND status='active'`, seenAt, generatedAt, heartbeat.SoftwareVersion, heartbeat.OperatingSystem,
+		heartbeat.Architecture, id)
+	if err != nil {
+		return fmt.Errorf("record PostgreSQL endpoint check-in: %w", err)
+	}
+	changed, err := result.RowsAffected()
+	if err != nil || changed != 1 {
+		return ErrNotFound
+	}
+	_, err = tx.Exec(`UPDATE agent_update_assignments SET status='installed',installed_at=$1
+		WHERE endpoint_id=$2 AND status IN ('assigned','offered') AND release_id IN
+		(SELECT id FROM agent_update_releases WHERE version=$3)`, seenAt, id, heartbeat.SoftwareVersion)
+	if err != nil {
+		return fmt.Errorf("reconcile PostgreSQL endpoint update installation: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (s *PostgreSQLStore) SetEndpointCollectors(id string, collectors []model.CollectorID, event model.AuditEvent) error {
 	encoded, err := json.Marshal(collectors)
 	if err != nil {

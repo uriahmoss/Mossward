@@ -449,7 +449,7 @@ failure and health states.
           - [x] Enrollment token, certificate identity, lifecycle, heartbeat, collector, and platform schema
           - [ ] Audited enrollment, certificate lifecycle, endpoint policy, and check-in operations
             - [x] Enrollment tokens, endpoint reads, renewal, revocation, seen state, and policy updates
-            - [ ] Atomic heartbeat and agent-update installation reconciliation
+            - [x] Atomic heartbeat and agent-update installation reconciliation
           - [ ] Endpoint inventory and CVE relevance persistence
             - [x] OS, patch, installed-software, and endpoint CVE-match schema
             - [x] Atomic inventory replacement and environment-aware CVE matching operations
@@ -460,9 +460,9 @@ failure and health states.
           - [x] Endpoint integrity and tamper-event parity
             - [x] Signed integrity snapshot, sequence, and component-change event schema
             - [x] Serialized replay-resistant snapshot and event operations
-          - [ ] Endpoint agent-update storage parity
+          - [x] Endpoint agent-update storage parity
             - [x] Signed release approval/revocation and endpoint assignment schema
-            - [ ] Audited release lifecycle, assignment, offer, and installed-state operations
+            - [x] Audited release lifecycle, assignment, offer, and installed-state operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
