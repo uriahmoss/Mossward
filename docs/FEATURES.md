@@ -465,7 +465,7 @@ failure and health states.
             - [x] Audited release lifecycle, assignment, offer, and installed-state operations
         - [ ] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
-          - [ ] Audited worker enrollment, lifecycle, health, and dispatch operations
+          - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
           - [ ] Replay-resistant job lease, evidence, completion, reassignment, and quarantine operations
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
