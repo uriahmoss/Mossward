@@ -268,8 +268,9 @@ quarantine controls.
 
 PostgreSQL migration version 19 adds endpoint extension-module publisher trust,
 signed staged releases, endpoint and group assignments, deterministic rollout
-rings, module health state, and endpoint-to-asset links. Module repository
-operations remain disabled until their PostgreSQL parity slice is complete.
+rings, module health state, and endpoint-to-asset links. The matching repository
+operations preserve approval gates, compatibility checks, rollout selection,
+audit records, and the global emergency-disable control.
 
 ## Endpoint identity and mTLS listener
 
