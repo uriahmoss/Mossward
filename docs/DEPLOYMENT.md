@@ -278,6 +278,11 @@ heartbeat policies with bounded post-window grace. The matching repository
 operations preserve active-endpoint validation, exclusive downstream ownership,
 cascading revocation, policy conflict resolution, and transactional audit logs.
 
+PostgreSQL migration version 21 adds endpoint and asset-group maintenance-window
+history with ordered time bounds, consistent cancellation state, and indexed
+active-window lookup. Repository operations remain disabled until their
+PostgreSQL parity slice is complete.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

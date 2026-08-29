@@ -469,6 +469,9 @@ failure and health states.
           - [x] Endpoint relay and delayed-delivery storage parity
             - [x] Relay promotion, downstream allowlist, upload-window, and delayed-heartbeat schema
             - [x] Audited relay, downstream, upload-window, and delayed-heartbeat operations
+          - [ ] Endpoint maintenance-window storage parity
+            - [x] Endpoint/group maintenance history and cancellation schema
+            - [ ] Audited creation, cancellation, listing, and active-window resolution
         - [x] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
