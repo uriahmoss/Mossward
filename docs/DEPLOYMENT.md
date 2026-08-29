@@ -280,8 +280,9 @@ cascading revocation, policy conflict resolution, and transactional audit logs.
 
 PostgreSQL migration version 21 adds endpoint and asset-group maintenance-window
 history with ordered time bounds, consistent cancellation state, and indexed
-active-window lookup. Repository operations remain disabled until their
-PostgreSQL parity slice is complete.
+active-window lookup. The matching repository operations preserve append-only
+history, one-time cancellation, endpoint/group inheritance, and transactional
+audit records.
 
 ## Endpoint identity and mTLS listener
 
