@@ -274,8 +274,9 @@ audit records, and the global emergency-disable control.
 
 PostgreSQL migration version 20 adds explicit relay promotion history, exclusive
 downstream allowlists, endpoint/group upload windows, and configurable delayed-
-heartbeat policies with bounded post-window grace. Repository operations remain
-disabled until their PostgreSQL parity slice is complete.
+heartbeat policies with bounded post-window grace. The matching repository
+operations preserve active-endpoint validation, exclusive downstream ownership,
+cascading revocation, policy conflict resolution, and transactional audit logs.
 
 ## Endpoint identity and mTLS listener
 

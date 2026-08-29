@@ -466,9 +466,9 @@ failure and health states.
           - [x] Endpoint extension-module storage parity
             - [x] Publisher trust, signed release, assignment, rollout, and health schema
             - [x] Audited publisher, release, assignment, offer, health, and endpoint-link operations
-          - [ ] Endpoint relay and delayed-delivery storage parity
+          - [x] Endpoint relay and delayed-delivery storage parity
             - [x] Relay promotion, downstream allowlist, upload-window, and delayed-heartbeat schema
-            - [ ] Audited relay, downstream, upload-window, and delayed-heartbeat operations
+            - [x] Audited relay, downstream, upload-window, and delayed-heartbeat operations
         - [x] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
