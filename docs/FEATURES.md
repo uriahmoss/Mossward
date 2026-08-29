@@ -467,6 +467,8 @@ failure and health states.
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
           - [ ] Replay-resistant job lease, evidence, completion, reassignment, and quarantine operations
+            - [x] Signed job creation, replay rejection, load accounting, leasing, expiry recovery, and renewal
+            - [ ] Evidence acceptance, completion, reassignment, and quarantine administration
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
