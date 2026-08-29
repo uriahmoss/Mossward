@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 19
+	postgresFoundationSchemaVersion = 20
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -190,6 +190,11 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 	}
 	if version < 19 {
 		if err := migratePostgreSQLAgentModules(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if version < 20 {
+		if err := migratePostgreSQLRelayPolicies(ctx, tx); err != nil {
 			return err
 		}
 	}

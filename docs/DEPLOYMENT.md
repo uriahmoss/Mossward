@@ -272,6 +272,11 @@ rings, module health state, and endpoint-to-asset links. The matching repository
 operations preserve approval gates, compatibility checks, rollout selection,
 audit records, and the global emergency-disable control.
 
+PostgreSQL migration version 20 adds explicit relay promotion history, exclusive
+downstream allowlists, endpoint/group upload windows, and configurable delayed-
+heartbeat policies with bounded post-window grace. Repository operations remain
+disabled until their PostgreSQL parity slice is complete.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
