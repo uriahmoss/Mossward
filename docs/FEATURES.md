@@ -472,6 +472,9 @@ failure and health states.
           - [x] Endpoint maintenance-window storage parity
             - [x] Endpoint/group maintenance history and cancellation schema
             - [x] Audited creation, cancellation, listing, and active-window resolution
+          - [ ] Endpoint coverage and discovery-policy storage parity
+            - [x] Opt-in coverage settings and authorized-CIDR discovery-policy schema
+            - [ ] Audited settings, coverage reporting, and discovery-policy operations
         - [x] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations

@@ -284,6 +284,11 @@ active-window lookup. The matching repository operations preserve append-only
 history, one-time cancellation, endpoint/group inheritance, and transactional
 audit records.
 
+PostgreSQL migration version 22 adds the disabled-by-default endpoint coverage
+switch and endpoint discovery policies whose CIDR lists are stored as structured
+JSON. Repository operations and scope validation remain disabled until their
+PostgreSQL parity slice is complete.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
