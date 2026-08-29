@@ -286,8 +286,9 @@ audit records.
 
 PostgreSQL migration version 22 adds the disabled-by-default endpoint coverage
 switch and endpoint discovery policies whose CIDR lists are stored as structured
-JSON. Repository operations and scope validation remain disabled until their
-PostgreSQL parity slice is complete.
+JSON. The matching repository operations preserve audited opt-in settings,
+eligible-versus-unclassified gap reporting, immutable creation attribution, and
+explicit discovery-policy state without launching scans or expanding scope.
 
 ## Endpoint identity and mTLS listener
 
