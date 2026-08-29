@@ -262,9 +262,14 @@ active assignment state per endpoint through assigned, offered, and installed.
 
 PostgreSQL migration version 18 adds scanner-worker enrollment and certificate
 identity, health and dispatch controls, signed jobs and leases, evidence and
-checkpoints, reassignment history, and dead-letter quarantine storage. Worker
-repository operations remain disabled until their PostgreSQL parity slice is
-complete.
+checkpoints, reassignment history, and dead-letter quarantine storage. The
+matching worker repository operations preserve replay, lease, completion, and
+quarantine controls.
+
+PostgreSQL migration version 19 adds endpoint extension-module publisher trust,
+signed staged releases, endpoint and group assignments, deterministic rollout
+rings, module health state, and endpoint-to-asset links. Module repository
+operations remain disabled until their PostgreSQL parity slice is complete.
 
 ## Endpoint identity and mTLS listener
 

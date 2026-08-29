@@ -463,6 +463,9 @@ failure and health states.
           - [x] Endpoint agent-update storage parity
             - [x] Signed release approval/revocation and endpoint assignment schema
             - [x] Audited release lifecycle, assignment, offer, and installed-state operations
+          - [ ] Endpoint extension-module storage parity
+            - [x] Publisher trust, signed release, assignment, rollout, and health schema
+            - [ ] Audited publisher, release, assignment, offer, health, and endpoint-link operations
         - [x] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
