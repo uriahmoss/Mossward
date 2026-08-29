@@ -260,6 +260,12 @@ PostgreSQL migration version 17 adds signed endpoint-agent update releases,
 separate approval and revocation actors, platform-specific uniqueness, and one
 active assignment state per endpoint through assigned, offered, and installed.
 
+PostgreSQL migration version 18 adds scanner-worker enrollment and certificate
+identity, health and dispatch controls, signed jobs and leases, evidence and
+checkpoints, reassignment history, and dead-letter quarantine storage. Worker
+repository operations remain disabled until their PostgreSQL parity slice is
+complete.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is
