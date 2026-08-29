@@ -463,12 +463,12 @@ failure and health states.
           - [x] Endpoint agent-update storage parity
             - [x] Signed release approval/revocation and endpoint assignment schema
             - [x] Audited release lifecycle, assignment, offer, and installed-state operations
-        - [ ] Scanner-worker storage parity
+        - [x] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
-          - [ ] Replay-resistant job lease, evidence, completion, reassignment, and quarantine operations
+          - [x] Replay-resistant job lease, evidence, completion, reassignment, and quarantine operations
             - [x] Signed job creation, replay rejection, load accounting, leasing, expiry recovery, and renewal
-            - [ ] Evidence acceptance, completion, reassignment, and quarantine administration
+            - [x] Evidence acceptance, completion, reassignment, and quarantine administration
   - [ ] PostgreSQL backup, restore, and deployment verification
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
