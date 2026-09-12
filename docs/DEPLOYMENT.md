@@ -317,9 +317,12 @@ trail. WebAuthn coverage includes encrypted credential state, authenticator
 counters and backup flags, and kind-bound single-use ceremonies. OIDC coverage
 checks encrypted provider secrets, mandatory retesting after
 configuration changes, invite-only provisioning, JIT provisioning, and linked
-role refresh. The configured database role therefore needs permission to create
-and drop schemas. Never point these tests at a database where that role has
-broader privileges than necessary.
+role refresh. Scope and targeting coverage verifies the single-organization
+boundary, scoped CIDRs and ports, overlapping group target deduplication, reverse
+group-to-policy visibility, per-policy maintenance windows, time zones, worker
+sites, and schedule checkpoints. The configured database role therefore needs
+permission to create and drop schemas. Never point these tests at a database
+where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 

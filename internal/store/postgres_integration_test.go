@@ -337,6 +337,84 @@ func TestPostgreSQLOIDCProvisioningModes(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLScopeAndPolicyTargetingContract(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	organization, err := repository.Organization()
+	if err != nil || organization.ID == "" {
+		t.Fatalf("load PostgreSQL installation organization: %#v %v", organization, err)
+	}
+	if err := repository.RequireOrganization("different-organization"); !errors.Is(err, ErrOrganizationBoundary) {
+		t.Fatalf("PostgreSQL organization boundary error = %v, want %v", err, ErrOrganizationBoundary)
+	}
+	scope := model.ScopePolicy{ID: "postgres-scope", Name: "Production scope", AllowedCIDRs: []string{"192.0.2.0/24"},
+		AllowedPorts: []int{443}, MaxTargets: 100, MaxConcurrent: 4, Enabled: true, CreatedBy: administrator.ID,
+		CreatedAt: now, UpdatedAt: now}
+	scopeEvent := postgresIdentityAuditEvent(now, administrator.ID, "scope.updated", "scope_policy", scope.ID)
+	if err := repository.UpsertScopePolicy(scope, scopeEvent); err != nil {
+		t.Fatalf("save PostgreSQL scope policy: %v", err)
+	}
+	storedScope, err := repository.ScopePolicy(scope.ID)
+	if err != nil || storedScope.OrganizationID != organization.ID || !reflect.DeepEqual(storedScope.AllowedCIDRs, scope.AllowedCIDRs) ||
+		!reflect.DeepEqual(storedScope.AllowedPorts, scope.AllowedPorts) {
+		t.Fatalf("PostgreSQL scope policy round trip changed: %#v %v", storedScope, err)
+	}
+
+	if err := repository.Save(serviceHistoryScan("postgres-policy-asset", "postgres-policy-observation", now, true)); err != nil {
+		t.Fatalf("create PostgreSQL policy target asset: %v", err)
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("load PostgreSQL policy target asset: %#v %v", assets, err)
+	}
+	groupEvent := postgresIdentityAuditEvent(now, administrator.ID, "asset_group.updated", "asset_group", "")
+	for _, groupID := range []string{"postgres-group-one", "postgres-group-two"} {
+		group := model.AssetGroup{ID: groupID, Name: groupID, Description: "Integration group", CreatedAt: now, UpdatedAt: now}
+		if err := repository.UpsertAssetGroup(group, groupEvent); err != nil {
+			t.Fatalf("save PostgreSQL asset group %q: %v", groupID, err)
+		}
+		if err := repository.AddAssetGroupMember(groupID, assets[0].ID, administrator.ID, now, groupEvent); err != nil {
+			t.Fatalf("add overlapping PostgreSQL group member %q: %v", groupID, err)
+		}
+	}
+	nextRun := now.Add(time.Hour)
+	policy := model.ReusableScanPolicy{ID: "postgres-policy", Name: "Overnight production scan", ScopePolicyID: scope.ID,
+		GroupIDs: []string{"postgres-group-one", "postgres-group-two"}, Ports: []int{443}, Enabled: true,
+		CreatedAt: now, UpdatedAt: now, ScheduleKind: "cron", ScheduleExpression: "0 1 * * *",
+		ScheduleTimezone: "America/Chicago", WindowStart: "01:00", WindowEnd: "06:00", RunMissed: false,
+		LongRunAlertSeconds: 5 * 60 * 60, RateLimitPerSecond: 10, ExecutionMode: model.ScanExecutionRemote,
+		WorkerSiteID: "chicago-hq", NextRunAt: &nextRun}
+	policyEvent := postgresIdentityAuditEvent(now, administrator.ID, "scan_policy.updated", "scan_policy", policy.ID)
+	if err := repository.UpsertReusableScanPolicy(policy, policyEvent); err != nil {
+		t.Fatalf("save PostgreSQL reusable scan policy: %v", err)
+	}
+	storedPolicy, err := repository.ReusableScanPolicy(policy.ID)
+	if err != nil || !reflect.DeepEqual(storedPolicy.GroupIDs, policy.GroupIDs) || storedPolicy.ScheduleTimezone != policy.ScheduleTimezone ||
+		storedPolicy.WindowStart != policy.WindowStart || storedPolicy.WindowEnd != policy.WindowEnd ||
+		storedPolicy.ExecutionMode != policy.ExecutionMode || storedPolicy.WorkerSiteID != policy.WorkerSiteID {
+		t.Fatalf("PostgreSQL reusable scan policy round trip changed: %#v %v", storedPolicy, err)
+	}
+	targets, err := repository.ReusableScanPolicyTargets(policy.ID)
+	if err != nil || len(targets) != 1 || len(targets[0].GroupIDs) != 2 || targets[0].Address != assets[0].Address {
+		t.Fatalf("PostgreSQL overlapping policy targets were not deduplicated: %#v %v", targets, err)
+	}
+	groups, err := repository.ListAssetGroups()
+	if err != nil || len(groups) != 2 || len(groups[0].ScanPolicyIDs) != 1 || len(groups[1].ScanPolicyIDs) != 1 {
+		t.Fatalf("PostgreSQL reverse group policy visibility missing: %#v %v", groups, err)
+	}
+	lastScheduled := now.Add(30 * time.Minute)
+	updatedNextRun := now.Add(24 * time.Hour)
+	if err := repository.UpdateReusablePolicySchedule(policy.ID, &updatedNextRun, &lastScheduled, policyEvent); err != nil {
+		t.Fatalf("update PostgreSQL reusable policy schedule: %v", err)
+	}
+	storedPolicy, err = repository.ReusableScanPolicy(policy.ID)
+	if err != nil || storedPolicy.NextRunAt == nil || !storedPolicy.NextRunAt.Equal(updatedNextRun) ||
+		storedPolicy.LastScheduledAt == nil || !storedPolicy.LastScheduledAt.Equal(lastScheduled) {
+		t.Fatalf("PostgreSQL reusable policy schedule changed: %#v %v", storedPolicy, err)
+	}
+}
+
 func postgresIdentityAuditEvent(at time.Time, actorID, action, targetType, targetID string) model.AuditEvent {
 	return model.AuditEvent{OccurredAt: at, ActorID: actorID, Action: action, Severity: model.AuditInfo,
 		TargetType: targetType, TargetID: targetID, Details: `{}`}
