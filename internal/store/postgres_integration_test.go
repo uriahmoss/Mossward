@@ -512,7 +512,7 @@ func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
-	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-inventory-endpoint")
 	receivedAt := now.Add(time.Minute)
 	installedAt := now.Add(-24 * time.Hour)
 	osInventory := model.EndpointOSInventory{Family: "linux", Name: "Example Linux", Version: "1", Build: "1.2",
@@ -586,7 +586,7 @@ func TestPostgreSQLEndpointIntegrityReplayAndChangeEvidence(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
-	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-integrity-endpoint")
 	hashA := strings.Repeat("a", 64)
 	hashB := strings.Repeat("b", 64)
 	baseline := model.SignedAgentIntegritySnapshot{Sequence: 1, Signature: "signature-one",
@@ -647,7 +647,7 @@ func TestPostgreSQLEndpointNetworkIndicatorDetection(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
-	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-network-endpoint")
 	inventory := model.EndpointNetworkInventory{CollectedAt: now, Connections: []model.NetworkConnection{
 		{Protocol: "tcp", LocalAddress: "10.0.0.25", LocalPort: 51000, RemoteAddress: "198.51.100.10",
 			RemotePort: 443, ProcessID: 42, ProcessName: "browser", Executable: "/usr/bin/browser",
@@ -714,17 +714,84 @@ func TestPostgreSQLEndpointNetworkIndicatorDetection(t *testing.T) {
 	}
 }
 
-func enrollPostgreSQLTestEndpoint(t *testing.T, repository *PostgreSQLStore, administrator model.User, now time.Time) model.Endpoint {
+func TestPostgreSQLRelayAuthorizationBoundaries(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	relay := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-relay-endpoint")
+	downstream := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-downstream-endpoint")
+	promotion := model.EndpointRelayAuthorization{ID: "postgres-relay-authorization", EndpointID: relay.ID,
+		Status: model.EndpointRelayActive, PromotionReason: "guarded network bridge", PromotedBy: administrator.ID, PromotedAt: now}
+	promoteEvent := postgresIdentityAuditEvent(now, administrator.ID, "endpoint.relay.promoted", "endpoint", relay.ID)
+	if err := repository.PromoteEndpointRelay(promotion, promoteEvent); err != nil {
+		t.Fatalf("promote PostgreSQL endpoint relay: %v", err)
+	}
+	if err := repository.PromoteEndpointRelay(promotion, promoteEvent); !errors.Is(err, ErrEndpointRelayAlreadyActive) {
+		t.Fatalf("duplicate PostgreSQL relay promotion error = %v, want %v", err, ErrEndpointRelayAlreadyActive)
+	}
+	authorization := model.RelayDownstreamAuthorization{ID: "postgres-downstream-authorization", RelayEndpointID: relay.ID,
+		DownstreamEndpointID: downstream.ID, Status: model.EndpointRelayActive, AuthorizationReason: "isolated segment",
+		AuthorizedBy: administrator.ID, AuthorizedAt: now.Add(time.Minute)}
+	downstreamEvent := postgresIdentityAuditEvent(now.Add(time.Minute), administrator.ID,
+		"endpoint.relay_downstream.authorized", "endpoint", downstream.ID)
+	selfAssignment := authorization
+	selfAssignment.ID = "postgres-self-authorization"
+	selfAssignment.DownstreamEndpointID = relay.ID
+	if err := repository.AuthorizeRelayDownstream(selfAssignment, downstreamEvent); !errors.Is(err, ErrRelayDownstreamSelfAssignment) {
+		t.Fatalf("PostgreSQL relay self-assignment error = %v, want %v", err, ErrRelayDownstreamSelfAssignment)
+	}
+	if err := repository.AuthorizeRelayDownstream(authorization, downstreamEvent); err != nil {
+		t.Fatalf("authorize PostgreSQL relay downstream: %v", err)
+	}
+	if err := repository.AuthorizeRelayDownstream(authorization, downstreamEvent); !errors.Is(err, ErrRelayDownstreamAlreadyActive) {
+		t.Fatalf("duplicate PostgreSQL downstream authorization error = %v, want %v", err, ErrRelayDownstreamAlreadyActive)
+	}
+	relays, err := repository.ListEndpointRelayAuthorizations()
+	if err != nil || len(relays) != 1 || relays[0].Status != model.EndpointRelayActive {
+		t.Fatalf("PostgreSQL active relay authorization missing: %#v %v", relays, err)
+	}
+	downstreams, err := repository.ListRelayDownstreamAuthorizations()
+	if err != nil || len(downstreams) != 1 || downstreams[0].Status != model.EndpointRelayActive {
+		t.Fatalf("PostgreSQL active downstream authorization missing: %#v %v", downstreams, err)
+	}
+
+	revokedAt := now.Add(2 * time.Minute)
+	revokeEvent := postgresIdentityAuditEvent(revokedAt, administrator.ID, "endpoint.relay.revoked", "endpoint", relay.ID)
+	if err := repository.RevokeEndpointRelay(relay.ID, "network path retired", administrator.ID, revokedAt, revokeEvent); err != nil {
+		t.Fatalf("revoke PostgreSQL endpoint relay: %v", err)
+	}
+	relays, err = repository.ListEndpointRelayAuthorizations()
+	if err != nil || len(relays) != 1 || relays[0].Status != model.EndpointRelayRevoked || relays[0].RevokedAt == nil ||
+		!relays[0].RevokedAt.Equal(revokedAt) {
+		t.Fatalf("PostgreSQL relay revocation state changed: %#v %v", relays, err)
+	}
+	downstreams, err = repository.ListRelayDownstreamAuthorizations()
+	if err != nil || len(downstreams) != 1 || downstreams[0].Status != model.EndpointRelayRevoked ||
+		downstreams[0].RevocationReason != "relay authorization revoked" || downstreams[0].RevokedAt == nil {
+		t.Fatalf("PostgreSQL downstream cascade revocation changed: %#v %v", downstreams, err)
+	}
+	if err := repository.AuthorizeRelayDownstream(authorization, downstreamEvent); !errors.Is(err, ErrEndpointRelayUnavailable) {
+		t.Fatalf("revoked PostgreSQL relay authorization error = %v, want %v", err, ErrEndpointRelayUnavailable)
+	}
+}
+
+func enrollPostgreSQLTestEndpoint(
+	t *testing.T,
+	repository *PostgreSQLStore,
+	administrator model.User,
+	now time.Time,
+	endpointID string,
+) model.Endpoint {
 	t.Helper()
-	token := model.AgentEnrollmentToken{ID: "inventory-endpoint-token", Name: "Inventory endpoint",
-		TokenHash: []byte("inventory-endpoint-token-hash"), CreatedBy: administrator.ID,
+	token := model.AgentEnrollmentToken{ID: endpointID + "-token", Name: endpointID,
+		TokenHash: []byte(endpointID + "-token-hash"), CreatedBy: administrator.ID,
 		CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
 	if err := repository.CreateAgentEnrollmentToken(token, postgresIdentityAuditEvent(now, administrator.ID,
 		"endpoint.enrollment_token.created", "endpoint_enrollment_token", token.ID)); err != nil {
 		t.Fatalf("create PostgreSQL endpoint enrollment token: %v", err)
 	}
-	endpoint := model.Endpoint{ID: "postgres-inventory-endpoint", Name: token.Name, Status: model.EndpointActive,
-		CertificateSerial: "postgres-inventory-serial", CertificatePEM: "postgres-inventory-certificate",
+	endpoint := model.Endpoint{ID: endpointID, Name: token.Name, Status: model.EndpointActive,
+		CertificateSerial: endpointID + "-serial", CertificatePEM: endpointID + "-certificate",
 		EnrolledAt: now, ExpiresAt: now.Add(24 * time.Hour)}
 	if err := repository.ConsumeAgentEnrollmentToken(token.TokenHash, endpoint, now, postgresIdentityAuditEvent(now,
 		administrator.ID, "endpoint.enrolled", "endpoint", endpoint.ID)); err != nil {

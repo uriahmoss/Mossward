@@ -333,9 +333,12 @@ verification remains a service-layer responsibility. Network-detection coverage
 checks connection provenance, exact IP and normalized hostname correlation,
 expired and disabled indicator filtering, process context, and removal of
 obsolete matches when an inventory snapshot is replaced. It does not perform
-traffic blocking or remediation. The configured database role therefore needs
-permission to create and drop schemas. Never point these tests at a database
-where that role has broader privileges than necessary.
+traffic blocking or remediation. Relay coverage checks explicit promotion,
+self-assignment and duplicate-assignment rejection, exclusive downstream
+authorization, and cascade revocation. It does not permit peer-to-peer control,
+self-promotion, or automatic downstream discovery. The configured database role
+therefore needs permission to create and drop schemas. Never point these tests
+at a database where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 

@@ -495,6 +495,7 @@ failure and health states.
     - [x] Endpoint OS/software/listening/posture inventory and CVE projection integration contract
     - [x] Endpoint integrity sequencing, replay rejection, and component-change evidence integration contract
     - [x] Endpoint network inventory and active IP/hostname indicator detection integration contract
+    - [x] Explicit relay promotion, exclusive downstream authorization, and cascade-revocation integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement
