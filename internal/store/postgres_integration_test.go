@@ -89,14 +89,7 @@ func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
 		t.Fatalf("unexpected PostgreSQL identity state before bootstrap: %t %v", initialized, err)
 	}
 	now := time.Now().UTC().Truncate(time.Microsecond)
-	user := model.User{ID: "postgres-admin", Email: "Admin@Example.Test", DisplayName: "PostgreSQL Admin",
-		Role: model.RoleAdministrator, Status: model.UserActive, MFARequired: true, CreatedAt: now, UpdatedAt: now}
-	mfa := model.BootstrapMFA{TOTPSecretCiphertext: []byte("encrypted-totp"), RecoveryCodeHashes: [][]byte{[]byte("recovery-one")}}
-	bootstrapEvent := model.AuditEvent{OccurredAt: now, ActorID: user.ID, Action: "identity.bootstrap.completed",
-		Severity: model.AuditInfo, TargetType: "user", TargetID: user.ID, Details: `{}`}
-	if err := repository.BootstrapAdministrator(user, "password-hash", mfa, bootstrapEvent); err != nil {
-		t.Fatalf("bootstrap PostgreSQL administrator: %v", err)
-	}
+	user, mfa, bootstrapEvent := bootstrapPostgreSQLTestAdministrator(t, repository, now)
 	if err := repository.BootstrapAdministrator(user, "password-hash", mfa, bootstrapEvent); !errors.Is(err, ErrAlreadyInitialized) {
 		t.Fatalf("repeat PostgreSQL bootstrap error = %v, want %v", err, ErrAlreadyInitialized)
 	}
@@ -133,6 +126,76 @@ func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
 	if err != nil || len(events) != 3 {
 		t.Fatalf("PostgreSQL local-auth audit trail missing: %#v %v", events, err)
 	}
+}
+
+func TestPostgreSQLSessionAndInvitationLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	invitation := model.Invitation{ID: "postgres-invitation", Email: "Analyst@Example.Test", Role: model.RoleAnalyst,
+		IdentityKind: model.IdentityLocal, InvitedBy: administrator.ID, ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+		TokenHash: []byte("invitation-token-hash")}
+	inviteEvent := model.AuditEvent{OccurredAt: now, ActorID: administrator.ID, Action: "identity.invitation.created",
+		Severity: model.AuditInfo, TargetType: "invitation", TargetID: invitation.ID, Details: `{}`}
+	if err := repository.CreateInvitation(invitation, inviteEvent); err != nil {
+		t.Fatalf("create PostgreSQL invitation: %v", err)
+	}
+	storedInvitation, err := repository.InvitationByTokenHash(invitation.TokenHash, now.Add(time.Minute))
+	if err != nil || storedInvitation.Email != "analyst@example.test" || !reflect.DeepEqual(storedInvitation.TokenHash, invitation.TokenHash) {
+		t.Fatalf("PostgreSQL invitation round trip changed: %#v %v", storedInvitation, err)
+	}
+	analyst := model.User{ID: "postgres-analyst", Email: storedInvitation.Email, DisplayName: "PostgreSQL Analyst", Role: model.RoleAnalyst}
+	analystMFA := model.BootstrapMFA{TOTPSecretCiphertext: []byte("analyst-encrypted-totp"), RecoveryCodeHashes: [][]byte{[]byte("analyst-recovery")}}
+	acceptEvent := model.AuditEvent{OccurredAt: now.Add(time.Minute), ActorID: administrator.ID, Action: "identity.invitation.accepted",
+		Severity: model.AuditInfo, TargetType: "user", TargetID: analyst.ID, Details: `{}`}
+	if err := repository.AcceptLocalInvitation(storedInvitation, analyst, "analyst-password-hash", analystMFA, now.Add(time.Minute), acceptEvent); err != nil {
+		t.Fatalf("accept PostgreSQL invitation: %v", err)
+	}
+	if err := repository.AcceptLocalInvitation(storedInvitation, analyst, "analyst-password-hash", analystMFA, now.Add(2*time.Minute), acceptEvent); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("PostgreSQL invitation reuse error = %v, want %v", err, ErrIdentityNotFound)
+	}
+
+	session := model.Session{PublicID: "postgres-session", IDHash: []byte("session-hash"), UserID: analyst.ID,
+		CreatedAt: now.Add(2 * time.Minute), ExpiresAt: now.Add(time.Hour), LastSeenAt: now.Add(2 * time.Minute),
+		SourceIP: "192.0.2.25", UserAgentHash: []byte("user-agent-hash")}
+	sessionEvent := model.AuditEvent{OccurredAt: session.CreatedAt, ActorID: analyst.ID, Action: "identity.login.succeeded",
+		Severity: model.AuditInfo, TargetType: "session", TargetID: session.PublicID, Details: `{}`}
+	if err := repository.CreateSession(session, sessionEvent); err != nil {
+		t.Fatalf("create PostgreSQL session: %v", err)
+	}
+	sessionUser, err := repository.SessionUser(session.IDHash, now.Add(3*time.Minute))
+	if err != nil || sessionUser.ID != analyst.ID || sessionUser.LastLoginAt == nil {
+		t.Fatalf("PostgreSQL session user round trip changed: %#v %v", sessionUser, err)
+	}
+	verifiedAt := now.Add(3 * time.Minute)
+	if err := repository.UpdateSessionMFAVerifiedAt(session.IDHash, analyst.ID, verifiedAt); err != nil {
+		t.Fatalf("update PostgreSQL session MFA state: %v", err)
+	}
+	sessions, err := repository.ListUserSessions(analyst.ID, session.IDHash, now.Add(4*time.Minute))
+	if err != nil || len(sessions) != 1 || !sessions[0].Current || sessions[0].MFAVerifiedAt == nil || !sessions[0].MFAVerifiedAt.Equal(verifiedAt) {
+		t.Fatalf("PostgreSQL session listing changed: %#v %v", sessions, err)
+	}
+	revokeEvent := model.AuditEvent{OccurredAt: now.Add(4 * time.Minute), ActorID: analyst.ID, Action: "identity.session.revoked",
+		Severity: model.AuditWarning, TargetType: "session", TargetID: session.PublicID, Details: `{}`}
+	if err := repository.RevokeUserSession(analyst.ID, session.PublicID, revokeEvent); err != nil {
+		t.Fatalf("revoke PostgreSQL session: %v", err)
+	}
+	if _, err := repository.SessionUser(session.IDHash, now.Add(5*time.Minute)); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("revoked PostgreSQL session lookup error = %v, want %v", err, ErrIdentityNotFound)
+	}
+}
+
+func bootstrapPostgreSQLTestAdministrator(t *testing.T, repository *PostgreSQLStore, now time.Time) (model.User, model.BootstrapMFA, model.AuditEvent) {
+	t.Helper()
+	user := model.User{ID: "postgres-admin", Email: "Admin@Example.Test", DisplayName: "PostgreSQL Admin",
+		Role: model.RoleAdministrator, Status: model.UserActive, MFARequired: true, CreatedAt: now, UpdatedAt: now}
+	mfa := model.BootstrapMFA{TOTPSecretCiphertext: []byte("encrypted-totp"), RecoveryCodeHashes: [][]byte{[]byte("recovery-one")}}
+	event := model.AuditEvent{OccurredAt: now, ActorID: user.ID, Action: "identity.bootstrap.completed",
+		Severity: model.AuditInfo, TargetType: "user", TargetID: user.ID, Details: `{}`}
+	if err := repository.BootstrapAdministrator(user, "password-hash", mfa, event); err != nil {
+		t.Fatalf("bootstrap PostgreSQL administrator: %v", err)
+	}
+	return user, mfa, event
 }
 
 func openPostgreSQLIntegrationStore(t *testing.T) (*PostgreSQLStore, string) {
