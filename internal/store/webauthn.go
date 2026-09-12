@@ -20,7 +20,8 @@ func (s *SQLiteStore) CreateWebAuthnCredential(credential model.WebAuthnCredenti
 }
 
 func (s *SQLiteStore) ListWebAuthnCredentials(userID string) ([]model.WebAuthnCredential, error) {
-	rows, err := s.db.Query(`SELECT credential_id, user_id, name, credential_ciphertext, created_at, last_used_at
+	rows, err := s.db.Query(`SELECT credential_id, user_id, name, credential_ciphertext, created_at, last_used_at,
+		sign_count, backup_eligible, backup_state
 		FROM webauthn_credentials WHERE user_id=? ORDER BY created_at, name`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list WebAuthn credentials: %w", err)
@@ -75,7 +76,8 @@ func scanWebAuthnCredential(scanner interface{ Scan(...any) error }) (model.WebA
 	var created string
 	var lastUsed sql.NullString
 	if err := scanner.Scan(&credential.ID, &credential.UserID, &credential.Name,
-		&credential.CredentialCiphertext, &created, &lastUsed); err != nil {
+		&credential.CredentialCiphertext, &created, &lastUsed, &credential.SignCount,
+		&credential.BackupEligible, &credential.BackupState); err != nil {
 		return model.WebAuthnCredential{}, fmt.Errorf("scan WebAuthn credential: %w", err)
 	}
 	if len(credential.CredentialCiphertext) == 0 {

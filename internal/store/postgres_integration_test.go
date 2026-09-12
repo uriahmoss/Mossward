@@ -185,6 +185,60 @@ func TestPostgreSQLSessionAndInvitationLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLWebAuthnStateAndCeremonyLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	ceremony := model.AuthenticationCeremony{IDHash: []byte("webauthn-ceremony"), UserID: administrator.ID,
+		Kind: model.CeremonyWebAuthnRegister, StateCiphertext: []byte("encrypted-ceremony-state"),
+		ExpiresAt: now.Add(10 * time.Minute), CreatedAt: now}
+	if err := repository.CreateAuthenticationCeremony(ceremony); err != nil {
+		t.Fatalf("create PostgreSQL WebAuthn ceremony: %v", err)
+	}
+	if _, err := repository.ConsumeAuthenticationCeremony(ceremony.IDHash, model.CeremonyWebAuthnLogin); !errors.Is(err, ErrCeremonyNotFound) {
+		t.Fatalf("mismatched PostgreSQL ceremony error = %v, want %v", err, ErrCeremonyNotFound)
+	}
+	consumed, err := repository.ConsumeAuthenticationCeremony(ceremony.IDHash, ceremony.Kind)
+	if err != nil || consumed.UserID != administrator.ID || !reflect.DeepEqual(consumed.StateCiphertext, ceremony.StateCiphertext) {
+		t.Fatalf("PostgreSQL WebAuthn ceremony round trip changed: %#v %v", consumed, err)
+	}
+	if _, err := repository.ConsumeAuthenticationCeremony(ceremony.IDHash, ceremony.Kind); !errors.Is(err, ErrCeremonyNotFound) {
+		t.Fatalf("PostgreSQL ceremony replay error = %v, want %v", err, ErrCeremonyNotFound)
+	}
+
+	credential := model.WebAuthnCredential{ID: []byte("credential-id"), UserID: administrator.ID,
+		Name: "Security key", CredentialCiphertext: []byte("encrypted-credential"), CreatedAt: now}
+	if err := repository.CreateWebAuthnCredential(credential); err != nil {
+		t.Fatalf("create PostgreSQL WebAuthn credential: %v", err)
+	}
+	lastUsed := now.Add(time.Minute)
+	credential.CredentialCiphertext = []byte("updated-encrypted-credential")
+	credential.SignCount = 7
+	credential.BackupEligible = true
+	credential.BackupState = true
+	credential.LastUsedAt = &lastUsed
+	if err := repository.UpdateWebAuthnCredential(credential); err != nil {
+		t.Fatalf("update PostgreSQL WebAuthn credential: %v", err)
+	}
+	credentials, err := repository.ListWebAuthnCredentials(administrator.ID)
+	if err != nil || len(credentials) != 1 {
+		t.Fatalf("list PostgreSQL WebAuthn credentials: %#v %v", credentials, err)
+	}
+	stored := credentials[0]
+	if !reflect.DeepEqual(stored.CredentialCiphertext, credential.CredentialCiphertext) || stored.SignCount != 7 ||
+		!stored.BackupEligible || !stored.BackupState || stored.LastUsedAt == nil || !stored.LastUsedAt.Equal(lastUsed) {
+		t.Fatalf("PostgreSQL WebAuthn authenticator state changed: %#v", stored)
+	}
+	deleted, err := repository.DeleteWebAuthnCredential(administrator.ID, credential.ID)
+	if err != nil || !deleted {
+		t.Fatalf("delete PostgreSQL WebAuthn credential: %t %v", deleted, err)
+	}
+	deleted, err = repository.DeleteWebAuthnCredential(administrator.ID, credential.ID)
+	if err != nil || deleted {
+		t.Fatalf("repeat PostgreSQL WebAuthn deletion changed: %t %v", deleted, err)
+	}
+}
+
 func bootstrapPostgreSQLTestAdministrator(t *testing.T, repository *PostgreSQLStore, now time.Time) (model.User, model.BootstrapMFA, model.AuditEvent) {
 	t.Helper()
 	user := model.User{ID: "postgres-admin", Email: "Admin@Example.Test", DisplayName: "PostgreSQL Admin",
