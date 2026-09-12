@@ -305,12 +305,13 @@ database, then run:
 make test-postgres
 ```
 
-The test creates a cryptographically random `mossward_test_*` schema, applies
-every migration, verifies the current schema version and single-organization
-boundary, reopens the repository to verify migration idempotence, and drops only
-that generated schema. The configured database role therefore needs permission
-to create and drop schemas. Never point this test at a database where that role
-has broader privileges than necessary.
+The tests each create a cryptographically random `mossward_test_*` schema and
+drop only that generated schema afterward. They apply every migration, verify
+the current schema version and single-organization boundary, reopen the
+repository to verify migration idempotence, and exercise scan persistence plus
+asset, evidence, and service-history projection. The configured database role
+therefore needs permission to create and drop schemas. Never point these tests
+at a database where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 

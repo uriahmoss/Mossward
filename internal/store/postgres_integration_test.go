@@ -6,17 +6,83 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"os"
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"mossward/internal/model"
 )
 
 const postgreSQLIntegrationDSNEnvironment = "MOSSWARD_TEST_POSTGRES_DSN"
 
 func TestPostgreSQLMigrationsInIsolatedSchema(t *testing.T) {
+	repository, isolatedDSN := openPostgreSQLIntegrationStore(t)
+	assertPostgreSQLMigrationState(t, repository.db)
+	if err := repository.Close(); err != nil {
+		t.Fatalf("close migrated PostgreSQL repository: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	reopened, err := OpenPostgreSQL(ctx, isolatedDSN)
+	if err != nil {
+		t.Fatalf("reopen migrated PostgreSQL schema: %v", err)
+	}
+	defer reopened.Close()
+	assertPostgreSQLMigrationState(t, reopened.db)
+}
+
+func TestPostgreSQLScanAndAssetProjectionRoundTrip(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	scan := serviceHistoryScan("postgres-scan", "postgres-observation", now, true)
+	scan.Targets[0].GroupIDs = []string{"group-one", "group-two"}
+	scan.Observations[0].Product = "nginx"
+	scan.Observations[0].Version = "1.26"
+	scan.Observations[0].Metadata = map[string]string{"source": "integration-test"}
+	scan.Findings = []model.Finding{{
+		ID: "postgres-finding", CheckID: "tls-observed", Target: scan.Targets[0].Name,
+		Address: scan.Targets[0].Address, Port: 443, Service: "https", Severity: "info",
+		Title: "TLS service observed", Evidence: "reachable", ObservedAt: now,
+	}}
+	scan.Checkpoints = []model.ScanCheckpoint{{Address: scan.Targets[0].Address, Port: 443, CompletedAt: now}}
+	if err := repository.Save(scan); err != nil {
+		t.Fatalf("save PostgreSQL scan: %v", err)
+	}
+
+	stored, err := repository.Get(scan.ID)
+	if err != nil {
+		t.Fatalf("get PostgreSQL scan: %v", err)
+	}
+	if !reflect.DeepEqual(stored.Targets, scan.Targets) || !reflect.DeepEqual(stored.Ports, scan.Ports) {
+		t.Fatalf("PostgreSQL scan target or port round trip changed: %#v", stored)
+	}
+	if len(stored.Observations) != 1 || !reflect.DeepEqual(stored.Observations[0].Metadata, scan.Observations[0].Metadata) {
+		t.Fatalf("PostgreSQL observation metadata was not preserved: %#v", stored.Observations)
+	}
+	if len(stored.Findings) != 1 || stored.Findings[0].Status != model.FindingOpen || len(stored.Checkpoints) != 1 {
+		t.Fatalf("PostgreSQL finding or checkpoint was not preserved: %#v", stored)
+	}
+
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("PostgreSQL asset projection missing: %#v %v", assets, err)
+	}
+	detail, err := repository.AssetDetail(assets[0].ID, now)
+	if err != nil || len(detail.Services) != 1 || len(detail.Evidence) != 1 {
+		t.Fatalf("PostgreSQL asset detail projection missing: %#v %v", detail, err)
+	}
+	service := detail.Services[0]
+	if service.State != model.AssetServiceObserved || service.Product != "nginx" || service.Version != "1.26" ||
+		service.ObservationCount != 1 || len(service.Events) != 1 || !reflect.DeepEqual(service.Events[0].FindingIDs, []string{"postgres-finding"}) {
+		t.Fatalf("PostgreSQL service history projection changed: %#v", service)
+	}
+}
+
+func openPostgreSQLIntegrationStore(t *testing.T) (*PostgreSQLStore, string) {
+	t.Helper()
 	dsn := os.Getenv(postgreSQLIntegrationDSNEnvironment)
 	if dsn == "" {
 		t.Skip(postgreSQLIntegrationDSNEnvironment + " is not configured")
@@ -27,7 +93,7 @@ func TestPostgreSQLMigrationsInIsolatedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close()
+	t.Cleanup(func() { _ = admin.Close() })
 	schema := postgreSQLIntegrationSchemaName(t)
 	if _, err := admin.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatalf("create isolated PostgreSQL schema: %v", err)
@@ -44,16 +110,8 @@ func TestPostgreSQLMigrationsInIsolatedSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("migrate isolated PostgreSQL schema: %v", err)
 	}
-	assertPostgreSQLMigrationState(t, repository.db)
-	if err := repository.Close(); err != nil {
-		t.Fatalf("close migrated PostgreSQL repository: %v", err)
-	}
-	reopened, err := OpenPostgreSQL(ctx, isolatedDSN)
-	if err != nil {
-		t.Fatalf("reopen migrated PostgreSQL schema: %v", err)
-	}
-	defer reopened.Close()
-	assertPostgreSQLMigrationState(t, reopened.db)
+	t.Cleanup(func() { _ = repository.Close() })
+	return repository, isolatedDSN
 }
 
 func assertPostgreSQLMigrationState(t *testing.T, database *sql.DB) {
