@@ -1,4 +1,4 @@
-.PHONY: build run test verify clean
+.PHONY: build run test test-postgres verify clean
 
 GOCACHE ?= /private/tmp/mossward-go-cache
 
@@ -12,6 +12,9 @@ run:
 
 test:
 	GOCACHE=$(GOCACHE) go test -race ./...
+
+test-postgres:
+	GOCACHE=$(GOCACHE) go test -race ./internal/store -run '^TestPostgreSQLMigrationsInIsolatedSchema$$' -count=1
 
 verify:
 	GOCACHE=$(GOCACHE) go test -race ./...

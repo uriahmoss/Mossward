@@ -296,6 +296,22 @@ constraints enforce a one-day maximum missed threshold, a seven-day maximum
 stale threshold, and require stale detection to follow missed detection; updates
 commit transactionally with their audit record.
 
+### PostgreSQL integration verification
+
+Set `MOSSWARD_TEST_POSTGRES_DSN` to a dedicated PostgreSQL 14-or-newer test
+database, then run:
+
+```sh
+make test-postgres
+```
+
+The test creates a cryptographically random `mossward_test_*` schema, applies
+every migration, verifies the current schema version and single-organization
+boundary, reopens the repository to verify migration idempotence, and drops only
+that generated schema. The configured database role therefore needs permission
+to create and drop schemas. Never point this test at a database where that role
+has broader privileges than necessary.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

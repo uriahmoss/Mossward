@@ -484,6 +484,9 @@ failure and health states.
             - [x] Signed job creation, replay rejection, load accounting, leasing, expiry recovery, and renewal
             - [x] Evidence acceptance, completion, reassignment, and quarantine administration
   - [ ] PostgreSQL backup, restore, and deployment verification
+    - [x] Isolated-schema live migration and idempotent-reopen test harness
+    - [ ] Execute live PostgreSQL migration tests in supported environments
+    - [ ] Repository operation integration coverage and server startup enablement
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
