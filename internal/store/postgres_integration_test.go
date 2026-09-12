@@ -415,6 +415,98 @@ func TestPostgreSQLScopeAndPolicyTargetingContract(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLEndpointIdentityLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	event := postgresIdentityAuditEvent(now, administrator.ID, "endpoint.enrollment_token.created", "endpoint", "")
+	expiredToken := model.AgentEnrollmentToken{ID: "expired-endpoint-token", Name: "Expired token",
+		TokenHash: []byte("expired-endpoint-token-hash"), CreatedBy: administrator.ID,
+		CreatedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Hour)}
+	if err := repository.CreateAgentEnrollmentToken(expiredToken, event); err != nil {
+		t.Fatalf("create expired PostgreSQL endpoint token fixture: %v", err)
+	}
+	if _, err := repository.AgentEnrollmentTokenName(expiredToken.TokenHash, now); !errors.Is(err, ErrInvalidEnrollmentToken) {
+		t.Fatalf("expired PostgreSQL endpoint token error = %v, want %v", err, ErrInvalidEnrollmentToken)
+	}
+	token := model.AgentEnrollmentToken{ID: "endpoint-token", Name: "Guarded workstation",
+		TokenHash: []byte("endpoint-token-hash"), CreatedBy: administrator.ID, CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	if err := repository.CreateAgentEnrollmentToken(token, event); err != nil {
+		t.Fatalf("create PostgreSQL endpoint token: %v", err)
+	}
+	name, err := repository.AgentEnrollmentTokenName(token.TokenHash, now)
+	if err != nil || name != token.Name {
+		t.Fatalf("look up PostgreSQL endpoint token: %q %v", name, err)
+	}
+	endpoint := model.Endpoint{ID: "postgres-endpoint", Name: name, Status: model.EndpointActive,
+		CertificateSerial: "endpoint-serial-one", CertificatePEM: "endpoint-certificate-one",
+		EnrolledAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	enrollEvent := postgresIdentityAuditEvent(now, administrator.ID, "endpoint.enrolled", "endpoint", endpoint.ID)
+	if err := repository.ConsumeAgentEnrollmentToken(token.TokenHash, endpoint, now, enrollEvent); err != nil {
+		t.Fatalf("enroll PostgreSQL endpoint: %v", err)
+	}
+	if err := repository.ConsumeAgentEnrollmentToken(token.TokenHash, endpoint, now, enrollEvent); !errors.Is(err, ErrInvalidEnrollmentToken) {
+		t.Fatalf("PostgreSQL endpoint token reuse error = %v, want %v", err, ErrInvalidEnrollmentToken)
+	}
+	tokens, err := repository.ListAgentEnrollmentTokens(now)
+	if err != nil || len(tokens) != 1 || tokens[0].UsedAt == nil || len(tokens[0].TokenHash) != 0 {
+		t.Fatalf("PostgreSQL endpoint token listing changed: %#v %v", tokens, err)
+	}
+
+	collectors := []model.CollectorID{model.CollectorOperatingSystem, model.CollectorInstalledSoftware, model.CollectorSecurityPosture}
+	policyEvent := postgresIdentityAuditEvent(now.Add(time.Minute), administrator.ID, "endpoint.policy.updated", "endpoint", endpoint.ID)
+	if err := repository.SetEndpointCollectors(endpoint.ID, collectors, policyEvent); err != nil {
+		t.Fatalf("set PostgreSQL endpoint collectors: %v", err)
+	}
+	exclusions := model.NetworkTelemetryExclusions{
+		Applications: []model.NetworkTelemetryExclusion{{Kind: model.NetworkExcludeExecutable, Value: "/opt/private-client"}},
+		Destinations: []model.NetworkTelemetryExclusion{{Kind: model.NetworkExcludeCIDR, Value: "192.0.2.0/24"}},
+	}
+	if err := repository.SetEndpointNetworkExclusions(endpoint.ID, exclusions, policyEvent); err != nil {
+		t.Fatalf("set PostgreSQL endpoint network exclusions: %v", err)
+	}
+	generatedAt := now.Add(2 * time.Minute)
+	receivedAt := generatedAt.Add(30 * time.Second)
+	checkIn := model.AgentCheckIn{GeneratedAt: generatedAt, SoftwareVersion: "1.2.3", OperatingSystem: "linux", Architecture: "amd64"}
+	if err := repository.RecordEndpointCheckIn(endpoint.ID, checkIn, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint check-in: %v", err)
+	}
+	stored, err := repository.EndpointBySerial(endpoint.CertificateSerial)
+	if err != nil || !reflect.DeepEqual(stored.AllowedCollectors, collectors) || !reflect.DeepEqual(stored.NetworkExclusions, exclusions) ||
+		stored.SoftwareVersion != checkIn.SoftwareVersion || stored.OperatingSystem != checkIn.OperatingSystem ||
+		stored.LastHeartbeatGeneratedAt == nil || !stored.LastHeartbeatGeneratedAt.Equal(generatedAt) ||
+		stored.LastHeartbeatReceivedAt == nil || !stored.LastHeartbeatReceivedAt.Equal(receivedAt) {
+		t.Fatalf("PostgreSQL endpoint check-in or policy state changed: %#v %v", stored, err)
+	}
+
+	renewedAt := now.Add(3 * time.Minute)
+	renewed := endpoint
+	renewed.CertificateSerial = "endpoint-serial-two"
+	renewed.CertificatePEM = "endpoint-certificate-two"
+	renewed.ExpiresAt = now.Add(90 * 24 * time.Hour)
+	renewed.RenewedAt = &renewedAt
+	renewEvent := postgresIdentityAuditEvent(renewedAt, administrator.ID, "endpoint.certificate.renewed", "endpoint", endpoint.ID)
+	if err := repository.RenewEndpointCertificate(endpoint.CertificateSerial, renewed, renewEvent); err != nil {
+		t.Fatalf("renew PostgreSQL endpoint certificate: %v", err)
+	}
+	if err := repository.RenewEndpointCertificate(endpoint.CertificateSerial, renewed, renewEvent); !errors.Is(err, ErrEndpointCertificateChanged) {
+		t.Fatalf("stale PostgreSQL certificate renewal error = %v, want %v", err, ErrEndpointCertificateChanged)
+	}
+	if _, err := repository.EndpointBySerial(endpoint.CertificateSerial); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("old PostgreSQL endpoint certificate remains current: %v", err)
+	}
+	revokedAt := now.Add(4 * time.Minute)
+	revokeEvent := postgresIdentityAuditEvent(revokedAt, administrator.ID, "endpoint.revoked", "endpoint", endpoint.ID)
+	if err := repository.RevokeEndpoint(endpoint.ID, "device retired", revokedAt, revokeEvent); err != nil {
+		t.Fatalf("revoke PostgreSQL endpoint: %v", err)
+	}
+	stored, err = repository.EndpointBySerial(renewed.CertificateSerial)
+	if err != nil || stored.Status != model.EndpointRevoked || stored.RevokedAt == nil || !stored.RevokedAt.Equal(revokedAt) ||
+		stored.RevocationReason != "device retired" {
+		t.Fatalf("PostgreSQL endpoint revocation state changed: %#v %v", stored, err)
+	}
+}
+
 func postgresIdentityAuditEvent(at time.Time, actorID, action, targetType, targetID string) model.AuditEvent {
 	return model.AuditEvent{OccurredAt: at, ActorID: actorID, Action: action, Severity: model.AuditInfo,
 		TargetType: targetType, TargetID: targetID, Details: `{}`}
