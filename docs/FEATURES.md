@@ -486,6 +486,7 @@ failure and health states.
   - [ ] PostgreSQL backup, restore, and deployment verification
     - [x] Isolated-schema live migration and idempotent-reopen test harness
     - [x] Scan persistence and asset/service projection integration contract
+    - [x] Local administrator, MFA, authentication-policy, and audit integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

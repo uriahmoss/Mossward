@@ -309,9 +309,12 @@ The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify
 the current schema version and single-organization boundary, reopen the
 repository to verify migration idempotence, and exercise scan persistence plus
-asset, evidence, and service-history projection. The configured database role
-therefore needs permission to create and drop schemas. Never point these tests
-at a database where that role has broader privileges than necessary.
+asset, evidence, and service-history projection. They also cover local
+administrator bootstrap, encrypted MFA persistence, one-time recovery-code use,
+authentication-policy persistence, and the associated audit trail. The
+configured database role therefore needs permission to create and drop schemas.
+Never point these tests at a database where that role has broader privileges
+than necessary.
 
 ## Endpoint identity and mTLS listener
 

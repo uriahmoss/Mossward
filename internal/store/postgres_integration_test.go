@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"os"
 	"reflect"
 	"regexp"
@@ -78,6 +79,59 @@ func TestPostgreSQLScanAndAssetProjectionRoundTrip(t *testing.T) {
 	if service.State != model.AssetServiceObserved || service.Product != "nginx" || service.Version != "1.26" ||
 		service.ObservationCount != 1 || len(service.Events) != 1 || !reflect.DeepEqual(service.Events[0].FindingIDs, []string{"postgres-finding"}) {
 		t.Fatalf("PostgreSQL service history projection changed: %#v", service)
+	}
+}
+
+func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	initialized, err := repository.IdentityInitialized()
+	if err != nil || initialized {
+		t.Fatalf("unexpected PostgreSQL identity state before bootstrap: %t %v", initialized, err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	user := model.User{ID: "postgres-admin", Email: "Admin@Example.Test", DisplayName: "PostgreSQL Admin",
+		Role: model.RoleAdministrator, Status: model.UserActive, MFARequired: true, CreatedAt: now, UpdatedAt: now}
+	mfa := model.BootstrapMFA{TOTPSecretCiphertext: []byte("encrypted-totp"), RecoveryCodeHashes: [][]byte{[]byte("recovery-one")}}
+	bootstrapEvent := model.AuditEvent{OccurredAt: now, ActorID: user.ID, Action: "identity.bootstrap.completed",
+		Severity: model.AuditInfo, TargetType: "user", TargetID: user.ID, Details: `{}`}
+	if err := repository.BootstrapAdministrator(user, "password-hash", mfa, bootstrapEvent); err != nil {
+		t.Fatalf("bootstrap PostgreSQL administrator: %v", err)
+	}
+	if err := repository.BootstrapAdministrator(user, "password-hash", mfa, bootstrapEvent); !errors.Is(err, ErrAlreadyInitialized) {
+		t.Fatalf("repeat PostgreSQL bootstrap error = %v, want %v", err, ErrAlreadyInitialized)
+	}
+	identity, err := repository.LocalIdentityByEmail("ADMIN@example.test")
+	if err != nil || identity.User.ID != user.ID || identity.User.Email != "admin@example.test" || identity.PasswordHash != "password-hash" {
+		t.Fatalf("PostgreSQL local identity round trip changed: %#v %v", identity, err)
+	}
+	secret, counter, err := repository.TOTPSecret(user.ID)
+	if err != nil || !reflect.DeepEqual(secret, mfa.TOTPSecretCiphertext) || counter != 0 {
+		t.Fatalf("PostgreSQL TOTP state changed: %q %d %v", secret, counter, err)
+	}
+	consumed, err := repository.ConsumeRecoveryCode(user.ID, mfa.RecoveryCodeHashes[0], now.Add(time.Minute),
+		model.AuditEvent{OccurredAt: now.Add(time.Minute), ActorID: user.ID, Action: "identity.recovery_code.used", Severity: model.AuditWarning})
+	if err != nil || !consumed {
+		t.Fatalf("consume PostgreSQL recovery code: %t %v", consumed, err)
+	}
+	consumed, err = repository.ConsumeRecoveryCode(user.ID, mfa.RecoveryCodeHashes[0], now.Add(2*time.Minute), bootstrapEvent)
+	if err != nil || consumed {
+		t.Fatalf("PostgreSQL recovery code replay accepted: %t %v", consumed, err)
+	}
+
+	policy := model.AuthenticationPolicy{SessionLifetimeMinutes: 60, AuditRetentionDays: 365,
+		MFARequired: map[model.UserRole]bool{model.RoleAdministrator: true, model.RoleAnalyst: true, model.RoleViewer: false}}
+	policyEvent := model.AuditEvent{OccurredAt: now.Add(3 * time.Minute), ActorID: user.ID,
+		Action: "identity.authentication_policy.updated", Severity: model.AuditWarning, TargetType: "authentication_policy", Details: `{}`}
+	if err := repository.SaveAuthenticationPolicy(policy, now.Add(3*time.Minute), policyEvent); err != nil {
+		t.Fatalf("save PostgreSQL authentication policy: %v", err)
+	}
+	storedPolicy, err := repository.AuthenticationPolicy()
+	if err != nil || !reflect.DeepEqual(storedPolicy, policy) {
+		t.Fatalf("PostgreSQL authentication policy round trip changed: %#v %v", storedPolicy, err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "identity.", Limit: 10})
+	if err != nil || len(events) != 3 {
+		t.Fatalf("PostgreSQL local-auth audit trail missing: %#v %v", events, err)
 	}
 }
 
