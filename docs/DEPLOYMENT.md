@@ -326,9 +326,12 @@ check-ins, certificate serial rotation with stale-update rejection, and
 revocation. Inventory coverage checks collection and receipt provenance for OS,
 software, listening-service, and security-posture snapshots; CVE matches are
 created from affected software and removed after inventory changes. Revoked
-endpoints cannot submit new inventory. The configured database role therefore
-needs permission to create and drop schemas. Never point these tests at a
-database where that role has broader privileges than necessary.
+endpoints cannot submit new inventory. Integrity coverage checks baseline
+snapshots, strictly increasing bounded sequences, replay rejection,
+per-component tamper evidence, and revoked-endpoint rejection; signature
+verification remains a service-layer responsibility. The configured database
+role therefore needs permission to create and drop schemas. Never point these
+tests at a database where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 

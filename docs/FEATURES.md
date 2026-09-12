@@ -493,6 +493,7 @@ failure and health states.
     - [x] Organization scope, overlapping asset-group, and scheduled-policy targeting integration contract
     - [x] Endpoint enrollment, policy, check-in, certificate-rotation, and revocation integration contract
     - [x] Endpoint OS/software/listening/posture inventory and CVE projection integration contract
+    - [x] Endpoint integrity sequencing, replay rejection, and component-change evidence integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

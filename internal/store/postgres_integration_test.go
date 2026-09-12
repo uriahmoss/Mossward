@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -578,6 +579,67 @@ func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
 	}
 	if err := repository.RecordEndpointPostureInventory(endpoint.ID, posture, now.Add(5*time.Minute)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked PostgreSQL endpoint inventory error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func TestPostgreSQLEndpointIntegrityReplayAndChangeEvidence(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now)
+	hashA := strings.Repeat("a", 64)
+	hashB := strings.Repeat("b", 64)
+	baseline := model.SignedAgentIntegritySnapshot{Sequence: 1, Signature: "signature-one",
+		Snapshot: model.AgentIntegritySnapshot{ExecutableSHA256: hashA, ConfigurationSHA256: hashA,
+			IdentitySHA256: hashA, ObservedAt: now}}
+	if err := repository.RecordEndpointIntegritySnapshot(endpoint.ID, baseline, now.Add(time.Second)); err != nil {
+		t.Fatalf("record PostgreSQL endpoint integrity baseline: %v", err)
+	}
+	events, err := repository.EndpointIntegrityEvents(endpoint.ID)
+	if err != nil || len(events) != 0 {
+		t.Fatalf("PostgreSQL integrity baseline emitted changes: %#v %v", events, err)
+	}
+	changed := baseline
+	changed.Sequence = 2
+	changed.Signature = "signature-two"
+	changed.Snapshot.ConfigurationSHA256 = hashB
+	changed.Snapshot.IdentitySHA256 = hashB
+	changed.Snapshot.ObservedAt = now.Add(time.Minute)
+	receivedAt := now.Add(time.Minute + time.Second)
+	if err := repository.RecordEndpointIntegritySnapshot(endpoint.ID, changed, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint integrity changes: %v", err)
+	}
+	events, err = repository.EndpointIntegrityEvents(endpoint.ID)
+	if err != nil || len(events) != 2 {
+		t.Fatalf("PostgreSQL integrity component changes missing: %#v %v", events, err)
+	}
+	components := map[string]model.AgentIntegrityEvent{}
+	for _, event := range events {
+		components[event.Component] = event
+	}
+	for _, component := range []string{"configuration", "identity"} {
+		event, found := components[component]
+		if !found || event.PreviousSHA256 != hashA || event.CurrentSHA256 != hashB || event.Sequence != changed.Sequence ||
+			event.Signature != changed.Signature || !event.ObservedAt.Equal(changed.Snapshot.ObservedAt) || !event.ReceivedAt.Equal(receivedAt) {
+			t.Fatalf("PostgreSQL %s integrity evidence changed: %#v", component, event)
+		}
+	}
+	if err := repository.RecordEndpointIntegritySnapshot(endpoint.ID, changed, now.Add(2*time.Minute)); !errors.Is(err, ErrEndpointIntegrityReplay) {
+		t.Fatalf("PostgreSQL integrity replay error = %v, want %v", err, ErrEndpointIntegrityReplay)
+	}
+	overflow := changed
+	overflow.Sequence = ^uint64(0)
+	if err := repository.RecordEndpointIntegritySnapshot(endpoint.ID, overflow, now.Add(2*time.Minute)); err == nil {
+		t.Fatal("out-of-range PostgreSQL integrity sequence was accepted")
+	}
+	revokeEvent := postgresIdentityAuditEvent(now.Add(3*time.Minute), administrator.ID, "endpoint.revoked", "endpoint", endpoint.ID)
+	if err := repository.RevokeEndpoint(endpoint.ID, "integrity test retirement", now.Add(3*time.Minute), revokeEvent); err != nil {
+		t.Fatalf("revoke PostgreSQL integrity endpoint: %v", err)
+	}
+	afterRevocation := changed
+	afterRevocation.Sequence = 3
+	if err := repository.RecordEndpointIntegritySnapshot(endpoint.ID, afterRevocation, now.Add(4*time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked PostgreSQL integrity endpoint error = %v, want %v", err, ErrNotFound)
 	}
 }
 
