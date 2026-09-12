@@ -507,6 +507,99 @@ func TestPostgreSQLEndpointIdentityLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now)
+	receivedAt := now.Add(time.Minute)
+	installedAt := now.Add(-24 * time.Hour)
+	osInventory := model.EndpointOSInventory{Family: "linux", Name: "Example Linux", Version: "1", Build: "1.2",
+		Kernel: "6.1.0", Architecture: "amd64", CollectedAt: now,
+		Patches: []model.EndpointPatch{{ID: "kernel:6.1.0", Description: "Kernel patch level", InstalledAt: &installedAt}}}
+	if err := repository.RecordEndpointOSInventory(endpoint.ID, osInventory, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint OS inventory: %v", err)
+	}
+	storedOS, err := repository.EndpointOSInventory(endpoint.ID)
+	if err != nil || storedOS.EndpointID != endpoint.ID || len(storedOS.Patches) != 1 ||
+		storedOS.Patches[0].InstalledAt == nil || !storedOS.ReceivedAt.Equal(receivedAt) {
+		t.Fatalf("PostgreSQL endpoint OS inventory changed: %#v %v", storedOS, err)
+	}
+
+	cve := model.CVERecord{ID: "CVE-POSTGRES-0001", Description: "OpenSSL integration fixture", PublishedAt: now,
+		ModifiedAt: now, CVSSScore: 9.8, Severity: "critical", KnownExploited: true,
+		SourceURL: "https://example.test/cve", Products: []model.AffectedProduct{{Vendor: "openssl", Product: "openssl",
+			VersionStartIncluding: "3.0.0", VersionEndExcluding: "3.0.2", Vulnerable: true}}}
+	if err := repository.UpsertCVEs([]model.CVERecord{cve}); err != nil {
+		t.Fatalf("store PostgreSQL CVE fixture: %v", err)
+	}
+	software := model.EndpointSoftwareInventory{CollectedAt: now, Items: []model.InstalledSoftware{{
+		Name: "openssl", Version: "3.0.1", Publisher: "OpenSSL", Architecture: "amd64", Source: "dpkg"}}}
+	if err := repository.RecordEndpointSoftwareInventory(endpoint.ID, software, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint software inventory: %v", err)
+	}
+	matches, err := repository.EndpointCVEMatches(endpoint.ID)
+	if err != nil || len(matches) != 1 || matches[0].CVEID != cve.ID || !matches[0].KnownExploited ||
+		matches[0].Confidence != "medium" || matches[0].PackageSource != "dpkg" {
+		t.Fatalf("PostgreSQL endpoint CVE projection changed: %#v %v", matches, err)
+	}
+	software.Items[0].Version = "3.0.2"
+	software.CollectedAt = now.Add(2 * time.Minute)
+	if err := repository.RecordEndpointSoftwareInventory(endpoint.ID, software, now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("replace PostgreSQL endpoint software inventory: %v", err)
+	}
+	matches, err = repository.EndpointCVEMatches(endpoint.ID)
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("stale PostgreSQL endpoint CVE matches remain: %#v %v", matches, err)
+	}
+
+	listening := model.EndpointListeningInventory{CollectedAt: now, Services: []model.ListeningService{{
+		Protocol: "tcp", Address: "0.0.0.0", Port: 443, ProcessID: 10, ProcessName: "mossward-service", Executable: "/opt/mossward/service"}}}
+	if err := repository.RecordEndpointListeningInventory(endpoint.ID, listening, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint listening inventory: %v", err)
+	}
+	storedListening, err := repository.EndpointListeningInventory(endpoint.ID)
+	if err != nil || len(storedListening.Services) != 1 || storedListening.Services[0].Executable != listening.Services[0].Executable {
+		t.Fatalf("PostgreSQL endpoint listening inventory changed: %#v %v", storedListening, err)
+	}
+	posture := model.EndpointPostureInventory{CollectedAt: now, Evidence: []model.PostureEvidence{{
+		ID: "secure_boot", Title: "Secure Boot", Status: "unknown", Detail: "State unavailable"}}}
+	if err := repository.RecordEndpointPostureInventory(endpoint.ID, posture, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint posture inventory: %v", err)
+	}
+	storedPosture, err := repository.EndpointPostureInventory(endpoint.ID)
+	if err != nil || len(storedPosture.Evidence) != 1 || storedPosture.Evidence[0].Status != "unknown" {
+		t.Fatalf("PostgreSQL endpoint posture inventory changed: %#v %v", storedPosture, err)
+	}
+
+	revokeEvent := postgresIdentityAuditEvent(now.Add(4*time.Minute), administrator.ID, "endpoint.revoked", "endpoint", endpoint.ID)
+	if err := repository.RevokeEndpoint(endpoint.ID, "integration retirement", now.Add(4*time.Minute), revokeEvent); err != nil {
+		t.Fatalf("revoke PostgreSQL inventory endpoint: %v", err)
+	}
+	if err := repository.RecordEndpointPostureInventory(endpoint.ID, posture, now.Add(5*time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked PostgreSQL endpoint inventory error = %v, want %v", err, ErrNotFound)
+	}
+}
+
+func enrollPostgreSQLTestEndpoint(t *testing.T, repository *PostgreSQLStore, administrator model.User, now time.Time) model.Endpoint {
+	t.Helper()
+	token := model.AgentEnrollmentToken{ID: "inventory-endpoint-token", Name: "Inventory endpoint",
+		TokenHash: []byte("inventory-endpoint-token-hash"), CreatedBy: administrator.ID,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	if err := repository.CreateAgentEnrollmentToken(token, postgresIdentityAuditEvent(now, administrator.ID,
+		"endpoint.enrollment_token.created", "endpoint_enrollment_token", token.ID)); err != nil {
+		t.Fatalf("create PostgreSQL endpoint enrollment token: %v", err)
+	}
+	endpoint := model.Endpoint{ID: "postgres-inventory-endpoint", Name: token.Name, Status: model.EndpointActive,
+		CertificateSerial: "postgres-inventory-serial", CertificatePEM: "postgres-inventory-certificate",
+		EnrolledAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	if err := repository.ConsumeAgentEnrollmentToken(token.TokenHash, endpoint, now, postgresIdentityAuditEvent(now,
+		administrator.ID, "endpoint.enrolled", "endpoint", endpoint.ID)); err != nil {
+		t.Fatalf("enroll PostgreSQL inventory endpoint: %v", err)
+	}
+	return endpoint
+}
+
 func postgresIdentityAuditEvent(at time.Time, actorID, action, targetType, targetID string) model.AuditEvent {
 	return model.AuditEvent{OccurredAt: at, ActorID: actorID, Action: action, Severity: model.AuditInfo,
 		TargetType: targetType, TargetID: targetID, Details: `{}`}

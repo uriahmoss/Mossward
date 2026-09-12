@@ -492,6 +492,7 @@ failure and health states.
     - [x] OIDC provider trust and invite-only/JIT provisioning integration contracts
     - [x] Organization scope, overlapping asset-group, and scheduled-policy targeting integration contract
     - [x] Endpoint enrollment, policy, check-in, certificate-rotation, and revocation integration contract
+    - [x] Endpoint OS/software/listening/posture inventory and CVE projection integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

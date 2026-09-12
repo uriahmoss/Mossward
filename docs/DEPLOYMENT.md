@@ -323,9 +323,12 @@ group-to-policy visibility, per-policy maintenance windows, time zones, worker
 sites, and schedule checkpoints. Endpoint identity coverage checks expiring and
 single-use enrollment tokens, collector and telemetry-exclusion policies,
 check-ins, certificate serial rotation with stale-update rejection, and
-revocation. The configured database role therefore needs permission to create
-and drop schemas. Never point these tests at a database where that role has
-broader privileges than necessary.
+revocation. Inventory coverage checks collection and receipt provenance for OS,
+software, listening-service, and security-posture snapshots; CVE matches are
+created from affected software and removed after inventory changes. Revoked
+endpoints cannot submit new inventory. The configured database role therefore
+needs permission to create and drop schemas. Never point these tests at a
+database where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 
