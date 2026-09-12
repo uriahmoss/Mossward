@@ -489,6 +489,7 @@ failure and health states.
     - [x] Local administrator, MFA, authentication-policy, and audit integration contract
     - [x] Local invitation and authenticated-session lifecycle integration contract
     - [x] WebAuthn authenticator-state and single-use ceremony integration contract
+    - [x] OIDC provider trust and invite-only/JIT provisioning integration contracts
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

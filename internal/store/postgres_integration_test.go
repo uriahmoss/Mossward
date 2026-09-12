@@ -239,6 +239,109 @@ func TestPostgreSQLWebAuthnStateAndCeremonyLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLOIDCProviderTrustLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	provider := model.OIDCProvider{ID: "entra", Name: "Microsoft Entra ID", IssuerURL: "https://login.example.test/tenant/v2.0",
+		ClientID: "client-id", ProvisioningMode: model.ProvisionJIT, AllowedTenantID: "tenant-id",
+		AllowedEmailDomains: []string{"example.test"}, AllowedGroups: []string{"security-team"},
+		RoleMappings: map[string]model.UserRole{"security-team": model.RoleAnalyst}, DefaultRole: model.RoleViewer,
+		Enabled: true, RedirectURL: "https://mossward.example.test/auth/oidc/callback", CreatedAt: now, UpdatedAt: now}
+	record := model.OIDCProviderRecord{Provider: provider, ClientSecretCiphertext: []byte("encrypted-client-secret")}
+	configureEvent := postgresIdentityAuditEvent(now, administrator.ID, "identity.oidc_provider.configured", "oidc_provider", provider.ID)
+	if err := repository.UpsertOIDCProvider(record, configureEvent); err != nil {
+		t.Fatalf("configure PostgreSQL OIDC provider: %v", err)
+	}
+	stored, err := repository.OIDCProvider(provider.ID)
+	if err != nil || stored.Provider.Enabled || stored.Provider.TestedAt != nil ||
+		!reflect.DeepEqual(stored.ClientSecretCiphertext, record.ClientSecretCiphertext) ||
+		!reflect.DeepEqual(stored.Provider.RoleMappings, provider.RoleMappings) {
+		t.Fatalf("PostgreSQL OIDC provider trust state changed: %#v %v", stored, err)
+	}
+	stateEvent := postgresIdentityAuditEvent(now.Add(time.Minute), administrator.ID,
+		"identity.oidc_provider.enabled", "oidc_provider", provider.ID)
+	if err := repository.SetOIDCProviderEnabled(provider.ID, true, now.Add(time.Minute), stateEvent); err == nil {
+		t.Fatal("untested PostgreSQL OIDC provider was enabled")
+	}
+	if err := repository.MarkOIDCProviderTested(provider.ID, now.Add(2*time.Minute), stateEvent); err != nil {
+		t.Fatalf("mark PostgreSQL OIDC provider tested: %v", err)
+	}
+	if err := repository.SetOIDCProviderEnabled(provider.ID, true, now.Add(3*time.Minute), stateEvent); err != nil {
+		t.Fatalf("enable tested PostgreSQL OIDC provider: %v", err)
+	}
+	stored, err = repository.OIDCProvider(provider.ID)
+	if err != nil || !stored.Provider.Enabled || stored.Provider.TestedAt == nil {
+		t.Fatalf("tested PostgreSQL OIDC provider was not enabled: %#v %v", stored, err)
+	}
+	record.Provider.ClientID = "rotated-client-id"
+	record.Provider.UpdatedAt = now.Add(4 * time.Minute)
+	if err := repository.UpsertOIDCProvider(record, configureEvent); err != nil {
+		t.Fatalf("rotate PostgreSQL OIDC provider configuration: %v", err)
+	}
+	stored, err = repository.OIDCProvider(provider.ID)
+	if err != nil || stored.Provider.Enabled || stored.Provider.TestedAt != nil {
+		t.Fatalf("changed PostgreSQL OIDC provider retained trust: %#v %v", stored, err)
+	}
+}
+
+func TestPostgreSQLOIDCProvisioningModes(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	jitProvider := model.OIDCProvider{ID: "jit-provider", Name: "JIT provider", IssuerURL: "https://jit.example.test",
+		ClientID: "jit-client", ProvisioningMode: model.ProvisionJIT, DefaultRole: model.RoleViewer,
+		RedirectURL: "https://mossward.example.test/auth/oidc/callback", CreatedAt: now, UpdatedAt: now}
+	configureEvent := postgresIdentityAuditEvent(now, administrator.ID, "identity.oidc_provider.configured", "oidc_provider", jitProvider.ID)
+	if err := repository.UpsertOIDCProvider(model.OIDCProviderRecord{Provider: jitProvider,
+		ClientSecretCiphertext: []byte("jit-encrypted-secret")}, configureEvent); err != nil {
+		t.Fatalf("configure PostgreSQL JIT provider: %v", err)
+	}
+	claims := model.OIDCClaims{UserID: "jit-user", Subject: "jit-subject", Email: "JIT@Example.Test", Name: "JIT User", TenantID: "tenant"}
+	loginEvent := postgresIdentityAuditEvent(now.Add(time.Minute), administrator.ID, "identity.oidc.login", "user", claims.UserID)
+	user, err := repository.ResolveOIDCUser(jitProvider, claims, model.RoleViewer, now.Add(time.Minute), loginEvent)
+	if err != nil || user.Email != "jit@example.test" || user.Role != model.RoleViewer {
+		t.Fatalf("provision PostgreSQL JIT user: %#v %v", user, err)
+	}
+	user, err = repository.ResolveOIDCUser(jitProvider, claims, model.RoleAnalyst, now.Add(2*time.Minute), loginEvent)
+	if err != nil || user.ID != claims.UserID || user.Role != model.RoleAnalyst {
+		t.Fatalf("refresh PostgreSQL JIT user role: %#v %v", user, err)
+	}
+
+	inviteProvider := model.OIDCProvider{ID: "invite-provider", Name: "Invite provider", IssuerURL: "https://invite.example.test",
+		ClientID: "invite-client", ProvisioningMode: model.ProvisionInviteOnly, DefaultRole: model.RoleViewer,
+		RedirectURL: "https://mossward.example.test/auth/oidc/callback", CreatedAt: now, UpdatedAt: now}
+	if err := repository.UpsertOIDCProvider(model.OIDCProviderRecord{Provider: inviteProvider,
+		ClientSecretCiphertext: []byte("invite-encrypted-secret")}, configureEvent); err != nil {
+		t.Fatalf("configure PostgreSQL invite-only provider: %v", err)
+	}
+	uninvitedClaims := model.OIDCClaims{UserID: "uninvited-user", Subject: "uninvited-subject", Email: "uninvited@example.test", Name: "Uninvited"}
+	if _, err := repository.ResolveOIDCUser(inviteProvider, uninvitedClaims, model.RoleViewer, now, loginEvent); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("uninvited PostgreSQL SSO user error = %v, want %v", err, ErrIdentityNotFound)
+	}
+	invitation := model.Invitation{ID: "sso-invitation", Email: "invited@example.test", Role: model.RoleAnalyst,
+		IdentityKind: model.IdentitySSO, InvitedBy: administrator.ID, ExpiresAt: now.Add(time.Hour), CreatedAt: now,
+		TokenHash: []byte("sso-invitation-token")}
+	if err := repository.CreateInvitation(invitation, postgresIdentityAuditEvent(now, administrator.ID,
+		"identity.invitation.created", "invitation", invitation.ID)); err != nil {
+		t.Fatalf("create PostgreSQL SSO invitation: %v", err)
+	}
+	invitedClaims := model.OIDCClaims{UserID: "invited-user", Subject: "invited-subject", Email: invitation.Email, Name: "Invited User"}
+	user, err = repository.ResolveOIDCUser(inviteProvider, invitedClaims, model.RoleViewer, now.Add(time.Minute), loginEvent)
+	if err != nil || user.ID != invitedClaims.UserID || user.Role != model.RoleAnalyst {
+		t.Fatalf("provision invited PostgreSQL SSO user: %#v %v", user, err)
+	}
+	if _, err := repository.ResolveOIDCUser(inviteProvider, model.OIDCClaims{UserID: "second-user", Subject: "second-subject",
+		Email: invitation.Email, Name: "Second User"}, model.RoleViewer, now.Add(2*time.Minute), loginEvent); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("consumed PostgreSQL SSO invitation reuse error = %v, want %v", err, ErrIdentityNotFound)
+	}
+}
+
+func postgresIdentityAuditEvent(at time.Time, actorID, action, targetType, targetID string) model.AuditEvent {
+	return model.AuditEvent{OccurredAt: at, ActorID: actorID, Action: action, Severity: model.AuditInfo,
+		TargetType: targetType, TargetID: targetID, Details: `{}`}
+}
+
 func bootstrapPostgreSQLTestAdministrator(t *testing.T, repository *PostgreSQLStore, now time.Time) (model.User, model.BootstrapMFA, model.AuditEvent) {
 	t.Helper()
 	user := model.User{ID: "postgres-admin", Email: "Admin@Example.Test", DisplayName: "PostgreSQL Admin",
