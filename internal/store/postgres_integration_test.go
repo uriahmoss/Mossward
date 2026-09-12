@@ -643,6 +643,77 @@ func TestPostgreSQLEndpointIntegrityReplayAndChangeEvidence(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLEndpointNetworkIndicatorDetection(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now)
+	inventory := model.EndpointNetworkInventory{CollectedAt: now, Connections: []model.NetworkConnection{
+		{Protocol: "tcp", LocalAddress: "10.0.0.25", LocalPort: 51000, RemoteAddress: "198.51.100.10",
+			RemotePort: 443, ProcessID: 42, ProcessName: "browser", Executable: "/usr/bin/browser",
+			RemoteHostname: "command.example.test.", HostnameSource: "dns", TLSServerName: "command.example.test",
+			Direction: "outbound_candidate"},
+		{Protocol: "tcp", LocalAddress: "10.0.0.25", LocalPort: 51001, RemoteAddress: "198.51.100.11",
+			RemotePort: 443, ProcessName: "updater", Direction: "outbound_candidate"},
+	}}
+	receivedAt := now.Add(time.Second)
+	if err := repository.RecordEndpointNetworkInventory(endpoint.ID, inventory, receivedAt); err != nil {
+		t.Fatalf("record PostgreSQL endpoint network inventory: %v", err)
+	}
+	storedInventory, err := repository.EndpointNetworkInventory(endpoint.ID)
+	if err != nil || len(storedInventory.Connections) != 2 || !storedInventory.CollectedAt.Equal(now) ||
+		!storedInventory.ReceivedAt.Equal(receivedAt) || storedInventory.Connections[0].TLSServerName != "command.example.test" {
+		t.Fatalf("PostgreSQL endpoint network inventory changed: %#v %v", storedInventory, err)
+	}
+	indicators := []model.ThreatIndicator{
+		{ID: "active-ip", Type: model.ThreatIndicatorIP, Value: "198.51.100.10", Source: "integration feed",
+			Confidence: "high", ObservedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour), Enabled: true,
+			CreatedBy: administrator.ID, CreatedAt: now, UpdatedAt: now},
+		{ID: "active-hostname", Type: model.ThreatIndicatorHostname, Value: "command.example.test", Source: "integration feed",
+			Confidence: "medium", ObservedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour), Enabled: true,
+			CreatedBy: administrator.ID, CreatedAt: now, UpdatedAt: now},
+		{ID: "expired-ip", Type: model.ThreatIndicatorIP, Value: "198.51.100.11", Source: "expired feed",
+			Confidence: "low", ObservedAt: now.Add(-2 * time.Hour), ExpiresAt: now.Add(-time.Minute), Enabled: true,
+			CreatedBy: administrator.ID, CreatedAt: now, UpdatedAt: now},
+		{ID: "disabled-ip", Type: model.ThreatIndicatorIP, Value: "198.51.100.11", Source: "disabled feed",
+			Confidence: "high", ObservedAt: now.Add(-time.Hour), ExpiresAt: now.Add(time.Hour), Enabled: false,
+			CreatedBy: administrator.ID, CreatedAt: now, UpdatedAt: now},
+	}
+	indicatorEvent := postgresIdentityAuditEvent(now, administrator.ID, "threat_indicator.updated", "threat_indicator", "")
+	for _, indicator := range indicators {
+		if err := repository.UpsertThreatIndicator(indicator, now, indicatorEvent); err != nil {
+			t.Fatalf("store PostgreSQL threat indicator %q: %v", indicator.ID, err)
+		}
+	}
+	matches, err := repository.EndpointIndicatorMatches(endpoint.ID, now)
+	if err != nil || len(matches) != 2 {
+		t.Fatalf("PostgreSQL active threat detections changed: %#v %v", matches, err)
+	}
+	matchIDs := map[string]bool{}
+	for _, match := range matches {
+		matchIDs[match.IndicatorID] = true
+		if match.RemoteAddress != "198.51.100.10" || match.ProcessName != "browser" || match.Executable != "/usr/bin/browser" {
+			t.Fatalf("PostgreSQL threat detection lost network context: %#v", match)
+		}
+	}
+	if !matchIDs["active-ip"] || !matchIDs["active-hostname"] || matchIDs["expired-ip"] || matchIDs["disabled-ip"] {
+		t.Fatalf("PostgreSQL threat indicator filtering changed: %#v", matchIDs)
+	}
+	storedIndicators, err := repository.ListThreatIndicators()
+	if err != nil || len(storedIndicators) != len(indicators) {
+		t.Fatalf("PostgreSQL threat indicator listing changed: %#v %v", storedIndicators, err)
+	}
+	inventory.CollectedAt = now.Add(2 * time.Minute)
+	inventory.Connections = nil
+	if err := repository.RecordEndpointNetworkInventory(endpoint.ID, inventory, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("replace PostgreSQL endpoint network inventory: %v", err)
+	}
+	matches, err = repository.EndpointIndicatorMatches(endpoint.ID, now.Add(2*time.Minute))
+	if err != nil || len(matches) != 0 {
+		t.Fatalf("obsolete PostgreSQL threat detections remain: %#v %v", matches, err)
+	}
+}
+
 func enrollPostgreSQLTestEndpoint(t *testing.T, repository *PostgreSQLStore, administrator model.User, now time.Time) model.Endpoint {
 	t.Helper()
 	token := model.AgentEnrollmentToken{ID: "inventory-endpoint-token", Name: "Inventory endpoint",

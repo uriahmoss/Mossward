@@ -329,9 +329,13 @@ created from affected software and removed after inventory changes. Revoked
 endpoints cannot submit new inventory. Integrity coverage checks baseline
 snapshots, strictly increasing bounded sequences, replay rejection,
 per-component tamper evidence, and revoked-endpoint rejection; signature
-verification remains a service-layer responsibility. The configured database
-role therefore needs permission to create and drop schemas. Never point these
-tests at a database where that role has broader privileges than necessary.
+verification remains a service-layer responsibility. Network-detection coverage
+checks connection provenance, exact IP and normalized hostname correlation,
+expired and disabled indicator filtering, process context, and removal of
+obsolete matches when an inventory snapshot is replaced. It does not perform
+traffic blocking or remediation. The configured database role therefore needs
+permission to create and drop schemas. Never point these tests at a database
+where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 
