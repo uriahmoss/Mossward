@@ -290,6 +290,12 @@ JSON. The matching repository operations preserve audited opt-in settings,
 eligible-versus-unclassified gap reporting, immutable creation attribution, and
 explicit discovery-policy state without launching scans or expanding scope.
 
+PostgreSQL migration version 23 adds enabled-by-default endpoint heartbeat
+monitoring with five-minute missed and thirty-minute stale defaults. Database
+constraints enforce a one-day maximum missed threshold, a seven-day maximum
+stale threshold, and require stale detection to follow missed detection; updates
+commit transactionally with their audit record.
+
 ## Endpoint identity and mTLS listener
 
 Endpoint identity is optional and disabled until `MOSSWARD_AGENT_LISTEN` is

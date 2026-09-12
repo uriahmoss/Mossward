@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 22
+	postgresFoundationSchemaVersion = 23
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -21,6 +21,8 @@ const (
 type PostgreSQLStore struct {
 	db *sql.DB
 }
+
+var _ Repository = (*PostgreSQLStore)(nil)
 
 func OpenPostgreSQL(ctx context.Context, dataSourceName string) (*PostgreSQLStore, error) {
 	if ctx == nil || strings.TrimSpace(dataSourceName) == "" {
@@ -205,6 +207,11 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 	}
 	if version < 22 {
 		if err := migratePostgreSQLEndpointCoverage(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if version < 23 {
+		if err := migratePostgreSQLEndpointHeartbeatSettings(ctx, tx); err != nil {
 			return err
 		}
 	}

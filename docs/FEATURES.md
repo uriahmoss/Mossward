@@ -475,6 +475,8 @@ failure and health states.
           - [x] Endpoint coverage and discovery-policy storage parity
             - [x] Opt-in coverage settings and authorized-CIDR discovery-policy schema
             - [x] Audited settings, coverage reporting, and discovery-policy operations
+          - [x] Endpoint heartbeat-settings storage parity
+            - [x] Bounded missed/stale thresholds, secure defaults, and audited operations
         - [x] Scanner-worker storage parity
           - [x] Worker enrollment, health, dispatch, signed-job, lease, evidence, checkpoint, reassignment, and quarantine schema
           - [x] Audited worker enrollment, lifecycle, health, and dispatch operations
