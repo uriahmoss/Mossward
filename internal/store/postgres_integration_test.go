@@ -775,6 +775,100 @@ func TestPostgreSQLRelayAuthorizationBoundaries(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLRelayWindowAndDelayedHeartbeatPolicy(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	if err := repository.Save(serviceHistoryScan("relay-policy-asset", "relay-policy-observation", now, true)); err != nil {
+		t.Fatalf("create PostgreSQL relay-policy asset: %v", err)
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("load PostgreSQL relay-policy asset: %#v %v", assets, err)
+	}
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-window-endpoint")
+	if _, err := repository.db.Exec(`UPDATE endpoints SET asset_id=$1 WHERE id=$2`, assets[0].ID, endpoint.ID); err != nil {
+		t.Fatalf("associate PostgreSQL endpoint with asset fixture: %v", err)
+	}
+	groupEvent := postgresIdentityAuditEvent(now, administrator.ID, "asset_group.updated", "asset_group", "")
+	groupIDs := []string{"postgres-window-group-a", "postgres-window-group-b"}
+	for _, groupID := range groupIDs {
+		group := model.AssetGroup{ID: groupID, Name: groupID, Description: "Guarded segment", CreatedAt: now, UpdatedAt: now}
+		if err := repository.UpsertAssetGroup(group, groupEvent); err != nil {
+			t.Fatalf("create PostgreSQL relay-policy group %q: %v", groupID, err)
+		}
+		if err := repository.AddAssetGroupMember(groupID, assets[0].ID, administrator.ID, now, groupEvent); err != nil {
+			t.Fatalf("add PostgreSQL relay-policy group member %q: %v", groupID, err)
+		}
+	}
+	windows := []model.RelayUploadWindow{
+		{ID: "postgres-endpoint-window", Name: "Endpoint overnight", TargetType: model.MaintenanceTargetEndpoint,
+			TargetID: endpoint.ID, Timezone: "America/Chicago", Days: []time.Weekday{time.Monday, time.Wednesday},
+			StartMinute: 60, EndMinute: 360, Enabled: true, Reason: "guarded endpoint network",
+			CreatedBy: administrator.ID, CreatedAt: now, UpdatedBy: administrator.ID, UpdatedAt: now},
+		{ID: "postgres-group-window", Name: "Group overnight", TargetType: model.MaintenanceTargetGroup,
+			TargetID: groupIDs[0], Timezone: "UTC", Days: []time.Weekday{time.Tuesday}, StartMinute: 120,
+			EndMinute: 240, Enabled: true, Reason: "guarded group network", CreatedBy: administrator.ID,
+			CreatedAt: now, UpdatedBy: administrator.ID, UpdatedAt: now},
+	}
+	windowEvent := postgresIdentityAuditEvent(now, administrator.ID, "endpoint.relay_upload_window.updated", "relay_upload_window", "")
+	for _, window := range windows {
+		if err := repository.UpsertRelayUploadWindow(window, windowEvent); err != nil {
+			t.Fatalf("save PostgreSQL relay upload window %q: %v", window.ID, err)
+		}
+	}
+	applicable, err := repository.RelayUploadWindowsForEndpoint(endpoint.ID)
+	if err != nil || len(applicable) != 2 {
+		t.Fatalf("PostgreSQL inherited relay upload windows changed: %#v %v", applicable, err)
+	}
+	allWindows, err := repository.ListRelayUploadWindows()
+	if err != nil || len(allWindows) != 2 || allWindows[0].Timezone == "" || len(allWindows[0].Days) == 0 {
+		t.Fatalf("PostgreSQL relay upload-window persistence changed: %#v %v", allWindows, err)
+	}
+	missingWindow := windows[0]
+	missingWindow.ID = "postgres-missing-window"
+	missingWindow.TargetID = "missing-endpoint"
+	if err := repository.UpsertRelayUploadWindow(missingWindow, windowEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing PostgreSQL upload-window target error = %v, want %v", err, ErrNotFound)
+	}
+
+	heartbeatEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"endpoint.delayed_heartbeat_policy.updated", "delayed_heartbeat_policy", "")
+	groupPolicies := []model.DelayedHeartbeatPolicy{
+		{TargetType: model.MaintenanceTargetGroup, TargetID: groupIDs[0], AllowDelayedHeartbeats: true,
+			PostWindowGraceMinutes: 15, Reason: "scheduled relay delay", UpdatedBy: administrator.ID, UpdatedAt: now},
+		{TargetType: model.MaintenanceTargetGroup, TargetID: groupIDs[1], AllowDelayedHeartbeats: false,
+			Reason: "real-time heartbeat required", UpdatedBy: administrator.ID, UpdatedAt: now},
+	}
+	for _, policy := range groupPolicies {
+		if err := repository.UpsertDelayedHeartbeatPolicy(policy, heartbeatEvent); err != nil {
+			t.Fatalf("save PostgreSQL delayed-heartbeat policy for %q: %v", policy.TargetID, err)
+		}
+	}
+	resolved, err := repository.ResolveDelayedHeartbeatPolicy(endpoint.ID)
+	if err != nil || resolved.AllowDelayedHeartbeats || !resolved.Conflict || resolved.Source != "group_conflict_deny" {
+		t.Fatalf("PostgreSQL delayed-heartbeat conflict did not fail closed: %#v %v", resolved, err)
+	}
+	override := model.DelayedHeartbeatPolicy{TargetType: model.MaintenanceTargetEndpoint, TargetID: endpoint.ID,
+		AllowDelayedHeartbeats: true, PostWindowGraceMinutes: 30, Reason: "approved endpoint override",
+		UpdatedBy: administrator.ID, UpdatedAt: now.Add(time.Minute)}
+	if err := repository.UpsertDelayedHeartbeatPolicy(override, heartbeatEvent); err != nil {
+		t.Fatalf("save PostgreSQL delayed-heartbeat endpoint override: %v", err)
+	}
+	resolved, err = repository.ResolveDelayedHeartbeatPolicy(endpoint.ID)
+	if err != nil || !resolved.AllowDelayedHeartbeats || resolved.Conflict || resolved.Source != "endpoint_override" ||
+		resolved.PostWindowGraceMinutes != override.PostWindowGraceMinutes {
+		t.Fatalf("PostgreSQL delayed-heartbeat endpoint override changed: %#v %v", resolved, err)
+	}
+	if err := repository.DeleteDelayedHeartbeatPolicy(model.MaintenanceTargetEndpoint, endpoint.ID, heartbeatEvent); err != nil {
+		t.Fatalf("delete PostgreSQL delayed-heartbeat endpoint override: %v", err)
+	}
+	resolved, err = repository.ResolveDelayedHeartbeatPolicy(endpoint.ID)
+	if err != nil || resolved.AllowDelayedHeartbeats || !resolved.Conflict || resolved.Source != "group_conflict_deny" {
+		t.Fatalf("PostgreSQL delayed-heartbeat inherited conflict was not restored: %#v %v", resolved, err)
+	}
+}
+
 func enrollPostgreSQLTestEndpoint(
 	t *testing.T,
 	repository *PostgreSQLStore,
