@@ -499,6 +499,7 @@ failure and health states.
     - [x] Relay upload-window inheritance and fail-closed delayed-heartbeat policy integration contract
     - [x] Endpoint heartbeat thresholds and endpoint/group maintenance-suppression integration contract
     - [x] Opt-in endpoint coverage classification and authorized discovery-policy integration contract
+    - [x] Scanner-worker enrollment, certificate identity, health, dispatch, and revocation integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

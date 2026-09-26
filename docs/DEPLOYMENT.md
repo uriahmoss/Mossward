@@ -345,7 +345,11 @@ windows, time-bound activation, cancellation history, and missing-target
 rejection. Coverage checks remain opt-in and distinguish eligible gaps from
 unclassified assets while excluding active-linked, retired, and explicitly
 ineligible assets. Discovery-policy persistence covers only CIDRs already
-normalized and authorized by the service layer. The configured database role
+normalized and authorized by the service layer. Scanner-worker identity coverage
+checks scoped and expiring single-use enrollment, certificate lookup without
+private certificate material, heartbeat health and capabilities, global and
+per-worker dispatch controls, audited revocation, and rejection of revoked
+worker heartbeats and dispatch changes. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

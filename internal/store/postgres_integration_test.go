@@ -1076,6 +1076,102 @@ func TestPostgreSQLEndpointCoverageAndDiscoveryPolicy(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLWorkerIdentityAndLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	tokenHash := []byte("postgres-worker-token-hash")
+	token := model.WorkerEnrollmentToken{
+		ID: "postgres-worker-token", Name: "Chicago worker", SiteID: "chicago-hq", TokenHash: tokenHash,
+		AllowedCIDRs: []string{"192.0.2.0/24", "198.51.100.0/25"}, AllowedPorts: []int{22, 443},
+		MaxConcurrent: 4, RateLimitPerSecond: 20, CreatedBy: administrator.ID, CreatedAt: now,
+		ExpiresAt: now.Add(time.Hour),
+	}
+	if err := repository.CreateWorkerEnrollmentToken(token, postgresIdentityAuditEvent(now, administrator.ID,
+		"scanner_worker.enrollment_token.created", "scanner_worker_enrollment_token", token.ID)); err != nil {
+		t.Fatalf("create PostgreSQL scanner-worker enrollment token: %v", err)
+	}
+	loadedToken, err := repository.WorkerEnrollmentToken(tokenHash, now)
+	if err != nil || loadedToken.SiteID != token.SiteID || !reflect.DeepEqual(loadedToken.AllowedCIDRs, token.AllowedCIDRs) ||
+		!reflect.DeepEqual(loadedToken.AllowedPorts, token.AllowedPorts) || loadedToken.MaxConcurrent != token.MaxConcurrent ||
+		loadedToken.RateLimitPerSecond != token.RateLimitPerSecond {
+		t.Fatalf("PostgreSQL scanner-worker enrollment scope changed: %#v %v", loadedToken, err)
+	}
+	if _, err := repository.WorkerEnrollmentToken(tokenHash, token.ExpiresAt); !errors.Is(err, ErrInvalidEnrollmentToken) {
+		t.Fatalf("expired PostgreSQL scanner-worker token error = %v, want %v", err, ErrInvalidEnrollmentToken)
+	}
+	worker := model.ScannerWorker{
+		ID: "postgres-worker", Name: loadedToken.Name, SiteID: loadedToken.SiteID, Status: model.EndpointActive,
+		CertificateSerial: "postgres-worker-serial", CertificatePEM: "postgres-worker-certificate",
+		AllowedCIDRs: loadedToken.AllowedCIDRs, AllowedPorts: loadedToken.AllowedPorts,
+		MaxConcurrent: loadedToken.MaxConcurrent, RateLimitPerSecond: loadedToken.RateLimitPerSecond,
+		EnrolledAt: now, ExpiresAt: now.Add(24 * time.Hour),
+	}
+	if err := repository.ConsumeWorkerEnrollmentToken(tokenHash, worker, now, postgresIdentityAuditEvent(now,
+		administrator.ID, "scanner_worker.enrolled", "scanner_worker", worker.ID)); err != nil {
+		t.Fatalf("enroll PostgreSQL scanner worker: %v", err)
+	}
+	if err := repository.ConsumeWorkerEnrollmentToken(tokenHash, worker, now, postgresIdentityAuditEvent(now,
+		administrator.ID, "scanner_worker.enrolled", "scanner_worker", worker.ID)); !errors.Is(err, ErrInvalidEnrollmentToken) {
+		t.Fatalf("replayed PostgreSQL scanner-worker token error = %v, want %v", err, ErrInvalidEnrollmentToken)
+	}
+	stored, err := repository.ScannerWorkerBySerial(worker.CertificateSerial)
+	if err != nil || stored.ID != worker.ID || stored.CertificatePEM != "" || !stored.DispatchEnabled ||
+		!reflect.DeepEqual(stored.AllowedCIDRs, worker.AllowedCIDRs) || !reflect.DeepEqual(stored.AllowedPorts, worker.AllowedPorts) {
+		t.Fatalf("PostgreSQL scanner-worker identity changed or exposed certificate material: %#v %v", stored, err)
+	}
+	settings, err := repository.ScannerWorkerDispatchSettings()
+	if err != nil || !settings.Enabled {
+		t.Fatalf("PostgreSQL scanner-worker dispatch secure default changed: %#v %v", settings, err)
+	}
+	heartbeatAt := now.Add(time.Minute)
+	heartbeat := model.WorkerHeartbeat{SchemaVersion: 1, SoftwareVersion: "1.2.3", OperatingSystem: "linux",
+		Architecture: "amd64", Capabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect,
+			model.WorkerCapabilityServiceIdentification}, AvailableConcurrency: 3, Health: model.WorkerHealthDegraded,
+		HealthMessage: "rate limited"}
+	if err := repository.RecordScannerWorkerHeartbeat(worker.ID, heartbeat, heartbeatAt); err != nil {
+		t.Fatalf("record PostgreSQL scanner-worker heartbeat: %v", err)
+	}
+	workers, err := repository.ListScannerWorkers()
+	if err != nil || len(workers) != 1 || workers[0].LastSeenAt == nil || !workers[0].LastSeenAt.Equal(heartbeatAt) ||
+		workers[0].SoftwareVersion != heartbeat.SoftwareVersion || workers[0].Health != heartbeat.Health ||
+		workers[0].HealthMessage != heartbeat.HealthMessage || workers[0].AvailableConcurrency != heartbeat.AvailableConcurrency ||
+		!reflect.DeepEqual(workers[0].Capabilities, heartbeat.Capabilities) {
+		t.Fatalf("PostgreSQL scanner-worker heartbeat state changed: %#v %v", workers, err)
+	}
+	dispatchEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"scanner_worker.dispatch.updated", "scanner_worker_dispatch", "global")
+	if err := repository.SetScannerWorkerDispatch(false, dispatchEvent); err != nil {
+		t.Fatalf("disable global PostgreSQL scanner-worker dispatch: %v", err)
+	}
+	if err := repository.SetScannerWorkerDispatchForWorker(worker.ID, false, postgresIdentityAuditEvent(now,
+		administrator.ID, "scanner_worker.dispatch.updated", "scanner_worker", worker.ID)); err != nil {
+		t.Fatalf("disable PostgreSQL scanner-worker dispatch: %v", err)
+	}
+	settings, err = repository.ScannerWorkerDispatchSettings()
+	workers, workersErr := repository.ListScannerWorkers()
+	if err != nil || workersErr != nil || settings.Enabled || workers[0].DispatchEnabled {
+		t.Fatalf("PostgreSQL scanner-worker dispatch controls changed: settings=%#v workers=%#v errors=%v %v",
+			settings, workers, err, workersErr)
+	}
+	revokedAt := now.Add(2 * time.Minute)
+	if err := repository.RevokeScannerWorker(worker.ID, "certificate compromise", revokedAt,
+		postgresIdentityAuditEvent(revokedAt, administrator.ID, "scanner_worker.revoked", "scanner_worker", worker.ID)); err != nil {
+		t.Fatalf("revoke PostgreSQL scanner worker: %v", err)
+	}
+	stored, err = repository.ScannerWorkerBySerial(worker.CertificateSerial)
+	if err != nil || stored.Status != model.EndpointRevoked || stored.RevokedAt == nil || !stored.RevokedAt.Equal(revokedAt) ||
+		stored.RevocationReason != "certificate compromise" {
+		t.Fatalf("PostgreSQL scanner-worker revocation changed: %#v %v", stored, err)
+	}
+	if err := repository.RecordScannerWorkerHeartbeat(worker.ID, heartbeat, revokedAt); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked PostgreSQL scanner-worker heartbeat error = %v, want %v", err, ErrNotFound)
+	}
+	if err := repository.SetScannerWorkerDispatchForWorker(worker.ID, true, dispatchEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked PostgreSQL scanner-worker dispatch error = %v, want %v", err, ErrNotFound)
+	}
+}
+
 func enrollPostgreSQLTestEndpoint(
 	t *testing.T,
 	repository *PostgreSQLStore,
