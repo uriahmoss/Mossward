@@ -1172,6 +1172,130 @@ func TestPostgreSQLWorkerIdentityAndLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLWorkerJobLeaseLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	worker := enrollPostgreSQLTestWorker(t, repository, administrator, now, "postgres-job-worker")
+	job := model.WorkerJob{
+		SchemaVersion: 1, ID: "postgres-worker-job", WorkerID: worker.ID, ScanID: "postgres-worker-scan",
+		IssuedAt: now, ExpiresAt: now.Add(5 * time.Minute),
+		Targets: []model.Target{{Name: "host", Address: "192.0.2.10"}}, Ports: []int{443},
+		MaxConcurrent: 2, RateLimitPerSecond: 5,
+		RequiredCapabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect},
+		Status:               model.WorkerJobPending,
+	}
+	envelope := model.SignedWorkerJob{Algorithm: "Ed25519", KeyID: "postgres-worker-job-key", Job: job,
+		Signature: "postgres-worker-job-signature"}
+	if err := repository.CreateScannerWorkerJob(envelope, now); err != nil {
+		t.Fatalf("create PostgreSQL scanner-worker job: %v", err)
+	}
+	if err := repository.CreateScannerWorkerJob(envelope, now); !errors.Is(err, ErrWorkerJobReplay) {
+		t.Fatalf("replayed PostgreSQL scanner-worker job error = %v, want %v", err, ErrWorkerJobReplay)
+	}
+	stored, err := repository.ScannerWorkerJob(job.ID)
+	if err != nil || !reflect.DeepEqual(stored, envelope) {
+		t.Fatalf("PostgreSQL signed scanner-worker job changed: %#v %v", stored, err)
+	}
+	loads, err := repository.ScannerWorkerJobLoads(now)
+	if err != nil || loads[worker.ID].ActiveJobs != 1 || loads[worker.ID].ReservedConcurrency != job.MaxConcurrent {
+		t.Fatalf("PostgreSQL scanner-worker load changed: %#v %v", loads, err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob("different-worker", []byte("wrong-worker-lease"), now,
+		now.Add(time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("PostgreSQL job leased to a different worker: %v", err)
+	}
+	firstLeaseHash := []byte("postgres-first-lease-hash")
+	leased, err := repository.LeaseScannerWorkerJob(worker.ID, firstLeaseHash, now, now.Add(time.Minute))
+	if err != nil || !reflect.DeepEqual(leased, envelope) {
+		t.Fatalf("lease PostgreSQL scanner-worker job: %#v %v", leased, err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob(worker.ID, []byte("duplicate-lease"), now.Add(30*time.Second),
+		now.Add(90*time.Second)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("active PostgreSQL scanner-worker lease was issued twice: %v", err)
+	}
+	if _, err := repository.RenewScannerWorkerJobLease("different-worker", job.ID, firstLeaseHash,
+		now.Add(30*time.Second), now.Add(90*time.Second)); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("different PostgreSQL worker renewed lease: %v", err)
+	}
+	if _, err := repository.RenewScannerWorkerJobLease(worker.ID, job.ID, []byte("wrong-lease-hash"),
+		now.Add(30*time.Second), now.Add(90*time.Second)); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("wrong PostgreSQL lease token renewed lease: %v", err)
+	}
+	renewedUntil, err := repository.RenewScannerWorkerJobLease(worker.ID, job.ID, firstLeaseHash,
+		now.Add(30*time.Second), now.Add(90*time.Second))
+	if err != nil || !renewedUntil.Equal(now.Add(90*time.Second)) {
+		t.Fatalf("renew PostgreSQL scanner-worker lease: %v %v", renewedUntil, err)
+	}
+	secondLeaseHash := []byte("postgres-second-lease-hash")
+	reclaimedAt := now.Add(2 * time.Minute)
+	if _, err := repository.LeaseScannerWorkerJob(worker.ID, secondLeaseHash, reclaimedAt,
+		reclaimedAt.Add(time.Minute)); err != nil {
+		t.Fatalf("reclaim expired PostgreSQL scanner-worker lease: %v", err)
+	}
+	renewedUntil, err = repository.RenewScannerWorkerJobLease(worker.ID, job.ID, secondLeaseHash,
+		reclaimedAt.Add(30*time.Second), job.ExpiresAt.Add(time.Hour))
+	if err != nil || !renewedUntil.Equal(job.ExpiresAt) {
+		t.Fatalf("PostgreSQL scanner-worker renewal was not capped by job expiry: %v %v", renewedUntil, err)
+	}
+	var status model.WorkerJobStatus
+	var storedLeaseHash []byte
+	var attempts, assignments int
+	if err := repository.db.QueryRow(`SELECT status,lease_token_hash,lease_attempt FROM scanner_worker_jobs WHERE id=$1`,
+		job.ID).Scan(&status, &storedLeaseHash, &attempts); err != nil {
+		t.Fatalf("read PostgreSQL scanner-worker lease state: %v", err)
+	}
+	if err := repository.db.QueryRow(`SELECT COUNT(*) FROM scanner_worker_job_assignments WHERE job_id=$1`,
+		job.ID).Scan(&assignments); err != nil {
+		t.Fatalf("read PostgreSQL scanner-worker assignment history: %v", err)
+	}
+	if status != model.WorkerJobLeased || !reflect.DeepEqual(storedLeaseHash, secondLeaseHash) || attempts != 2 || assignments != 1 {
+		t.Fatalf("unexpected PostgreSQL scanner-worker lease state: status=%s hash=%q attempts=%d assignments=%d",
+			status, storedLeaseHash, attempts, assignments)
+	}
+	if _, err := repository.LeaseScannerWorkerJob(worker.ID, []byte("expired-job-lease"), job.ExpiresAt,
+		job.ExpiresAt.Add(time.Minute)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired PostgreSQL scanner-worker job was leased: %v", err)
+	}
+	loads, err = repository.ScannerWorkerJobLoads(job.ExpiresAt)
+	if err != nil || len(loads) != 0 {
+		t.Fatalf("expired PostgreSQL scanner-worker job retained load: %#v %v", loads, err)
+	}
+	if err := repository.db.QueryRow(`SELECT status FROM scanner_worker_jobs WHERE id=$1`, job.ID).Scan(&status); err != nil {
+		t.Fatalf("read expired PostgreSQL scanner-worker job: %v", err)
+	}
+	if status != model.WorkerJobExpired {
+		t.Fatalf("PostgreSQL scanner-worker job status = %s, want %s", status, model.WorkerJobExpired)
+	}
+}
+
+func enrollPostgreSQLTestWorker(
+	t *testing.T,
+	repository *PostgreSQLStore,
+	administrator model.User,
+	now time.Time,
+	workerID string,
+) model.ScannerWorker {
+	t.Helper()
+	token := model.WorkerEnrollmentToken{ID: workerID + "-token", Name: workerID, SiteID: "postgres-test-site",
+		TokenHash: []byte(workerID + "-token-hash"), AllowedCIDRs: []string{"192.0.2.0/24"},
+		AllowedPorts: []int{443}, MaxConcurrent: 4, RateLimitPerSecond: 10, CreatedBy: administrator.ID,
+		CreatedAt: now, ExpiresAt: now.Add(time.Hour)}
+	if err := repository.CreateWorkerEnrollmentToken(token, postgresIdentityAuditEvent(now, administrator.ID,
+		"scanner_worker.enrollment_token.created", "scanner_worker_enrollment_token", token.ID)); err != nil {
+		t.Fatalf("create PostgreSQL scanner-worker test token: %v", err)
+	}
+	worker := model.ScannerWorker{ID: workerID, Name: token.Name, SiteID: token.SiteID, Status: model.EndpointActive,
+		CertificateSerial: workerID + "-serial", CertificatePEM: workerID + "-certificate",
+		AllowedCIDRs: token.AllowedCIDRs, AllowedPorts: token.AllowedPorts, MaxConcurrent: token.MaxConcurrent,
+		RateLimitPerSecond: token.RateLimitPerSecond, EnrolledAt: now, ExpiresAt: now.Add(24 * time.Hour)}
+	if err := repository.ConsumeWorkerEnrollmentToken(token.TokenHash, worker, now, postgresIdentityAuditEvent(now,
+		administrator.ID, "scanner_worker.enrolled", "scanner_worker", worker.ID)); err != nil {
+		t.Fatalf("enroll PostgreSQL scanner-worker test fixture: %v", err)
+	}
+	return worker
+}
+
 func enrollPostgreSQLTestEndpoint(
 	t *testing.T,
 	repository *PostgreSQLStore,

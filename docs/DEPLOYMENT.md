@@ -349,7 +349,10 @@ normalized and authorized by the service layer. Scanner-worker identity coverage
 checks scoped and expiring single-use enrollment, certificate lookup without
 private certificate material, heartbeat health and capabilities, global and
 per-worker dispatch controls, audited revocation, and rejection of revoked
-worker heartbeats and dispatch changes. The configured database role
+worker heartbeats and dispatch changes. Worker-job coverage checks immutable
+signed-envelope storage, replay rejection, concurrency load accounting,
+worker-bound and token-bound leases, renewal limits, expired-lease reclamation,
+and terminal job expiry. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 
