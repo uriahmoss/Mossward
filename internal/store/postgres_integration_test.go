@@ -132,6 +132,85 @@ func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLLocalAuthReplayAndThrottleState(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, mfa, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	consumed, err := repository.ConsumeTOTPCounter(administrator.ID, 10)
+	if err != nil || !consumed {
+		t.Fatalf("consume PostgreSQL TOTP counter: %t %v", consumed, err)
+	}
+	for _, replayedCounter := range []int64{10, 9} {
+		consumed, err = repository.ConsumeTOTPCounter(administrator.ID, replayedCounter)
+		if err != nil || consumed {
+			t.Fatalf("PostgreSQL TOTP counter replay %d accepted: %t %v", replayedCounter, consumed, err)
+		}
+	}
+	consumed, err = repository.ConsumeTOTPCounter(administrator.ID, 11)
+	if err != nil || !consumed {
+		t.Fatalf("consume newer PostgreSQL TOTP counter: %t %v", consumed, err)
+	}
+	secret, counter, err := repository.TOTPSecret(administrator.ID)
+	if err != nil || !reflect.DeepEqual(secret, mfa.TOTPSecretCiphertext) || counter != 11 {
+		t.Fatalf("PostgreSQL TOTP replay state changed: %q %d %v", secret, counter, err)
+	}
+	window := 10 * time.Minute
+	baseBlock := time.Minute
+	maximumBlock := 3 * time.Minute
+	key := []byte("postgres-login-throttle-key")
+	if _, err := repository.RecordLoginFailure(nil, now, window, 3, baseBlock, maximumBlock); err == nil {
+		t.Fatal("PostgreSQL login throttle accepted an empty key")
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		blockedUntil, err := repository.RecordLoginFailure(key, now.Add(time.Duration(attempt)*time.Second),
+			window, 3, baseBlock, maximumBlock)
+		if err != nil || !blockedUntil.IsZero() {
+			t.Fatalf("PostgreSQL login attempt %d blocked early: %v %v", attempt, blockedUntil, err)
+		}
+	}
+	thirdAt := now.Add(3 * time.Second)
+	blockedUntil, err := repository.RecordLoginFailure(key, thirdAt, window, 3, baseBlock, maximumBlock)
+	if err != nil || !blockedUntil.Equal(thirdAt.Add(baseBlock)) {
+		t.Fatalf("PostgreSQL login threshold block changed: %v %v", blockedUntil, err)
+	}
+	storedUntil, blocked, err := repository.LoginThrottle(key, thirdAt.Add(30*time.Second))
+	if err != nil || !blocked || !storedUntil.Equal(blockedUntil) {
+		t.Fatalf("PostgreSQL login throttle lookup changed: until=%v blocked=%t err=%v", storedUntil, blocked, err)
+	}
+	fourthAt := now.Add(4 * time.Second)
+	blockedUntil, err = repository.RecordLoginFailure(key, fourthAt, window, 3, baseBlock, maximumBlock)
+	if err != nil || !blockedUntil.Equal(fourthAt.Add(2*baseBlock)) {
+		t.Fatalf("PostgreSQL escalating login block changed: %v %v", blockedUntil, err)
+	}
+	fifthAt := now.Add(5 * time.Second)
+	blockedUntil, err = repository.RecordLoginFailure(key, fifthAt, window, 3, baseBlock, maximumBlock)
+	if err != nil || !blockedUntil.Equal(fifthAt.Add(maximumBlock)) {
+		t.Fatalf("PostgreSQL capped login block changed: %v %v", blockedUntil, err)
+	}
+	_, blocked, err = repository.LoginThrottle(key, blockedUntil)
+	if err != nil || blocked {
+		t.Fatalf("expired PostgreSQL login throttle remained active: blocked=%t err=%v", blocked, err)
+	}
+	resetKey := []byte("postgres-login-window-reset-key")
+	if _, err := repository.RecordLoginFailure(resetKey, now, window, 2, baseBlock, maximumBlock); err != nil {
+		t.Fatalf("record PostgreSQL reset-window login failure: %v", err)
+	}
+	resetAt := now.Add(window + time.Second)
+	blockedUntil, err = repository.RecordLoginFailure(resetKey, resetAt, window, 2, baseBlock, maximumBlock)
+	if err != nil || !blockedUntil.IsZero() {
+		t.Fatalf("PostgreSQL login failure window did not reset: %v %v", blockedUntil, err)
+	}
+	if err := repository.ClearLoginFailures(key, resetKey); err != nil {
+		t.Fatalf("clear PostgreSQL login failures: %v", err)
+	}
+	for _, clearedKey := range [][]byte{key, resetKey} {
+		until, blocked, err := repository.LoginThrottle(clearedKey, now)
+		if err != nil || blocked || !until.IsZero() {
+			t.Fatalf("cleared PostgreSQL login throttle remained: until=%v blocked=%t err=%v", until, blocked, err)
+		}
+	}
+}
+
 func TestPostgreSQLSessionAndInvitationLifecycle(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

@@ -382,7 +382,9 @@ ciphertexts, including complete rollback when any legacy ciphertext cannot be
 decrypted and one audit event after success. CVE intelligence coverage checks
 feed success and failure state, preserved last-success timestamps, normalized
 affected-version boundaries, scan-match enrichment, reference replacement, and
-environment-matched critical-news priority. The configured database role
+environment-matched critical-news priority. Local-auth abuse coverage checks
+strictly increasing TOTP counters, login-failure windows, threshold blocking,
+bounded escalation, expiry, and multi-key reset behavior. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 
