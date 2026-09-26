@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"os"
 	"reflect"
 	"regexp"
@@ -971,6 +972,107 @@ func TestPostgreSQLMaintenanceAndHeartbeatHealthPolicy(t *testing.T) {
 	}
 	if !foundCancelled {
 		t.Fatalf("PostgreSQL cancelled maintenance history missing: %#v", windows)
+	}
+}
+
+func TestPostgreSQLEndpointCoverageAndDiscoveryPolicy(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	assetFixtures := []struct{ id, name, address string }{
+		{"coverage-linked-scan", "linked.example.test", "192.0.2.101"},
+		{"coverage-eligible-scan", "eligible.example.test", "192.0.2.102"},
+		{"coverage-unknown-scan", "unknown.example.test", "192.0.2.103"},
+		{"coverage-ineligible-scan", "appliance.example.test", "192.0.2.104"},
+		{"coverage-retired-scan", "retired.example.test", "192.0.2.105"},
+	}
+	for index, fixture := range assetFixtures {
+		scan := completedAssetScan(fixture.id, fmt.Sprintf("coverage-observation-%d", index), fixture.name,
+			fixture.address, now.Add(time.Duration(index)*time.Second))
+		if err := repository.Save(scan); err != nil {
+			t.Fatalf("create PostgreSQL coverage asset %q: %v", fixture.name, err)
+		}
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != len(assetFixtures) {
+		t.Fatalf("load PostgreSQL coverage assets: %#v %v", assets, err)
+	}
+	assetsByName := map[string]model.Asset{}
+	for _, asset := range assets {
+		assetsByName[asset.Name] = asset
+	}
+	linked := assetsByName["linked.example.test"]
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-coverage-endpoint")
+	if _, err := repository.db.Exec(`UPDATE endpoints SET asset_id=$1 WHERE id=$2`, linked.ID, endpoint.ID); err != nil {
+		t.Fatalf("associate PostgreSQL coverage endpoint fixture: %v", err)
+	}
+	eligibilityEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"asset.agent_eligibility.updated", "asset", "")
+	eligible := assetsByName["eligible.example.test"]
+	if err := repository.UpdateAssetAgentEligibility(eligible.ID, model.AssetAgentEligibilityUpdate{
+		Status: model.AgentEligibilityEligible, Reason: "managed workstation"}, eligibilityEvent); err != nil {
+		t.Fatalf("classify PostgreSQL eligible coverage asset: %v", err)
+	}
+	ineligible := assetsByName["appliance.example.test"]
+	if err := repository.UpdateAssetAgentEligibility(ineligible.ID, model.AssetAgentEligibilityUpdate{
+		Status: model.AgentEligibilityIneligible, Reason: "network appliance"}, eligibilityEvent); err != nil {
+		t.Fatalf("classify PostgreSQL ineligible coverage asset: %v", err)
+	}
+	retired := assetsByName["retired.example.test"]
+	if err := repository.UpdateAssetLifecycle(retired.ID, model.AssetLifecycleUpdate{Status: model.AssetRetired,
+		Reason: "decommissioned"}, postgresIdentityAuditEvent(now, administrator.ID, "asset.lifecycle.updated", "asset", retired.ID)); err != nil {
+		t.Fatalf("retire PostgreSQL coverage asset: %v", err)
+	}
+	report, err := repository.EndpointCoverageReport(now)
+	if err != nil || report.Enabled || len(report.Gaps) != 0 || len(report.Unclassified) != 0 {
+		t.Fatalf("disabled PostgreSQL coverage report exposed results: %#v %v", report, err)
+	}
+	settings := model.EndpointCoverageSettings{Enabled: true, UpdatedBy: administrator.ID, UpdatedAt: now}
+	coverageEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"endpoint.coverage.updated", "endpoint_coverage", "global")
+	if err := repository.SetEndpointCoverageSettings(settings, coverageEvent); err != nil {
+		t.Fatalf("enable PostgreSQL endpoint coverage: %v", err)
+	}
+	report, err = repository.EndpointCoverageReport(now)
+	if err != nil || !report.Enabled || len(report.Gaps) != 1 || report.Gaps[0].AssetID != eligible.ID ||
+		len(report.Unclassified) != 1 || report.Unclassified[0].AssetID != assetsByName["unknown.example.test"].ID {
+		t.Fatalf("PostgreSQL coverage classification changed: %#v %v", report, err)
+	}
+	settings.Enabled = false
+	settings.UpdatedAt = now.Add(time.Minute)
+	if err := repository.SetEndpointCoverageSettings(settings, coverageEvent); err != nil {
+		t.Fatalf("disable PostgreSQL endpoint coverage: %v", err)
+	}
+	report, err = repository.EndpointCoverageReport(now.Add(time.Minute))
+	if err != nil || report.Enabled || len(report.Gaps) != 0 || len(report.Unclassified) != 0 {
+		t.Fatalf("disabled PostgreSQL coverage retained results: %#v %v", report, err)
+	}
+
+	discovery := model.CoverageDiscoveryPolicy{ID: "postgres-office-discovery", Name: "Office discovery",
+		CIDRs: []string{"192.0.2.0/28", "198.51.100.0/28"}, Enabled: true, CreatedBy: administrator.ID,
+		CreatedAt: now, UpdatedBy: administrator.ID, UpdatedAt: now}
+	discoveryEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"endpoint.coverage_discovery_policy.updated", "coverage_discovery_policy", discovery.ID)
+	if err := repository.SaveCoverageDiscoveryPolicy(discovery, discoveryEvent); err != nil {
+		t.Fatalf("save PostgreSQL coverage discovery policy: %v", err)
+	}
+	discovery.Name = "Office discovery updated"
+	discovery.Enabled = false
+	discovery.CreatedBy = ""
+	discovery.CreatedAt = time.Time{}
+	discovery.UpdatedAt = now.Add(time.Minute)
+	if err := repository.SaveCoverageDiscoveryPolicy(discovery, discoveryEvent); err != nil {
+		t.Fatalf("update PostgreSQL coverage discovery policy: %v", err)
+	}
+	policies, err := repository.ListCoverageDiscoveryPolicies()
+	if err != nil || len(policies) != 1 || policies[0].Name != discovery.Name || policies[0].Enabled ||
+		policies[0].CreatedBy != administrator.ID || !reflect.DeepEqual(policies[0].CIDRs, discovery.CIDRs) {
+		t.Fatalf("PostgreSQL coverage discovery policy changed: %#v %v", policies, err)
+	}
+	missing := discovery
+	missing.ID = "postgres-missing-discovery"
+	if err := repository.SaveCoverageDiscoveryPolicy(missing, discoveryEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("creator-less PostgreSQL discovery policy error = %v, want %v", err, ErrNotFound)
 	}
 }
 

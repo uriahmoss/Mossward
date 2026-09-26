@@ -342,9 +342,12 @@ existing-target enforcement, fail-closed group conflicts for delayed heartbeats,
 and explicit endpoint overrides. Health-policy coverage checks secure heartbeat
 defaults, database-enforced threshold ordering, group and endpoint maintenance
 windows, time-bound activation, cancellation history, and missing-target
-rejection. The configured database role therefore needs permission to create
-and drop schemas. Never point these tests at a database where that role has
-broader privileges than necessary.
+rejection. Coverage checks remain opt-in and distinguish eligible gaps from
+unclassified assets while excluding active-linked, retired, and explicitly
+ineligible assets. Discovery-policy persistence covers only CIDRs already
+normalized and authorized by the service layer. The configured database role
+therefore needs permission to create and drop schemas. Never point these tests
+at a database where that role has broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 
