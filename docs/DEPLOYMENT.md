@@ -358,7 +358,11 @@ checkpoint completeness, result replay protection, lease consumption, and
 projection into scan, finding, asset-service, and evidence provenance records.
 Worker-resilience coverage checks checkpoint-aware reassignment, signed resume
 state, assignment history, stale-worker evidence rejection, bounded expired
-lease retries, dead-letter visibility, and failed-scan projection. The configured database role
+lease retries, dead-letter visibility, and failed-scan projection. Finding and
+retention coverage checks active-user assignment, audited workflow changes,
+administrator exception approval, open-ended reminders, configurable retention,
+purging of expired evidence, and preservation of evidence under an active
+approved exception. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

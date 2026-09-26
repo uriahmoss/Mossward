@@ -1532,6 +1532,108 @@ func TestPostgreSQLWorkerJobDeadLetterQuarantine(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLFindingWorkflowAndEvidenceRetention(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	old := now.AddDate(-2, 0, 0)
+	heldScan := model.Scan{ID: "postgres-held-scan", Name: "Held evidence", Status: model.StatusCompleted,
+		CreatedAt: old, CompletedAt: &old, Findings: []model.Finding{{ID: "postgres-held-finding",
+			CheckID: "tls.configuration", Target: "held-host", Address: "192.0.2.50", Port: 443,
+			Service: "https", Severity: "medium", Title: "Held finding", ObservedAt: old}}}
+	if err := repository.Save(heldScan); err != nil {
+		t.Fatalf("save PostgreSQL finding workflow scan: %v", err)
+	}
+	workflowEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"finding.workflow.updated", "finding", heldScan.Findings[0].ID)
+	if err := repository.UpdateFindingWorkflow(heldScan.Findings[0].ID,
+		model.FindingWorkflowUpdate{Status: model.FindingInProgress, AssignedTo: "missing-user"}, now,
+		workflowEvent); !errors.Is(err, ErrInvalidFindingWorkflow) {
+		t.Fatalf("missing PostgreSQL finding assignee error = %v, want %v", err, ErrInvalidFindingWorkflow)
+	}
+	if err := repository.UpdateFindingWorkflow(heldScan.Findings[0].ID,
+		model.FindingWorkflowUpdate{Status: model.FindingInProgress, AssignedTo: administrator.ID}, now,
+		workflowEvent); err != nil {
+		t.Fatalf("update PostgreSQL finding workflow: %v", err)
+	}
+	loaded, err := repository.Get(heldScan.ID)
+	if err != nil || len(loaded.Findings) != 1 || loaded.Findings[0].Status != model.FindingInProgress ||
+		loaded.Findings[0].AssignedTo != administrator.ID || loaded.Findings[0].WorkflowUpdatedAt == nil ||
+		!loaded.Findings[0].WorkflowUpdatedAt.Equal(now) {
+		t.Fatalf("PostgreSQL finding workflow changed: %#v %v", loaded.Findings, err)
+	}
+	exception := model.FindingException{ID: "postgres-finding-exception", FindingID: heldScan.Findings[0].ID,
+		Reason: "Temporary vendor dependency", Status: model.ExceptionPending, RequestedBy: administrator.ID,
+		CreatedAt: old, ReminderDays: 30}
+	exceptionEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"finding.exception.requested", "finding_exception", exception.ID)
+	if err := repository.SaveFindingException(exception, exceptionEvent); err != nil {
+		t.Fatalf("save PostgreSQL finding exception: %v", err)
+	}
+	if err := repository.ReviewFindingException(exception.ID, model.ExceptionApproved, administrator.ID, now,
+		postgresIdentityAuditEvent(now, administrator.ID, "finding.exception.approved", "finding_exception",
+			exception.ID)); err != nil {
+		t.Fatalf("approve PostgreSQL finding exception: %v", err)
+	}
+	if err := repository.ReviewFindingException(exception.ID, model.ExceptionRejected, administrator.ID, now,
+		exceptionEvent); !errors.Is(err, ErrFindingNotFound) {
+		t.Fatalf("reviewed PostgreSQL finding exception error = %v, want %v", err, ErrFindingNotFound)
+	}
+	exceptions, err := repository.ListFindingExceptions()
+	if err != nil || len(exceptions) != 1 || exceptions[0].Status != model.ExceptionApproved ||
+		exceptions[0].ApprovedBy != administrator.ID || exceptions[0].ExpiresAt != nil {
+		t.Fatalf("PostgreSQL finding exception changed: %#v %v", exceptions, err)
+	}
+	due, err := repository.DueOpenEndedExceptions(now)
+	if err != nil || len(due) != 1 || due[0].ID != exception.ID {
+		t.Fatalf("PostgreSQL exception reminder schedule changed: %#v %v", due, err)
+	}
+	if err := repository.MarkExceptionReminded(exception.ID, now); err != nil {
+		t.Fatalf("mark PostgreSQL finding exception reminded: %v", err)
+	}
+	due, err = repository.DueOpenEndedExceptions(now)
+	if err != nil || len(due) != 0 {
+		t.Fatalf("reminded PostgreSQL exception remained due: %#v %v", due, err)
+	}
+	settings, err := repository.EvidenceRetentionSettings()
+	if err != nil || settings.RetentionDays != 365 {
+		t.Fatalf("PostgreSQL evidence retention default changed: %#v %v", settings, err)
+	}
+	retentionEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"evidence.retention.updated", "evidence_retention", "global")
+	if err := repository.SaveEvidenceRetentionSettings(model.EvidenceRetentionSettings{RetentionDays: 29,
+		UpdatedAt: now}, retentionEvent); !errors.Is(err, ErrInvalidFindingWorkflow) {
+		t.Fatalf("invalid PostgreSQL evidence retention error = %v, want %v", err, ErrInvalidFindingWorkflow)
+	}
+	settings = model.EvidenceRetentionSettings{RetentionDays: 30, UpdatedAt: now}
+	if err := repository.SaveEvidenceRetentionSettings(settings, retentionEvent); err != nil {
+		t.Fatalf("save PostgreSQL evidence retention settings: %v", err)
+	}
+	storedSettings, err := repository.EvidenceRetentionSettings()
+	if err != nil || storedSettings.RetentionDays != settings.RetentionDays || !storedSettings.UpdatedAt.Equal(now) {
+		t.Fatalf("PostgreSQL evidence retention settings changed: %#v %v", storedSettings, err)
+	}
+	expiredScan := model.Scan{ID: "postgres-expired-scan", Name: "Expired evidence", Status: model.StatusCompleted,
+		CreatedAt: old, CompletedAt: &old}
+	if err := repository.Save(expiredScan); err != nil {
+		t.Fatalf("save PostgreSQL expired evidence fixture: %v", err)
+	}
+	removed, err := repository.PurgeExpiredEvidence(now)
+	if err != nil || removed != 1 {
+		t.Fatalf("purge PostgreSQL expired evidence: removed=%d err=%v", removed, err)
+	}
+	if _, err := repository.Get(expiredScan.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expired PostgreSQL evidence remained: %v", err)
+	}
+	if _, err := repository.Get(heldScan.ID); err != nil {
+		t.Fatalf("approved-exception PostgreSQL evidence was purged: %v", err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "finding.", Limit: 10})
+	if err != nil || len(events) < 3 {
+		t.Fatalf("PostgreSQL finding workflow audit trail missing: %#v %v", events, err)
+	}
+}
+
 func enrollPostgreSQLTestWorker(
 	t *testing.T,
 	repository *PostgreSQLStore,
