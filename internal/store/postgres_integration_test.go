@@ -1958,6 +1958,99 @@ func TestPostgreSQLAgentModuleTrustAssignmentAndHealthLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLAssetMergePreservesSelectedValuesAndRelationships(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	first := completedAssetScan("postgres-merge-scan-one", "postgres-merge-observation-one", "first-host",
+		"192.0.2.70", now)
+	second := completedAssetScan("postgres-merge-scan-two", "postgres-merge-observation-two", "second-host",
+		"192.0.2.71", now.Add(time.Hour))
+	first.Observations[0].Port = 80
+	second.Observations[0].Port = 443
+	if err := repository.Save(first); err != nil {
+		t.Fatalf("save first PostgreSQL merge asset: %v", err)
+	}
+	if err := repository.Save(second); err != nil {
+		t.Fatalf("save second PostgreSQL merge asset: %v", err)
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 2 {
+		t.Fatalf("load PostgreSQL merge assets: %#v %v", assets, err)
+	}
+	assetsByName := map[string]model.Asset{}
+	for _, asset := range assets {
+		assetsByName[asset.Name] = asset
+	}
+	survivor := assetsByName["first-host"]
+	merged := assetsByName["second-host"]
+	for index, assetID := range []string{survivor.ID, merged.ID} {
+		group := model.AssetGroup{ID: fmt.Sprintf("postgres-merge-group-%d", index),
+			Name: fmt.Sprintf("Merge group %d", index), CreatedAt: now, UpdatedAt: now}
+		if err := repository.UpsertAssetGroup(group, postgresIdentityAuditEvent(now, administrator.ID,
+			"asset_group.updated", "asset_group", group.ID)); err != nil {
+			t.Fatalf("save PostgreSQL merge group: %v", err)
+		}
+		if err := repository.AddAssetGroupMember(group.ID, assetID, administrator.ID, now,
+			postgresIdentityAuditEvent(now, administrator.ID, "asset_group.member.added", "asset_group", group.ID)); err != nil {
+			t.Fatalf("add PostgreSQL merge group member: %v", err)
+		}
+	}
+	metadata := model.AssetMetadata{Owner: "Security operations", Environment: "Production",
+		Classification: "Critical"}
+	if err := repository.UpdateAssetMetadata(merged.ID, metadata, postgresIdentityAuditEvent(now,
+		administrator.ID, "asset.metadata.updated", "asset", merged.ID)); err != nil {
+		t.Fatalf("update PostgreSQL merge metadata: %v", err)
+	}
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-merge-endpoint")
+	if err := repository.LinkEndpointAsset(endpoint.ID, merged.ID, postgresIdentityAuditEvent(now,
+		administrator.ID, "agent_module.endpoint_linked", "endpoint", endpoint.ID)); err != nil {
+		t.Fatalf("link PostgreSQL endpoint to merged asset: %v", err)
+	}
+	request := model.AssetMergeRequest{SurvivorID: survivor.ID, MergedID: merged.ID, NameFrom: merged.ID,
+		AddressFrom: merged.ID, OwnerFrom: merged.ID, EnvironmentFrom: merged.ID,
+		ClassificationFrom: merged.ID, LifecycleFrom: merged.ID}
+	invalid := request
+	invalid.NameFrom = "unrelated-asset"
+	if err := repository.MergeAssets(invalid, postgresIdentityAuditEvent(now, administrator.ID,
+		"asset.merged", "asset", survivor.ID)); err == nil {
+		t.Fatal("PostgreSQL asset merge accepted a value source outside the selected assets")
+	}
+	mergedAt := now.Add(2 * time.Hour)
+	if err := repository.MergeAssets(request, postgresIdentityAuditEvent(mergedAt, administrator.ID,
+		"asset.merged", "asset", survivor.ID)); err != nil {
+		t.Fatalf("merge PostgreSQL assets: %v", err)
+	}
+	assets, err = repository.ListAssets()
+	if err != nil || len(assets) != 1 || assets[0].ID != survivor.ID || assets[0].Name != merged.Name ||
+		assets[0].Address != merged.Address || assets[0].Owner != metadata.Owner ||
+		assets[0].Environment != metadata.Environment || assets[0].Classification != metadata.Classification ||
+		len(assets[0].Addresses) != 2 || len(assets[0].Names) != 2 || !assets[0].FirstSeen.Equal(survivor.FirstSeen) ||
+		!assets[0].LastSeen.Equal(merged.LastSeen) || assets[0].LastScanID != merged.LastScanID {
+		t.Fatalf("PostgreSQL merged asset identity changed: %#v %v", assets, err)
+	}
+	detail, err := repository.AssetDetail(survivor.ID, mergedAt)
+	if err != nil || len(detail.Services) != 2 || len(detail.Evidence) != 2 {
+		t.Fatalf("PostgreSQL merged asset history changed: %#v %v", detail, err)
+	}
+	memberships, err := repository.AssetGroupMemberships(survivor.ID)
+	if err != nil || len(memberships) != 2 {
+		t.Fatalf("PostgreSQL merged asset group relationships changed: %#v %v", memberships, err)
+	}
+	if _, err := repository.AssetDetail(merged.ID, mergedAt); !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("merged-away PostgreSQL asset remained available: %v", err)
+	}
+	var linkedAssetID string
+	if err := repository.db.QueryRow(`SELECT asset_id FROM endpoints WHERE id=$1`, endpoint.ID).
+		Scan(&linkedAssetID); err != nil || linkedAssetID != survivor.ID {
+		t.Fatalf("PostgreSQL merged endpoint link = %q, want %q: %v", linkedAssetID, survivor.ID, err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "asset.merged", Limit: 10})
+	if err != nil || len(events) != 1 {
+		t.Fatalf("PostgreSQL asset-merge audit trail changed: %#v %v", events, err)
+	}
+}
+
 func enrollPostgreSQLTestWorker(
 	t *testing.T,
 	repository *PostgreSQLStore,

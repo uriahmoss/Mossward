@@ -373,7 +373,10 @@ responsibility. Agent-module coverage checks publisher trust records, staged
 release approval, endpoint linking and assignment, compatibility gating,
 rollout offers, health state, the global emergency stop, and release revocation.
 Package verification and execution isolation remain service and module-host
-responsibilities. The configured database role
+responsibilities. Asset-merge coverage checks administrator-selected values,
+identity aliases, first/last-seen boundaries, service and evidence history,
+group membership, endpoint links, deletion of the merged identity, and audit
+history. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

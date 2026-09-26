@@ -217,6 +217,11 @@ func TestMergeAssetsPreservesHistoryAndSelectedValues(t *testing.T) {
 	if err := repository.UpdateAssetMetadata(secondAsset.ID, metadata, model.AuditEvent{OccurredAt: now, Action: "asset.metadata.updated", Severity: model.AuditInfo, Details: "{}"}); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := repository.db.Exec(`INSERT INTO endpoints(id,name,status,certificate_serial,certificate_pem,enrolled_at,expires_at,asset_id)
+		VALUES('merge-endpoint','Merge endpoint','active','merge-serial','certificate',?,?,?)`,
+		formatTime(now), formatTime(now.Add(24*time.Hour)), secondAsset.ID); err != nil {
+		t.Fatal(err)
+	}
 	request := model.AssetMergeRequest{SurvivorID: firstAsset.ID, MergedID: secondAsset.ID, NameFrom: secondAsset.ID,
 		AddressFrom: secondAsset.ID, OwnerFrom: secondAsset.ID, EnvironmentFrom: secondAsset.ID,
 		ClassificationFrom: secondAsset.ID, LifecycleFrom: secondAsset.ID}
@@ -239,5 +244,9 @@ func TestMergeAssetsPreservesHistoryAndSelectedValues(t *testing.T) {
 	}
 	if _, err := repository.AssetDetail(secondAsset.ID, now); !errors.Is(err, ErrAssetNotFound) {
 		t.Fatalf("merged-away asset still exists: %v", err)
+	}
+	var linkedAssetID string
+	if err := repository.db.QueryRow(`SELECT asset_id FROM endpoints WHERE id='merge-endpoint'`).Scan(&linkedAssetID); err != nil || linkedAssetID != firstAsset.ID {
+		t.Fatalf("endpoint asset relationship was not transferred: asset=%q err=%v", linkedAssetID, err)
 	}
 }

@@ -141,6 +141,7 @@ func transferAssetRelationships(tx *sql.Tx, survivorID, mergedID string) error {
 		{`UPDATE asset_names SET asset_id=? WHERE asset_id=?`, []any{survivorID, mergedID}},
 		{`UPDATE asset_service_events SET asset_id=? WHERE asset_id=?`, []any{survivorID, mergedID}},
 		{`UPDATE asset_evidence SET asset_id=? WHERE asset_id=?`, []any{survivorID, mergedID}},
+		{`UPDATE endpoints SET asset_id=? WHERE asset_id=?`, []any{survivorID, mergedID}},
 	}
 	for _, statement := range statements {
 		if _, err := tx.Exec(statement.query, statement.args...); err != nil {
