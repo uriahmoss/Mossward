@@ -1634,6 +1634,86 @@ func TestPostgreSQLFindingWorkflowAndEvidenceRetention(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLNotificationSettingsAndAlertDeduplication(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	empty, err := repository.SMTPSettings()
+	if err != nil || empty.Enabled || empty.HasPassword || len(empty.RecipientUserIDs) != 0 {
+		t.Fatalf("unexpected initial PostgreSQL SMTP settings: %#v %v", empty, err)
+	}
+	settings := model.SMTPSettings{Enabled: true, Host: "smtp.example.test", Port: 587,
+		Username: "mossward@example.test", PasswordCiphertext: []byte("encrypted-smtp-password-v1"),
+		FromAddress: "mossward@example.test", TLSMode: "starttls",
+		RecipientUserIDs: []string{administrator.ID}}
+	event := postgresIdentityAuditEvent(now, administrator.ID,
+		"notification.smtp.updated", "smtp_settings", "global")
+	if err := repository.SaveSMTPSettings(settings, event); err != nil {
+		t.Fatalf("save PostgreSQL SMTP settings: %v", err)
+	}
+	stored, err := repository.SMTPSettings()
+	if err != nil || !stored.Enabled || stored.Host != settings.Host || stored.Port != settings.Port ||
+		stored.Username != settings.Username || !stored.HasPassword ||
+		!reflect.DeepEqual(stored.PasswordCiphertext, settings.PasswordCiphertext) ||
+		stored.FromAddress != settings.FromAddress || stored.TLSMode != settings.TLSMode ||
+		!reflect.DeepEqual(stored.RecipientUserIDs, settings.RecipientUserIDs) {
+		t.Fatalf("PostgreSQL SMTP settings changed: %#v %v", stored, err)
+	}
+	invalid := settings
+	invalid.Host = "invalid-smtp.example.test"
+	invalid.PasswordCiphertext = []byte("invalid-replacement-ciphertext")
+	invalid.RecipientUserIDs = []string{"missing-recipient"}
+	if err := repository.SaveSMTPSettings(invalid, event); err == nil {
+		t.Fatal("PostgreSQL SMTP settings accepted a missing recipient")
+	}
+	afterRollback, err := repository.SMTPSettings()
+	if err != nil || afterRollback.Host != settings.Host ||
+		!reflect.DeepEqual(afterRollback.PasswordCiphertext, settings.PasswordCiphertext) ||
+		!reflect.DeepEqual(afterRollback.RecipientUserIDs, settings.RecipientUserIDs) {
+		t.Fatalf("failed PostgreSQL SMTP update was partially applied: %#v %v", afterRollback, err)
+	}
+	settings.PasswordCiphertext = []byte("encrypted-smtp-password-v2")
+	settings.Port = 465
+	settings.TLSMode = "tls"
+	settings.RecipientUserIDs = []string{}
+	if err := repository.SaveSMTPSettings(settings, postgresIdentityAuditEvent(now.Add(time.Minute), administrator.ID,
+		"notification.smtp.updated", "smtp_settings", "global")); err != nil {
+		t.Fatalf("rotate PostgreSQL SMTP credential: %v", err)
+	}
+	rotated, err := repository.SMTPSettings()
+	if err != nil || !rotated.HasPassword || rotated.Port != settings.Port || rotated.TLSMode != settings.TLSMode ||
+		!reflect.DeepEqual(rotated.PasswordCiphertext, settings.PasswordCiphertext) || len(rotated.RecipientUserIDs) != 0 {
+		t.Fatalf("PostgreSQL SMTP credential rotation changed: %#v %v", rotated, err)
+	}
+	scan := model.Scan{ID: "postgres-long-alert-scan", Name: "Long running scan", Status: model.StatusRunning,
+		CreatedAt: now}
+	if err := repository.Save(scan); err != nil {
+		t.Fatalf("save PostgreSQL long-alert scan: %v", err)
+	}
+	if err := repository.MarkScanLongAlertSent(scan.ID); err != nil {
+		t.Fatalf("mark PostgreSQL long-running alert: %v", err)
+	}
+	if err := repository.MarkScanLongAlertSent(scan.ID); err != nil {
+		t.Fatalf("repeat PostgreSQL long-running alert marker: %v", err)
+	}
+	loaded, err := repository.Get(scan.ID)
+	if err != nil || !loaded.LongAlertSent {
+		t.Fatalf("PostgreSQL long-running alert marker missing: %#v %v", loaded, err)
+	}
+	var alertMarkers int
+	if err := repository.db.QueryRow(`SELECT COUNT(*) FROM scan_long_alerts WHERE scan_id=$1`, scan.ID).
+		Scan(&alertMarkers); err != nil {
+		t.Fatalf("count PostgreSQL long-running alert markers: %v", err)
+	}
+	if alertMarkers != 1 {
+		t.Fatalf("PostgreSQL long-running alert markers = %d, want 1", alertMarkers)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "notification.smtp.updated", Limit: 10})
+	if err != nil || len(events) != 2 {
+		t.Fatalf("PostgreSQL SMTP audit trail changed: %#v %v", events, err)
+	}
+}
+
 func enrollPostgreSQLTestWorker(
 	t *testing.T,
 	repository *PostgreSQLStore,

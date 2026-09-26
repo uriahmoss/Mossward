@@ -504,6 +504,7 @@ failure and health states.
     - [x] Scanner-worker ordered evidence, checkpoint, result replay, completion, and projection integration contract
     - [x] Scanner-worker checkpoint-aware reassignment and bounded dead-letter quarantine integration contract
     - [x] Finding workflow, exception approval, reminders, and evidence-retention integration contract
+    - [x] SMTP credential, recipient, transactional rollback, rotation, and alert-deduplication integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

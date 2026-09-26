@@ -362,7 +362,10 @@ lease retries, dead-letter visibility, and failed-scan projection. Finding and
 retention coverage checks active-user assignment, audited workflow changes,
 administrator exception approval, open-ended reminders, configurable retention,
 purging of expired evidence, and preservation of evidence under an active
-approved exception. The configured database role
+approved exception. Notification coverage checks opaque SMTP credential
+ciphertext, recipient replacement, failed-update rollback, credential rotation,
+audited settings changes, and idempotent long-running scan alert markers. It
+does not send external email. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 
