@@ -365,7 +365,11 @@ purging of expired evidence, and preservation of evidence under an active
 approved exception. Notification coverage checks opaque SMTP credential
 ciphertext, recipient replacement, failed-update rollback, credential rotation,
 audited settings changes, and idempotent long-running scan alert markers. It
-does not send external email. The configured database role
+does not send external email. Agent-update coverage checks immutable staged
+releases, separate approval, platform-bound assignment, repeatable offers with
+stable timestamps, check-in-driven installation reconciliation, revocation,
+and audit history. Artifact signature verification remains a service-layer
+responsibility. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

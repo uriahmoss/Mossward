@@ -1714,6 +1714,113 @@ func TestPostgreSQLNotificationSettingsAndAlertDeduplication(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLAgentUpdateReleaseAndAssignmentLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-update-endpoint")
+	checkIn := model.AgentCheckIn{SchemaVersion: 1, SoftwareVersion: "1.0.0", OperatingSystem: "linux",
+		Architecture: "amd64"}
+	if err := repository.RecordEndpointCheckIn(endpoint.ID, checkIn, now); err != nil {
+		t.Fatalf("establish PostgreSQL update endpoint platform: %v", err)
+	}
+	release := model.AgentUpdateRelease{ID: "postgres-agent-update", Version: "1.2.3", OperatingSystem: "linux",
+		Architecture: "amd64", ArtifactSHA256: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		ArtifactSize: 4096, SigningKeyID: "postgres-agent-update-key",
+		Envelope: []byte(`{"signed":true,"version":"1.2.3"}`), Status: model.AgentUpdateStaged,
+		CreatedBy: administrator.ID, CreatedAt: now}
+	if err := repository.CreateAgentUpdateRelease(release, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_update.imported", "agent_update_release", release.ID)); err != nil {
+		t.Fatalf("create PostgreSQL agent-update release: %v", err)
+	}
+	if _, err := repository.AgentUpdateEnvelope(release.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("staged PostgreSQL update envelope error = %v, want %v", err, ErrNotFound)
+	}
+	duplicate := release
+	duplicate.ID = "postgres-agent-update-duplicate"
+	duplicate.ArtifactSHA256 = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	if err := repository.CreateAgentUpdateRelease(duplicate, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_update.imported", "agent_update_release", duplicate.ID)); err == nil {
+		t.Fatal("PostgreSQL agent-update release allowed duplicate version and platform")
+	}
+	approvedAt := now.Add(time.Minute)
+	if err := repository.ApproveAgentUpdateRelease(release.ID, administrator.ID, approvedAt,
+		postgresIdentityAuditEvent(approvedAt, administrator.ID, "agent_update.approved", "agent_update_release",
+			release.ID)); err != nil {
+		t.Fatalf("approve PostgreSQL agent-update release: %v", err)
+	}
+	if err := repository.ApproveAgentUpdateRelease(release.ID, administrator.ID, approvedAt,
+		postgresIdentityAuditEvent(approvedAt, administrator.ID, "agent_update.approved", "agent_update_release",
+			release.ID)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("reapproved PostgreSQL update error = %v, want %v", err, ErrNotFound)
+	}
+	envelope, err := repository.AgentUpdateEnvelope(release.ID)
+	if err != nil || !reflect.DeepEqual(envelope, release.Envelope) {
+		t.Fatalf("approved PostgreSQL agent-update envelope changed: %q %v", envelope, err)
+	}
+	assignedAt := now.Add(2 * time.Minute)
+	if err := repository.AssignAgentUpdate(endpoint.ID, release.ID, administrator.ID, assignedAt,
+		postgresIdentityAuditEvent(assignedAt, administrator.ID, "agent_update.assigned", "endpoint", endpoint.ID)); err != nil {
+		t.Fatalf("assign PostgreSQL agent update: %v", err)
+	}
+	offeredAt := now.Add(3 * time.Minute)
+	offer, err := repository.AgentUpdateOffer(endpoint.ID, offeredAt)
+	if err != nil || !reflect.DeepEqual(offer, release.Envelope) {
+		t.Fatalf("load PostgreSQL agent-update offer: %q %v", offer, err)
+	}
+	secondOfferAt := offeredAt.Add(time.Minute)
+	secondOffer, err := repository.AgentUpdateOffer(endpoint.ID, secondOfferAt)
+	if err != nil || !reflect.DeepEqual(secondOffer, release.Envelope) {
+		t.Fatalf("reload PostgreSQL agent-update offer: %q %v", secondOffer, err)
+	}
+	var assignmentStatus string
+	var storedOfferedAt time.Time
+	var installedAt *time.Time
+	if err := repository.db.QueryRow(`SELECT status,offered_at,installed_at FROM agent_update_assignments
+		WHERE endpoint_id=$1`, endpoint.ID).Scan(&assignmentStatus, &storedOfferedAt, &installedAt); err != nil {
+		t.Fatalf("read PostgreSQL agent-update assignment: %v", err)
+	}
+	if assignmentStatus != "offered" || !storedOfferedAt.Equal(offeredAt) || installedAt != nil {
+		t.Fatalf("unexpected PostgreSQL update offer state: status=%s offered=%v installed=%v",
+			assignmentStatus, storedOfferedAt, installedAt)
+	}
+	checkIn.SoftwareVersion = release.Version
+	installedCheckInAt := now.Add(5 * time.Minute)
+	if err := repository.RecordEndpointCheckIn(endpoint.ID, checkIn, installedCheckInAt); err != nil {
+		t.Fatalf("reconcile PostgreSQL installed agent update: %v", err)
+	}
+	if err := repository.db.QueryRow(`SELECT status,installed_at FROM agent_update_assignments WHERE endpoint_id=$1`,
+		endpoint.ID).Scan(&assignmentStatus, &installedAt); err != nil {
+		t.Fatalf("read installed PostgreSQL agent-update assignment: %v", err)
+	}
+	if assignmentStatus != "installed" || installedAt == nil || !installedAt.Equal(installedCheckInAt) {
+		t.Fatalf("unexpected PostgreSQL installed update state: status=%s installed=%v", assignmentStatus, installedAt)
+	}
+	if offer, err := repository.AgentUpdateOffer(endpoint.ID, installedCheckInAt.Add(time.Minute)); err != nil || offer != nil {
+		t.Fatalf("installed PostgreSQL agent update was offered again: %q %v", offer, err)
+	}
+	revokedAt := now.Add(6 * time.Minute)
+	if err := repository.RevokeAgentUpdateRelease(release.ID, administrator.ID, "signing key concern", revokedAt,
+		postgresIdentityAuditEvent(revokedAt, administrator.ID, "agent_update.revoked", "agent_update_release",
+			release.ID)); err != nil {
+		t.Fatalf("revoke PostgreSQL agent-update release: %v", err)
+	}
+	if _, err := repository.AgentUpdateEnvelope(release.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("revoked PostgreSQL update envelope error = %v, want %v", err, ErrNotFound)
+	}
+	releases, err := repository.ListAgentUpdateReleases()
+	if err != nil || len(releases) != 1 || releases[0].Status != model.AgentUpdateRevoked ||
+		releases[0].ApprovedBy != administrator.ID || releases[0].ApprovedAt == nil ||
+		releases[0].RevokedBy != administrator.ID || releases[0].RevokedAt == nil ||
+		releases[0].RevocationReason != "signing key concern" {
+		t.Fatalf("PostgreSQL agent-update release lifecycle changed: %#v %v", releases, err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "agent_update.", Limit: 10})
+	if err != nil || len(events) != 4 {
+		t.Fatalf("PostgreSQL agent-update audit trail changed: %#v %v", events, err)
+	}
+}
+
 func enrollPostgreSQLTestWorker(
 	t *testing.T,
 	repository *PostgreSQLStore,

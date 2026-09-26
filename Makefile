@@ -14,7 +14,7 @@ test:
 	GOCACHE=$(GOCACHE) go test -race ./...
 
 test-postgres:
-	GOCACHE=$(GOCACHE) go test -race ./internal/store -run '^TestPostgreSQL(Migrations|ScanAndAsset|LocalAuth|SessionAndInvitation|WebAuthn|OIDC|ScopeAndPolicy|EndpointIdentity|EndpointInventory|EndpointIntegrity|EndpointNetwork|Relay|Maintenance|EndpointCoverage|WorkerIdentity|WorkerJobLease|WorkerEvidence|WorkerReassignment|WorkerJobDeadLetter|FindingWorkflow|Notification)' -count=1
+	GOCACHE=$(GOCACHE) go test -race ./internal/store -run '^TestPostgreSQL(Migrations|ScanAndAsset|LocalAuth|SessionAndInvitation|WebAuthn|OIDC|ScopeAndPolicy|EndpointIdentity|EndpointInventory|EndpointIntegrity|EndpointNetwork|Relay|Maintenance|EndpointCoverage|WorkerIdentity|WorkerJobLease|WorkerEvidence|WorkerReassignment|WorkerJobDeadLetter|FindingWorkflow|Notification|AgentUpdate)' -count=1
 
 verify:
 	GOCACHE=$(GOCACHE) go test -race ./...
