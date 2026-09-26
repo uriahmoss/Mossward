@@ -506,6 +506,7 @@ failure and health states.
     - [x] Finding workflow, exception approval, reminders, and evidence-retention integration contract
     - [x] SMTP credential, recipient, transactional rollback, rotation, and alert-deduplication integration contract
     - [x] Signed agent-update approval, assignment, offer, installation, and revocation integration contract
+    - [x] Agent-module publisher, release, assignment, offer, health, emergency-stop, and revocation integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

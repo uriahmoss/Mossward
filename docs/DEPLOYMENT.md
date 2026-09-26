@@ -369,7 +369,11 @@ does not send external email. Agent-update coverage checks immutable staged
 releases, separate approval, platform-bound assignment, repeatable offers with
 stable timestamps, check-in-driven installation reconciliation, revocation,
 and audit history. Artifact signature verification remains a service-layer
-responsibility. The configured database role
+responsibility. Agent-module coverage checks publisher trust records, staged
+release approval, endpoint linking and assignment, compatibility gating,
+rollout offers, health state, the global emergency stop, and release revocation.
+Package verification and execution isolation remain service and module-host
+responsibilities. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

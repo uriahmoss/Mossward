@@ -16,6 +16,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/stdlib"
+	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 )
 
@@ -1818,6 +1819,142 @@ func TestPostgreSQLAgentUpdateReleaseAndAssignmentLifecycle(t *testing.T) {
 	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "agent_update.", Limit: 10})
 	if err != nil || len(events) != 4 {
 		t.Fatalf("PostgreSQL agent-update audit trail changed: %#v %v", events, err)
+	}
+}
+
+func TestPostgreSQLAgentModuleTrustAssignmentAndHealthLifecycle(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-module-endpoint")
+	if err := repository.RecordEndpointCheckIn(endpoint.ID, model.AgentCheckIn{SchemaVersion: 1,
+		SoftwareVersion: "1.2.0", OperatingSystem: "linux", Architecture: "amd64"}, now); err != nil {
+		t.Fatalf("establish PostgreSQL module endpoint platform: %v", err)
+	}
+	completedAt := now
+	assetScan := model.Scan{ID: "postgres-module-asset-scan", Name: "Module asset discovery",
+		Targets: []model.Target{{Name: "module-host", Address: "192.0.2.60"}}, Ports: []int{443},
+		Status: model.StatusCompleted, CreatedAt: now, CompletedAt: &completedAt}
+	if err := repository.Save(assetScan); err != nil {
+		t.Fatalf("create PostgreSQL module asset: %v", err)
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("load PostgreSQL module asset: %#v %v", assets, err)
+	}
+	if err := repository.LinkEndpointAsset(endpoint.ID, assets[0].ID, postgresIdentityAuditEvent(now,
+		administrator.ID, "agent_module.endpoint_linked", "endpoint", endpoint.ID)); err != nil {
+		t.Fatalf("link PostgreSQL module endpoint asset: %v", err)
+	}
+	publisher := agentmodule.Publisher{KeyID: "publisher", Name: "Mossward test publisher",
+		PublicKey: []byte("postgres-module-public-key"), Enabled: true, CreatedBy: administrator.ID, CreatedAt: now}
+	if err := repository.SaveAgentModulePublisher(publisher, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_module.publisher.updated", "agent_module_publisher", publisher.KeyID)); err != nil {
+		t.Fatalf("save PostgreSQL module publisher: %v", err)
+	}
+	storedPublisher, err := repository.AgentModulePublisher(publisher.KeyID)
+	if err != nil || !reflect.DeepEqual(storedPublisher, publisher) {
+		t.Fatalf("PostgreSQL module publisher changed: %#v %v", storedPublisher, err)
+	}
+	publishers, err := repository.ListAgentModulePublishers()
+	if err != nil || len(publishers) != 1 || publishers[0].KeyID != publisher.KeyID {
+		t.Fatalf("PostgreSQL module publisher catalog changed: %#v %v", publishers, err)
+	}
+	manifest := testModuleManifest()
+	release := agentmodule.Release{ID: "postgres-module-release", Manifest: manifest,
+		Envelope: []byte(`{"signed":true,"module":"com.test.inventory"}`), Status: agentmodule.ReleaseStaged,
+		CreatedBy: administrator.ID, CreatedAt: now}
+	if err := repository.CreateAgentModuleRelease(release, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_module.release.created", "agent_module_release", release.ID)); err != nil {
+		t.Fatalf("create PostgreSQL module release: %v", err)
+	}
+	assignment := agentmodule.Assignment{ID: "postgres-module-assignment", ReleaseID: release.ID,
+		TargetType: "endpoint", TargetID: endpoint.ID, RingPercent: 100, Enabled: true,
+		CreatedBy: administrator.ID, CreatedAt: now}
+	if err := repository.SaveAgentModuleAssignment(assignment, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_module.assignment.updated", "agent_module_assignment", assignment.ID)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("staged PostgreSQL module assignment error = %v, want %v", err, ErrNotFound)
+	}
+	approvedAt := now.Add(time.Minute)
+	if err := repository.TransitionAgentModuleRelease(release.ID, agentmodule.ReleaseStaged,
+		agentmodule.ReleaseApproved, administrator.ID, "", approvedAt, postgresIdentityAuditEvent(approvedAt,
+			administrator.ID, "agent_module.release.approved", "agent_module_release", release.ID)); err != nil {
+		t.Fatalf("approve PostgreSQL module release: %v", err)
+	}
+	invalidAssignment := assignment
+	invalidAssignment.ID = "postgres-invalid-module-assignment"
+	invalidAssignment.TargetID = "missing-endpoint"
+	if err := repository.SaveAgentModuleAssignment(invalidAssignment, postgresIdentityAuditEvent(now,
+		administrator.ID, "agent_module.assignment.updated", "agent_module_assignment",
+		invalidAssignment.ID)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing PostgreSQL module target error = %v, want %v", err, ErrNotFound)
+	}
+	if err := repository.SaveAgentModuleAssignment(assignment, postgresIdentityAuditEvent(now,
+		administrator.ID, "agent_module.assignment.updated", "agent_module_assignment", assignment.ID)); err != nil {
+		t.Fatalf("save PostgreSQL module assignment: %v", err)
+	}
+	assignments, err := repository.ListAgentModuleAssignments()
+	if err != nil || len(assignments) != 1 || !reflect.DeepEqual(assignments[0], assignment) {
+		t.Fatalf("PostgreSQL module assignment changed: %#v %v", assignments, err)
+	}
+	incompatible, err := repository.AgentModuleOffers(endpoint.ID, "0.9.0", "linux", "amd64")
+	if err != nil || len(incompatible) != 0 {
+		t.Fatalf("incompatible PostgreSQL module was offered: %#v %v", incompatible, err)
+	}
+	offers, err := repository.AgentModuleOffers(endpoint.ID, "1.2.0", "linux", "amd64")
+	if err != nil || len(offers) != 1 || offers[0].ReleaseID != release.ID ||
+		!reflect.DeepEqual(offers[0].Envelope, release.Envelope) {
+		t.Fatalf("PostgreSQL module offer changed: %#v %v", offers, err)
+	}
+	health := agentmodule.Health{ModuleID: manifest.ID, Version: manifest.Version, Healthy: false,
+		CrashCount: 2, Error: "module process exited", ObservedAt: now.Add(2 * time.Minute)}
+	if err := repository.RecordAgentModuleHealth(endpoint.ID, []agentmodule.Health{health}); err != nil {
+		t.Fatalf("record PostgreSQL module health: %v", err)
+	}
+	var storedHealth agentmodule.Health
+	if err := repository.db.QueryRow(`SELECT module_id,version,healthy,crash_count,error,observed_at
+		FROM agent_module_health WHERE endpoint_id=$1 AND module_id=$2`, endpoint.ID, manifest.ID).Scan(
+		&storedHealth.ModuleID, &storedHealth.Version, &storedHealth.Healthy, &storedHealth.CrashCount,
+		&storedHealth.Error, &storedHealth.ObservedAt); err != nil {
+		t.Fatalf("read PostgreSQL module health: %v", err)
+	}
+	if !reflect.DeepEqual(storedHealth, health) {
+		t.Fatalf("PostgreSQL module health changed: %#v", storedHealth)
+	}
+	if err := repository.SetAgentModulesEnabled(false, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_module.settings.updated", "agent_module_settings", "global")); err != nil {
+		t.Fatalf("disable PostgreSQL agent modules: %v", err)
+	}
+	offers, err = repository.AgentModuleOffers(endpoint.ID, "1.2.0", "linux", "amd64")
+	if err != nil || len(offers) != 1 || !offers[0].Disabled {
+		t.Fatalf("PostgreSQL module emergency stop changed: %#v %v", offers, err)
+	}
+	if err := repository.SetAgentModulesEnabled(true, postgresIdentityAuditEvent(now, administrator.ID,
+		"agent_module.settings.updated", "agent_module_settings", "global")); err != nil {
+		t.Fatalf("re-enable PostgreSQL agent modules: %v", err)
+	}
+	revokedAt := now.Add(3 * time.Minute)
+	if err := repository.TransitionAgentModuleRelease(release.ID, agentmodule.ReleaseApproved,
+		agentmodule.ReleaseRevoked, administrator.ID, "publisher concern", revokedAt,
+		postgresIdentityAuditEvent(revokedAt, administrator.ID, "agent_module.release.revoked",
+			"agent_module_release", release.ID)); err != nil {
+		t.Fatalf("revoke PostgreSQL module release: %v", err)
+	}
+	offers, err = repository.AgentModuleOffers(endpoint.ID, "1.2.0", "linux", "amd64")
+	if err != nil || len(offers) != 0 {
+		t.Fatalf("revoked PostgreSQL module remained offered: %#v %v", offers, err)
+	}
+	releases, err := repository.ListAgentModuleReleases()
+	if err != nil || len(releases) != 1 || releases[0].Status != agentmodule.ReleaseRevoked ||
+		releases[0].ApprovedBy != administrator.ID || releases[0].ApprovedAt == nil ||
+		releases[0].RevokedBy != administrator.ID || releases[0].RevokedAt == nil ||
+		releases[0].RevocationReason != "publisher concern" {
+		t.Fatalf("PostgreSQL module release lifecycle changed: %#v %v", releases, err)
+	}
+	var linkedAssetID string
+	if err := repository.db.QueryRow(`SELECT asset_id FROM endpoints WHERE id=$1`, endpoint.ID).
+		Scan(&linkedAssetID); err != nil || linkedAssetID != assets[0].ID {
+		t.Fatalf("PostgreSQL endpoint asset link = %q, want %q: %v", linkedAssetID, assets[0].ID, err)
 	}
 }
 
