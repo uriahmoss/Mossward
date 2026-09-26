@@ -339,9 +339,12 @@ authorization, and cascade revocation. It does not permit peer-to-peer control,
 self-promotion, or automatic downstream discovery. Relay scheduling coverage
 checks direct and group-inherited upload windows, time zones and weekdays,
 existing-target enforcement, fail-closed group conflicts for delayed heartbeats,
-and explicit endpoint overrides. The configured database role therefore needs
-permission to create and drop schemas. Never point these tests at a database
-where that role has broader privileges than necessary.
+and explicit endpoint overrides. Health-policy coverage checks secure heartbeat
+defaults, database-enforced threshold ordering, group and endpoint maintenance
+windows, time-bound activation, cancellation history, and missing-target
+rejection. The configured database role therefore needs permission to create
+and drop schemas. Never point these tests at a database where that role has
+broader privileges than necessary.
 
 ## Endpoint identity and mTLS listener
 

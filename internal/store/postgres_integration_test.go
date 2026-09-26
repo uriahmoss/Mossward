@@ -869,6 +869,111 @@ func TestPostgreSQLRelayWindowAndDelayedHeartbeatPolicy(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLMaintenanceAndHeartbeatHealthPolicy(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	settings, err := repository.EndpointHeartbeatSettings()
+	if err != nil || !settings.Enabled || settings.MissedAfterMinutes != 5 || settings.StaleAfterMinutes != 30 {
+		t.Fatalf("PostgreSQL heartbeat defaults changed: %#v %v", settings, err)
+	}
+	settings.MissedAfterMinutes = 10
+	settings.StaleAfterMinutes = 60
+	settings.UpdatedBy = administrator.ID
+	settings.UpdatedAt = now
+	heartbeatEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"endpoint.heartbeat_settings.updated", "endpoint_heartbeat_settings", "global")
+	if err := repository.SetEndpointHeartbeatSettings(settings, heartbeatEvent); err != nil {
+		t.Fatalf("update PostgreSQL heartbeat settings: %v", err)
+	}
+	storedSettings, err := repository.EndpointHeartbeatSettings()
+	if err != nil || storedSettings.MissedAfterMinutes != 10 || storedSettings.StaleAfterMinutes != 60 ||
+		storedSettings.UpdatedBy != administrator.ID || !storedSettings.UpdatedAt.Equal(now) {
+		t.Fatalf("PostgreSQL heartbeat settings round trip changed: %#v %v", storedSettings, err)
+	}
+	invalidSettings := settings
+	invalidSettings.StaleAfterMinutes = invalidSettings.MissedAfterMinutes
+	if err := repository.SetEndpointHeartbeatSettings(invalidSettings, heartbeatEvent); err == nil {
+		t.Fatal("invalid PostgreSQL heartbeat threshold ordering was accepted")
+	}
+	storedSettings, err = repository.EndpointHeartbeatSettings()
+	if err != nil || storedSettings.StaleAfterMinutes != settings.StaleAfterMinutes {
+		t.Fatalf("invalid PostgreSQL heartbeat update changed stored settings: %#v %v", storedSettings, err)
+	}
+
+	if err := repository.Save(serviceHistoryScan("maintenance-asset", "maintenance-observation", now, true)); err != nil {
+		t.Fatalf("create PostgreSQL maintenance asset: %v", err)
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("load PostgreSQL maintenance asset: %#v %v", assets, err)
+	}
+	endpoint := enrollPostgreSQLTestEndpoint(t, repository, administrator, now, "postgres-maintenance-endpoint")
+	if _, err := repository.db.Exec(`UPDATE endpoints SET asset_id=$1 WHERE id=$2`, assets[0].ID, endpoint.ID); err != nil {
+		t.Fatalf("associate PostgreSQL maintenance endpoint fixture: %v", err)
+	}
+	group := model.AssetGroup{ID: "postgres-maintenance-group", Name: "Patch ring", CreatedAt: now, UpdatedAt: now}
+	groupEvent := postgresIdentityAuditEvent(now, administrator.ID, "asset_group.updated", "asset_group", group.ID)
+	if err := repository.UpsertAssetGroup(group, groupEvent); err != nil {
+		t.Fatalf("create PostgreSQL maintenance group: %v", err)
+	}
+	if err := repository.AddAssetGroupMember(group.ID, assets[0].ID, administrator.ID, now, groupEvent); err != nil {
+		t.Fatalf("add PostgreSQL maintenance group member: %v", err)
+	}
+	groupWindow := model.EndpointMaintenanceWindow{ID: "postgres-group-maintenance", Name: "Patch deployment",
+		TargetType: model.MaintenanceTargetGroup, TargetID: group.ID, StartsAt: now.Add(-time.Minute),
+		EndsAt: now.Add(time.Hour), Reason: "approved patch deployment", CreatedBy: administrator.ID, CreatedAt: now}
+	maintenanceEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"endpoint.maintenance.created", "endpoint_maintenance", groupWindow.ID)
+	if err := repository.CreateEndpointMaintenanceWindow(groupWindow, maintenanceEvent); err != nil {
+		t.Fatalf("create PostgreSQL group maintenance window: %v", err)
+	}
+	futureWindow := model.EndpointMaintenanceWindow{ID: "postgres-future-maintenance", Name: "Future endpoint work",
+		TargetType: model.MaintenanceTargetEndpoint, TargetID: endpoint.ID, StartsAt: now.Add(2 * time.Hour),
+		EndsAt: now.Add(3 * time.Hour), Reason: "future approved work", CreatedBy: administrator.ID, CreatedAt: now}
+	if err := repository.CreateEndpointMaintenanceWindow(futureWindow, maintenanceEvent); err != nil {
+		t.Fatalf("create PostgreSQL future endpoint maintenance window: %v", err)
+	}
+	active, err := repository.EndpointInMaintenance(endpoint.ID, now)
+	if err != nil || !active {
+		t.Fatalf("PostgreSQL group-inherited maintenance was not active: %t %v", active, err)
+	}
+	active, err = repository.EndpointInMaintenance(endpoint.ID, now.Add(90*time.Minute))
+	if err != nil || active {
+		t.Fatalf("PostgreSQL endpoint maintenance activated outside its windows: %t %v", active, err)
+	}
+	missingWindow := futureWindow
+	missingWindow.ID = "postgres-missing-maintenance"
+	missingWindow.TargetID = "missing-endpoint"
+	if err := repository.CreateEndpointMaintenanceWindow(missingWindow, maintenanceEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing PostgreSQL maintenance target error = %v, want %v", err, ErrNotFound)
+	}
+	cancelledAt := now.Add(time.Minute)
+	cancelEvent := postgresIdentityAuditEvent(cancelledAt, administrator.ID,
+		"endpoint.maintenance.cancelled", "endpoint_maintenance", groupWindow.ID)
+	if err := repository.CancelEndpointMaintenanceWindow(groupWindow.ID, administrator.ID, cancelledAt, cancelEvent); err != nil {
+		t.Fatalf("cancel PostgreSQL maintenance window: %v", err)
+	}
+	active, err = repository.EndpointInMaintenance(endpoint.ID, cancelledAt)
+	if err != nil || active {
+		t.Fatalf("cancelled PostgreSQL maintenance still suppresses health: %t %v", active, err)
+	}
+	windows, err := repository.ListEndpointMaintenanceWindows()
+	if err != nil || len(windows) != 2 {
+		t.Fatalf("list PostgreSQL maintenance history: %#v %v", windows, err)
+	}
+	foundCancelled := false
+	for _, window := range windows {
+		if window.ID == groupWindow.ID && window.CancelledAt != nil && window.CancelledAt.Equal(cancelledAt) &&
+			window.CancelledBy == administrator.ID {
+			foundCancelled = true
+		}
+	}
+	if !foundCancelled {
+		t.Fatalf("PostgreSQL cancelled maintenance history missing: %#v", windows)
+	}
+}
+
 func enrollPostgreSQLTestEndpoint(
 	t *testing.T,
 	repository *PostgreSQLStore,
