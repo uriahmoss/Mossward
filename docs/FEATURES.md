@@ -508,6 +508,7 @@ failure and health states.
     - [x] Signed agent-update approval, assignment, offer, installation, and revocation integration contract
     - [x] Agent-module publisher, release, assignment, offer, health, emergency-stop, and revocation integration contract
     - [x] Administrator asset merge, selected values, history, groups, evidence, services, and endpoint-link integration contract
+    - [x] Atomic TOTP, WebAuthn, OIDC, and SMTP ciphertext-rotation integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

@@ -376,7 +376,10 @@ Package verification and execution isolation remain service and module-host
 responsibilities. Asset-merge coverage checks administrator-selected values,
 identity aliases, first/last-seen boundaries, service and evidence history,
 group membership, endpoint links, deletion of the merged identity, and audit
-history. The configured database role
+history. Identity-key rotation coverage checks atomic re-encryption of TOTP,
+WebAuthn credential and ceremony, OIDC client-secret, and SMTP password
+ciphertexts, including complete rollback when any legacy ciphertext cannot be
+decrypted and one audit event after success. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -2049,6 +2050,105 @@ func TestPostgreSQLAssetMergePreservesSelectedValuesAndRelationships(t *testing.
 	if err != nil || len(events) != 1 {
 		t.Fatalf("PostgreSQL asset-merge audit trail changed: %#v %v", events, err)
 	}
+}
+
+func TestPostgreSQLIdentityCiphertextRotationIsAtomic(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	oldTOTP := []byte("old:totp-secret")
+	if _, err := repository.db.Exec(`UPDATE totp_credentials SET secret_ciphertext=$1 WHERE user_id=$2`,
+		oldTOTP, administrator.ID); err != nil {
+		t.Fatalf("prepare PostgreSQL TOTP rotation fixture: %v", err)
+	}
+	credential := model.WebAuthnCredential{ID: []byte("postgres-rotation-credential"), UserID: administrator.ID,
+		Name: "Rotation credential", CredentialCiphertext: []byte("old:webauthn-credential"), CreatedAt: now}
+	if err := repository.CreateWebAuthnCredential(credential); err != nil {
+		t.Fatalf("create PostgreSQL rotation credential: %v", err)
+	}
+	ceremony := model.AuthenticationCeremony{IDHash: []byte("postgres-rotation-ceremony"),
+		UserID: administrator.ID, Kind: model.CeremonyWebAuthnRegister,
+		StateCiphertext: []byte("old:webauthn-ceremony"), ExpiresAt: now.Add(time.Hour), CreatedAt: now}
+	if err := repository.CreateAuthenticationCeremony(ceremony); err != nil {
+		t.Fatalf("create PostgreSQL rotation ceremony: %v", err)
+	}
+	provider := model.OIDCProvider{ID: "postgres-rotation-provider", Name: "Rotation provider",
+		IssuerURL: "https://identity.example.test", ClientID: "rotation-client", ProvisioningMode: model.ProvisionJIT,
+		DefaultRole: model.RoleViewer, RedirectURL: "https://mossward.example.test/auth/oidc/callback",
+		CreatedAt: now, UpdatedAt: now}
+	if err := repository.UpsertOIDCProvider(model.OIDCProviderRecord{Provider: provider,
+		ClientSecretCiphertext: []byte("old:oidc-client-secret")}, postgresIdentityAuditEvent(now, administrator.ID,
+		"identity.oidc_provider.configured", "oidc_provider", provider.ID)); err != nil {
+		t.Fatalf("create PostgreSQL rotation OIDC provider: %v", err)
+	}
+	smtp := model.SMTPSettings{Enabled: true, Host: "smtp.example.test", Port: 587,
+		Username: "mossward@example.test", PasswordCiphertext: []byte("invalid-smtp-ciphertext"),
+		FromAddress: "mossward@example.test", TLSMode: "starttls", RecipientUserIDs: []string{administrator.ID}}
+	if err := repository.SaveSMTPSettings(smtp, postgresIdentityAuditEvent(now, administrator.ID,
+		"notification.smtp.updated", "smtp_settings", "global")); err != nil {
+		t.Fatalf("create PostgreSQL rotation SMTP settings: %v", err)
+	}
+	cipher := postgreSQLTestRotationCipher{}
+	if rotated, err := repository.RotateIdentityCiphertexts(cipher, now.Add(time.Minute)); err == nil || rotated != 0 {
+		t.Fatalf("invalid PostgreSQL ciphertext rotation = %d, %v; want atomic failure", rotated, err)
+	}
+	storedTOTP, _, err := repository.TOTPSecret(administrator.ID)
+	if err != nil || !bytes.Equal(storedTOTP, oldTOTP) {
+		t.Fatalf("failed PostgreSQL rotation changed TOTP ciphertext: %q %v", storedTOTP, err)
+	}
+	storedProvider, err := repository.OIDCProvider(provider.ID)
+	if err != nil || !bytes.Equal(storedProvider.ClientSecretCiphertext, []byte("old:oidc-client-secret")) {
+		t.Fatalf("failed PostgreSQL rotation changed OIDC ciphertext: %#v %v", storedProvider, err)
+	}
+	smtp.PasswordCiphertext = []byte("old:smtp-password")
+	if err := repository.SaveSMTPSettings(smtp, postgresIdentityAuditEvent(now.Add(2*time.Minute), administrator.ID,
+		"notification.smtp.updated", "smtp_settings", "global")); err != nil {
+		t.Fatalf("repair PostgreSQL rotation SMTP fixture: %v", err)
+	}
+	rotatedAt := now.Add(3 * time.Minute)
+	rotated, err := repository.RotateIdentityCiphertexts(cipher, rotatedAt)
+	if err != nil || rotated != 5 {
+		t.Fatalf("rotate PostgreSQL identity ciphertexts: count=%d err=%v", rotated, err)
+	}
+	storedTOTP, _, err = repository.TOTPSecret(administrator.ID)
+	if err != nil || !bytes.Equal(storedTOTP, []byte("new:totp-secret")) {
+		t.Fatalf("PostgreSQL TOTP ciphertext was not rotated: %q %v", storedTOTP, err)
+	}
+	credentials, err := repository.ListWebAuthnCredentials(administrator.ID)
+	if err != nil || len(credentials) != 1 ||
+		!bytes.Equal(credentials[0].CredentialCiphertext, []byte("new:webauthn-credential")) {
+		t.Fatalf("PostgreSQL WebAuthn credential was not rotated: %#v %v", credentials, err)
+	}
+	consumed, err := repository.ConsumeAuthenticationCeremony(ceremony.IDHash, ceremony.Kind)
+	if err != nil || !bytes.Equal(consumed.StateCiphertext, []byte("new:webauthn-ceremony")) {
+		t.Fatalf("PostgreSQL WebAuthn ceremony was not rotated: %#v %v", consumed, err)
+	}
+	storedProvider, err = repository.OIDCProvider(provider.ID)
+	if err != nil || !bytes.Equal(storedProvider.ClientSecretCiphertext, []byte("new:oidc-client-secret")) {
+		t.Fatalf("PostgreSQL OIDC secret was not rotated: %#v %v", storedProvider, err)
+	}
+	storedSMTP, err := repository.SMTPSettings()
+	if err != nil || !bytes.Equal(storedSMTP.PasswordCiphertext, []byte("new:smtp-password")) {
+		t.Fatalf("PostgreSQL SMTP secret was not rotated: %#v %v", storedSMTP, err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "identity.encryption_key.rotated", Limit: 10})
+	if err != nil || len(events) != 1 || !strings.Contains(events[0].Details, `"ciphertexts":5`) {
+		t.Fatalf("PostgreSQL ciphertext-rotation audit event changed: %#v %v", events, err)
+	}
+}
+
+type postgreSQLTestRotationCipher struct{}
+
+func (postgreSQLTestRotationCipher) Decrypt(ciphertext []byte) ([]byte, error) {
+	prefix := []byte("old:")
+	if !bytes.HasPrefix(ciphertext, prefix) {
+		return nil, errors.New("ciphertext is not encrypted by the legacy test key")
+	}
+	return bytes.Clone(ciphertext[len(prefix):]), nil
+}
+
+func (postgreSQLTestRotationCipher) Encrypt(plaintext []byte) ([]byte, error) {
+	return append([]byte("new:"), plaintext...), nil
 }
 
 func enrollPostgreSQLTestWorker(
