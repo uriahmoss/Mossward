@@ -1378,6 +1378,160 @@ func TestPostgreSQLWorkerEvidenceAndResultProjection(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLWorkerReassignmentPreservesProgress(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	previousWorker := enrollPostgreSQLTestWorker(t, repository, administrator, now, "postgres-previous-worker")
+	replacementWorker := enrollPostgreSQLTestWorker(t, repository, administrator, now, "postgres-replacement-worker")
+	job := model.WorkerJob{SchemaVersion: 1, ID: "postgres-reassignment-job", WorkerID: previousWorker.ID,
+		ScanID: "postgres-reassignment-scan", IssuedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+		Targets: []model.Target{{Name: "first", Address: "192.0.2.30"}, {Name: "second", Address: "192.0.2.31"}},
+		Ports:   []int{443}, MaxConcurrent: 1,
+		RequiredCapabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect}, Status: model.WorkerJobPending}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Algorithm: "Ed25519",
+		KeyID: "postgres-reassignment-key", Job: job, Signature: "postgres-original-assignment"}, now); err != nil {
+		t.Fatalf("create PostgreSQL reassignment job: %v", err)
+	}
+	if _, err := repository.LeaseScannerWorkerJob(previousWorker.ID, []byte("postgres-previous-lease"), now,
+		now.Add(time.Minute)); err != nil {
+		t.Fatalf("lease PostgreSQL reassignment job: %v", err)
+	}
+	first := model.SignedWorkerEvidenceBatch{Algorithm: "Ed25519", CertificateSerial: previousWorker.CertificateSerial,
+		Signature: "postgres-previous-evidence", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+			ID: "postgres-previous-batch", WorkerID: previousWorker.ID, JobID: job.ID, ScanID: job.ScanID,
+			Sequence: 1, Final: true, CollectedAt: now,
+			Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.30", Port: 443, CompletedAt: now}}}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(first, now); err != nil {
+		t.Fatalf("record PostgreSQL pre-reassignment evidence: %v", err)
+	}
+	if _, err := repository.ScannerWorkerJobResumeCandidate(job.ID, now.Add(30*time.Second)); !errors.Is(err, ErrWorkerJobNotResumable) {
+		t.Fatalf("active PostgreSQL lease resume error = %v, want %v", err, ErrWorkerJobNotResumable)
+	}
+	resumeAt := now.Add(2 * time.Minute)
+	candidate, err := repository.ScannerWorkerJobResumeCandidate(job.ID, resumeAt)
+	if err != nil || candidate.Envelope.Job.WorkerID != previousWorker.ID || candidate.NextEvidenceSequence != 2 ||
+		len(candidate.Completed) != 1 || candidate.Completed[0].Address != "192.0.2.30" {
+		t.Fatalf("PostgreSQL worker resume candidate changed: %#v %v", candidate, err)
+	}
+	job.WorkerID = replacementWorker.ID
+	job.Resume = &model.WorkerJobResume{PreviousWorkerID: previousWorker.ID, Completed: candidate.Completed,
+		NextEvidenceSequence: candidate.NextEvidenceSequence + 1}
+	replacement := model.SignedWorkerJob{Algorithm: "Ed25519", KeyID: "postgres-reassignment-key", Job: job,
+		Signature: "postgres-replacement-assignment"}
+	if err := repository.ReassignScannerWorkerJob(previousWorker.ID, replacement, resumeAt); !errors.Is(err, ErrWorkerJobNotResumable) {
+		t.Fatalf("mismatched PostgreSQL resume state error = %v, want %v", err, ErrWorkerJobNotResumable)
+	}
+	replacement.Job.Resume.NextEvidenceSequence = candidate.NextEvidenceSequence
+	if err := repository.ReassignScannerWorkerJob(previousWorker.ID, replacement, resumeAt); err != nil {
+		t.Fatalf("reassign PostgreSQL scanner-worker job: %v", err)
+	}
+	late := first
+	late.Batch.ID = "postgres-late-previous-batch"
+	late.Batch.Sequence = 2
+	if err := repository.RecordScannerWorkerEvidenceBatch(late, resumeAt); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("late PostgreSQL evidence from previous worker error = %v, want %v", err, ErrInvalidWorkerJobLease)
+	}
+	if _, err := repository.LeaseScannerWorkerJob(replacementWorker.ID, []byte("postgres-replacement-lease"), resumeAt,
+		resumeAt.Add(time.Minute)); err != nil {
+		t.Fatalf("lease reassigned PostgreSQL scanner-worker job: %v", err)
+	}
+	second := model.SignedWorkerEvidenceBatch{Algorithm: "Ed25519", CertificateSerial: replacementWorker.CertificateSerial,
+		Signature: "postgres-replacement-evidence", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+			ID: "postgres-replacement-batch", WorkerID: replacementWorker.ID, JobID: job.ID, ScanID: job.ScanID,
+			Sequence: 2, Final: true, CollectedAt: resumeAt,
+			Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.31", Port: 443, CompletedAt: resumeAt}}}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(second, resumeAt); err != nil {
+		t.Fatalf("continue PostgreSQL evidence after reassignment: %v", err)
+	}
+	checkpoints, err := repository.ScannerWorkerJobCheckpoints(job.ID)
+	if err != nil || len(checkpoints) != 2 {
+		t.Fatalf("PostgreSQL reassignment checkpoints changed: %#v %v", checkpoints, err)
+	}
+	rows, err := repository.db.Query(`SELECT attempt,worker_id,reason FROM scanner_worker_job_assignments
+		WHERE job_id=$1 ORDER BY attempt`, job.ID)
+	if err != nil {
+		t.Fatalf("read PostgreSQL worker assignment history: %v", err)
+	}
+	defer rows.Close()
+	type assignment struct {
+		attempt  int
+		workerID string
+		reason   string
+	}
+	assignments := []assignment{}
+	for rows.Next() {
+		var item assignment
+		if err := rows.Scan(&item.attempt, &item.workerID, &item.reason); err != nil {
+			t.Fatalf("scan PostgreSQL worker assignment history: %v", err)
+		}
+		assignments = append(assignments, item)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate PostgreSQL worker assignment history: %v", err)
+	}
+	if len(assignments) != 2 || assignments[0].attempt != 1 || assignments[0].workerID != previousWorker.ID ||
+		assignments[0].reason != "initial" || assignments[1].attempt != 2 ||
+		assignments[1].workerID != replacementWorker.ID || assignments[1].reason != "expired_lease_resume" {
+		t.Fatalf("PostgreSQL worker assignment history changed: %#v", assignments)
+	}
+}
+
+func TestPostgreSQLWorkerJobDeadLetterQuarantine(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	worker := enrollPostgreSQLTestWorker(t, repository, administrator, now, "postgres-quarantine-worker")
+	job := model.WorkerJob{SchemaVersion: 1, ID: "postgres-quarantine-job", WorkerID: worker.ID,
+		ScanID: "postgres-quarantine-scan", IssuedAt: now, ExpiresAt: now.Add(time.Hour),
+		Targets: []model.Target{{Name: "host", Address: "192.0.2.40"}}, Ports: []int{443},
+		MaxConcurrent: 1, Status: model.WorkerJobPending}
+	if err := repository.Save(model.Scan{ID: job.ScanID, Name: "PostgreSQL quarantined remote scan",
+		Targets: job.Targets, Ports: job.Ports, Status: model.StatusQueued, TotalChecks: 1, CreatedAt: now}); err != nil {
+		t.Fatalf("save PostgreSQL quarantine scan: %v", err)
+	}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
+		t.Fatalf("create PostgreSQL quarantine job: %v", err)
+	}
+	leaseAt := now
+	for attempt := 1; attempt <= maximumWorkerLeaseAttempts; attempt++ {
+		if _, err := repository.LeaseScannerWorkerJob(worker.ID, []byte{byte(attempt)}, leaseAt,
+			leaseAt.Add(time.Second)); err != nil {
+			t.Fatalf("PostgreSQL quarantine lease attempt %d: %v", attempt, err)
+		}
+		leaseAt = leaseAt.Add(2 * time.Second)
+	}
+	if _, err := repository.ScannerWorkerJobResumeCandidate(job.ID, leaseAt); !errors.Is(err, ErrWorkerJobQuarantined) {
+		t.Fatalf("PostgreSQL repeatedly expired job error = %v, want %v", err, ErrWorkerJobQuarantined)
+	}
+	if _, err := repository.LeaseScannerWorkerJob(worker.ID, []byte("post-quarantine-lease"), leaseAt,
+		leaseAt.Add(time.Second)); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("quarantined PostgreSQL worker job was leased: %v", err)
+	}
+	deadLetters, err := repository.ListScannerWorkerDeadLetters()
+	if err != nil || len(deadLetters) != 1 || deadLetters[0].JobID != job.ID || deadLetters[0].ScanID != job.ScanID ||
+		deadLetters[0].WorkerID != worker.ID || deadLetters[0].FailureCount != maximumWorkerLeaseAttempts ||
+		deadLetters[0].Reason != workerLeaseFailureReason || !deadLetters[0].QuarantinedAt.Equal(leaseAt) {
+		t.Fatalf("PostgreSQL worker dead letter changed: %#v %v", deadLetters, err)
+	}
+	stored, err := repository.ScannerWorkerJob(job.ID)
+	if err != nil || stored.Job.ID != job.ID {
+		t.Fatalf("load quarantined PostgreSQL worker job envelope: %#v %v", stored, err)
+	}
+	var status model.WorkerJobStatus
+	if err := repository.db.QueryRow(`SELECT status FROM scanner_worker_jobs WHERE id=$1`, job.ID).Scan(&status); err != nil {
+		t.Fatalf("read quarantined PostgreSQL worker job status: %v", err)
+	}
+	if status != model.WorkerJobCanceled {
+		t.Fatalf("quarantined PostgreSQL worker job status = %s, want %s", status, model.WorkerJobCanceled)
+	}
+	projected, err := repository.Get(job.ScanID)
+	if err != nil || projected.Status != model.StatusFailed || projected.Error != workerLeaseFailureReason ||
+		projected.CompletedAt == nil || !projected.CompletedAt.Equal(leaseAt) {
+		t.Fatalf("PostgreSQL quarantined scan state changed: %#v %v", projected, err)
+	}
+}
+
 func enrollPostgreSQLTestWorker(
 	t *testing.T,
 	repository *PostgreSQLStore,

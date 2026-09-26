@@ -356,7 +356,9 @@ and terminal job expiry. Worker-evidence coverage checks contiguous sequencing,
 idempotent retry and changed-payload rejection, final-batch enforcement,
 checkpoint completeness, result replay protection, lease consumption, and
 projection into scan, finding, asset-service, and evidence provenance records.
-The configured database role
+Worker-resilience coverage checks checkpoint-aware reassignment, signed resume
+state, assignment history, stale-worker evidence rejection, bounded expired
+lease retries, dead-letter visibility, and failed-scan projection. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 
