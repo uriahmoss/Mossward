@@ -501,6 +501,7 @@ failure and health states.
     - [x] Opt-in endpoint coverage classification and authorized discovery-policy integration contract
     - [x] Scanner-worker enrollment, certificate identity, health, dispatch, and revocation integration contract
     - [x] Scanner-worker signed-job replay, load, lease, renewal, reclamation, and expiry integration contract
+    - [x] Scanner-worker ordered evidence, checkpoint, result replay, completion, and projection integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement

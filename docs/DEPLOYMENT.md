@@ -352,7 +352,11 @@ per-worker dispatch controls, audited revocation, and rejection of revoked
 worker heartbeats and dispatch changes. Worker-job coverage checks immutable
 signed-envelope storage, replay rejection, concurrency load accounting,
 worker-bound and token-bound leases, renewal limits, expired-lease reclamation,
-and terminal job expiry. The configured database role
+and terminal job expiry. Worker-evidence coverage checks contiguous sequencing,
+idempotent retry and changed-payload rejection, final-batch enforcement,
+checkpoint completeness, result replay protection, lease consumption, and
+projection into scan, finding, asset-service, and evidence provenance records.
+The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

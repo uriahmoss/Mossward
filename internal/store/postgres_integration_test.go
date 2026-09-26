@@ -1269,6 +1269,115 @@ func TestPostgreSQLWorkerJobLeaseLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLWorkerEvidenceAndResultProjection(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	worker := enrollPostgreSQLTestWorker(t, repository, administrator, now, "postgres-evidence-worker")
+	job := model.WorkerJob{SchemaVersion: 1, ID: "postgres-evidence-job", WorkerID: worker.ID,
+		ScanID: "postgres-evidence-scan", IssuedAt: now, ExpiresAt: now.Add(10 * time.Minute),
+		Targets: []model.Target{{Name: "host", Address: "192.0.2.20"}}, Ports: []int{443, 8443},
+		MaxConcurrent: 1, RequiredCapabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect},
+		Status: model.WorkerJobPending}
+	scan := model.Scan{ID: job.ScanID, Name: "PostgreSQL remote scan", Targets: job.Targets, Ports: job.Ports,
+		Status: model.StatusQueued, TotalChecks: 2, CreatedAt: now}
+	if err := repository.Save(scan); err != nil {
+		t.Fatalf("save PostgreSQL remote scan: %v", err)
+	}
+	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Algorithm: "Ed25519",
+		KeyID: "postgres-evidence-key", Job: job, Signature: "postgres-evidence-job-signature"}, now); err != nil {
+		t.Fatalf("create PostgreSQL evidence job: %v", err)
+	}
+	leaseHash := []byte("postgres-evidence-lease-hash")
+	if _, err := repository.LeaseScannerWorkerJob(worker.ID, leaseHash, now, now.Add(5*time.Minute)); err != nil {
+		t.Fatalf("lease PostgreSQL evidence job: %v", err)
+	}
+	first := model.SignedWorkerEvidenceBatch{Algorithm: "Ed25519", CertificateSerial: worker.CertificateSerial,
+		Signature: "postgres-evidence-signature-1", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+			ID: "postgres-evidence-batch-1", WorkerID: worker.ID, JobID: job.ID, ScanID: job.ScanID,
+			Sequence: 1, CollectedAt: now.Add(time.Minute),
+			Observations: []model.ServiceObservation{{ID: "postgres-worker-observation", Target: "host",
+				Address: "192.0.2.20", Port: 443, Protocol: "https", Product: "nginx", Version: "1.26",
+				Confidence: "high", Evidence: "TLS service", ObservedAt: now.Add(time.Minute)}},
+			Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.20", Port: 443,
+				CompletedAt: now.Add(time.Minute)}}}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(first, now.Add(time.Minute)); err != nil {
+		t.Fatalf("record first PostgreSQL worker evidence batch: %v", err)
+	}
+	if err := repository.RecordScannerWorkerEvidenceBatch(first, now.Add(time.Minute)); !errors.Is(err, ErrWorkerEvidenceAlreadyAccepted) {
+		t.Fatalf("exact PostgreSQL worker evidence retry error = %v, want %v", err, ErrWorkerEvidenceAlreadyAccepted)
+	}
+	tamperedBatch := first
+	tamperedBatch.Signature = "tampered-signature"
+	if err := repository.RecordScannerWorkerEvidenceBatch(tamperedBatch, now.Add(time.Minute)); !errors.Is(err, ErrWorkerEvidenceReplay) {
+		t.Fatalf("changed PostgreSQL worker evidence replay error = %v, want %v", err, ErrWorkerEvidenceReplay)
+	}
+	gap := first
+	gap.Batch.ID = "postgres-evidence-batch-3"
+	gap.Batch.Sequence = 3
+	if err := repository.RecordScannerWorkerEvidenceBatch(gap, now.Add(2*time.Minute)); !errors.Is(err, ErrWorkerEvidenceSequence) {
+		t.Fatalf("PostgreSQL worker evidence sequence gap error = %v, want %v", err, ErrWorkerEvidenceSequence)
+	}
+	receipt := model.WorkerJobResultReceipt{ResultID: "postgres-worker-result", JobID: job.ID, WorkerID: worker.ID,
+		Outcome: model.WorkerJobResultSucceeded, CompletedAt: now.Add(3 * time.Minute), AcceptedAt: now.Add(3 * time.Minute)}
+	if err := repository.CompleteScannerWorkerJob(receipt, leaseHash, receipt.AcceptedAt); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("incomplete PostgreSQL worker result error = %v, want %v", err, ErrInvalidWorkerJobLease)
+	}
+	final := model.SignedWorkerEvidenceBatch{Algorithm: "Ed25519", CertificateSerial: worker.CertificateSerial,
+		Signature: "postgres-evidence-signature-2", Batch: model.WorkerEvidenceBatch{SchemaVersion: 1,
+			ID: "postgres-evidence-batch-2", WorkerID: worker.ID, JobID: job.ID, ScanID: job.ScanID,
+			Sequence: 2, Final: true, CollectedAt: now.Add(2 * time.Minute),
+			Findings: []model.Finding{{ID: "postgres-worker-finding", CheckID: "tls.configuration",
+				Target: "host", Address: "192.0.2.20", Port: 8443, Service: "https", Severity: "medium",
+				Title: "TLS configuration observed", Evidence: "remote evidence", ObservedAt: now.Add(2 * time.Minute)}},
+			Checkpoints: []model.WorkerCheckpoint{{Address: "192.0.2.20", Port: 8443,
+				CompletedAt: now.Add(2 * time.Minute)}}}}
+	if err := repository.RecordScannerWorkerEvidenceBatch(final, now.Add(2*time.Minute)); err != nil {
+		t.Fatalf("record final PostgreSQL worker evidence batch: %v", err)
+	}
+	afterFinal := final
+	afterFinal.Batch.ID = "postgres-evidence-after-final"
+	afterFinal.Batch.Sequence = 3
+	afterFinal.Batch.Final = false
+	if err := repository.RecordScannerWorkerEvidenceBatch(afterFinal, now.Add(150*time.Second)); !errors.Is(err, ErrWorkerEvidenceSequence) {
+		t.Fatalf("PostgreSQL evidence after final error = %v, want %v", err, ErrWorkerEvidenceSequence)
+	}
+	checkpoints, err := repository.ScannerWorkerJobCheckpoints(job.ID)
+	if err != nil || len(checkpoints) != 2 || checkpoints[0].Port != 443 || checkpoints[1].Port != 8443 {
+		t.Fatalf("PostgreSQL worker checkpoints changed: %#v %v", checkpoints, err)
+	}
+	if err := repository.CompleteScannerWorkerJob(receipt, leaseHash, receipt.AcceptedAt); err != nil {
+		t.Fatalf("complete PostgreSQL worker job: %v", err)
+	}
+	if err := repository.CompleteScannerWorkerJob(receipt, leaseHash, receipt.AcceptedAt); !errors.Is(err, ErrWorkerResultAlreadyAccepted) {
+		t.Fatalf("exact PostgreSQL worker result retry error = %v, want %v", err, ErrWorkerResultAlreadyAccepted)
+	}
+	tamperedReceipt := receipt
+	tamperedReceipt.CompletedAt = tamperedReceipt.CompletedAt.Add(time.Second)
+	if err := repository.CompleteScannerWorkerJob(tamperedReceipt, leaseHash, receipt.AcceptedAt); !errors.Is(err, ErrWorkerResultReplay) {
+		t.Fatalf("changed PostgreSQL worker result replay error = %v, want %v", err, ErrWorkerResultReplay)
+	}
+	reusedReceipt := receipt
+	reusedReceipt.ResultID = "postgres-worker-result-reuse"
+	if err := repository.CompleteScannerWorkerJob(reusedReceipt, leaseHash, receipt.AcceptedAt); !errors.Is(err, ErrInvalidWorkerJobLease) {
+		t.Fatalf("reused PostgreSQL worker lease error = %v, want %v", err, ErrInvalidWorkerJobLease)
+	}
+	projected, err := repository.Get(scan.ID)
+	if err != nil || projected.Status != model.StatusCompleted || projected.DoneChecks != 2 ||
+		len(projected.Observations) != 1 || len(projected.Findings) != 1 || len(projected.Checkpoints) != 2 ||
+		projected.CompletedAt == nil || !projected.CompletedAt.Equal(receipt.CompletedAt) {
+		t.Fatalf("PostgreSQL worker result projection changed: %#v %v", projected, err)
+	}
+	var sourceID string
+	if err := repository.db.QueryRow(`SELECT source_id FROM asset_service_events WHERE observation_id=$1`,
+		"postgres-worker-observation").Scan(&sourceID); err != nil {
+		t.Fatalf("read PostgreSQL worker evidence provenance: %v", err)
+	}
+	if sourceID != "scanner-worker/"+worker.ID {
+		t.Fatalf("PostgreSQL worker evidence source = %q, want %q", sourceID, "scanner-worker/"+worker.ID)
+	}
+}
+
 func enrollPostgreSQLTestWorker(
 	t *testing.T,
 	repository *PostgreSQLStore,
