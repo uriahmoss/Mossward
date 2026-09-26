@@ -379,7 +379,10 @@ group membership, endpoint links, deletion of the merged identity, and audit
 history. Identity-key rotation coverage checks atomic re-encryption of TOTP,
 WebAuthn credential and ceremony, OIDC client-secret, and SMTP password
 ciphertexts, including complete rollback when any legacy ciphertext cannot be
-decrypted and one audit event after success. The configured database role
+decrypted and one audit event after success. CVE intelligence coverage checks
+feed success and failure state, preserved last-success timestamps, normalized
+affected-version boundaries, scan-match enrichment, reference replacement, and
+environment-matched critical-news priority. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 

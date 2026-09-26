@@ -2137,6 +2137,110 @@ func TestPostgreSQLIdentityCiphertextRotationIsAtomic(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLCVEFeedScanMatchAndCriticalNews(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	initial, err := repository.FeedStatus()
+	if err != nil || initial.Status != "not_synced" || initial.DatabaseCVEs != 0 || initial.LastStarted != nil ||
+		initial.LastSuccess != nil {
+		t.Fatalf("unexpected initial PostgreSQL CVE feed state: %#v %v", initial, err)
+	}
+	if err := repository.RecordFeedStart("NVD", now); err != nil {
+		t.Fatalf("start PostgreSQL CVE feed: %v", err)
+	}
+	running, err := repository.FeedStatus()
+	if err != nil || running.Status != "running" || running.LastStarted == nil || !running.LastStarted.Equal(now) {
+		t.Fatalf("PostgreSQL running CVE feed state changed: %#v %v", running, err)
+	}
+	matchedCVE := model.CVERecord{ID: "CVE-POSTGRES-NEWS-0001", Description: "Critical nginx issue",
+		PublishedAt: now.Add(-time.Hour), ModifiedAt: now, CVSSScore: 9.8,
+		CVSSVector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", Severity: "CRITICAL",
+		SourceURL: "https://example.test/cve/matched", Products: []model.AffectedProduct{{
+			CPE23: "cpe:2.3:a:nginx:nginx:*:*:*:*:*:*:*:*", Part: "A", Vendor: "NGINX", Product: "NGINX",
+			VersionStartIncluding: "1.20.0", VersionEndExcluding: "1.25.4", Vulnerable: true}},
+		References: []model.CVEReference{{URL: "https://example.test/advisory/matched", Source: "vendor"}}}
+	generalCVE := model.CVERecord{ID: "CVE-POSTGRES-NEWS-0002", Description: "General critical issue",
+		PublishedAt: now, ModifiedAt: now, CVSSScore: 10, Severity: "critical", KnownExploited: true,
+		SourceURL: "https://example.test/cve/general", Products: []model.AffectedProduct{{
+			CPE23: "cpe:2.3:a:example:unobserved:*:*:*:*:*:*:*:*", Part: "a", Vendor: "example",
+			Product: "unobserved", Version: "9.9.9", Vulnerable: true}},
+		References: []model.CVEReference{{URL: "https://example.test/advisory/general", Source: "vendor"}}}
+	if err := repository.UpsertCVEs([]model.CVERecord{matchedCVE, generalCVE}); err != nil {
+		t.Fatalf("store PostgreSQL CVE catalog: %v", err)
+	}
+	observation := model.ServiceObservation{ID: "postgres-cve-observation", Target: "web",
+		Address: "192.0.2.80", Port: 443, Protocol: "https", Product: "nginx", Version: "1.25.3",
+		Confidence: "high", Evidence: "nginx version banner", ObservedAt: now}
+	matches, err := repository.MatchObservation(observation)
+	if err != nil || len(matches) != 1 || matches[0].CVEID != matchedCVE.ID ||
+		matches[0].Severity != "critical" || matches[0].KnownExploited || matches[0].ObservationID != observation.ID {
+		t.Fatalf("PostgreSQL CVE observation match changed: %#v %v", matches, err)
+	}
+	notAffected := observation
+	notAffected.ID = "postgres-cve-unaffected-observation"
+	notAffected.Version = "1.25.4"
+	if matches, err := repository.MatchObservation(notAffected); err != nil || len(matches) != 0 {
+		t.Fatalf("PostgreSQL excluded CVE boundary matched: %#v %v", matches, err)
+	}
+	withoutVersion := observation
+	withoutVersion.ID = "postgres-cve-versionless-observation"
+	withoutVersion.Version = ""
+	if matches, err := repository.MatchObservation(withoutVersion); err != nil || len(matches) != 0 {
+		t.Fatalf("PostgreSQL versionless observation matched: %#v %v", matches, err)
+	}
+	completedAt := now.Add(time.Minute)
+	scan := model.Scan{ID: "postgres-cve-scan", Name: "CVE match scan",
+		Targets: []model.Target{{Name: observation.Target, Address: observation.Address}}, Ports: []int{observation.Port},
+		Status: model.StatusCompleted, TotalChecks: 1, DoneChecks: 1, CreatedAt: now, CompletedAt: &completedAt,
+		Observations: []model.ServiceObservation{observation}, CVEMatches: matches}
+	if err := repository.Save(scan); err != nil {
+		t.Fatalf("save PostgreSQL CVE-matched scan: %v", err)
+	}
+	loaded, err := repository.Get(scan.ID)
+	if err != nil || len(loaded.CVEMatches) != 1 || loaded.CVEMatches[0].CVEID != matchedCVE.ID ||
+		loaded.CVEMatches[0].Description != matchedCVE.Description ||
+		loaded.CVEMatches[0].CVSSScore != matchedCVE.CVSSScore || loaded.CVEMatches[0].Severity != "critical" {
+		t.Fatalf("PostgreSQL scan CVE match changed: %#v %v", loaded.CVEMatches, err)
+	}
+	news, err := repository.ListCriticalNews(6)
+	if err != nil || len(news) != 2 || news[0].ID != matchedCVE.ID || news[0].Relevance != "matched" ||
+		!strings.Contains(news[0].Evidence, "nginx 1.25.3") || news[1].ID != generalCVE.ID ||
+		news[1].Relevance != "general" {
+		t.Fatalf("PostgreSQL critical CVE news ordering changed: %#v %v", news, err)
+	}
+	matchedCVE.References = []model.CVEReference{{URL: "https://example.test/advisory/replaced", Source: "updated"}}
+	if err := repository.UpsertCVEs([]model.CVERecord{matchedCVE}); err != nil {
+		t.Fatalf("replace PostgreSQL CVE references: %v", err)
+	}
+	var referenceCount int
+	var referenceURL string
+	if err := repository.db.QueryRow(`SELECT COUNT(*),MIN(url) FROM cve_references WHERE cve_id=$1`, matchedCVE.ID).
+		Scan(&referenceCount, &referenceURL); err != nil || referenceCount != 1 || referenceURL != matchedCVE.References[0].URL {
+		t.Fatalf("PostgreSQL CVE references were not replaced: count=%d url=%q err=%v",
+			referenceCount, referenceURL, err)
+	}
+	succeededAt := now.Add(2 * time.Minute)
+	if err := repository.RecordFeedResult("NVD", succeededAt, 2, ""); err != nil {
+		t.Fatalf("complete PostgreSQL CVE feed: %v", err)
+	}
+	ready, err := repository.FeedStatus()
+	if err != nil || ready.Status != "ready" || ready.LastSuccess == nil || !ready.LastSuccess.Equal(succeededAt) ||
+		ready.Records != 2 || ready.DatabaseCVEs != 2 || ready.Error != "" {
+		t.Fatalf("PostgreSQL ready CVE feed state changed: %#v %v", ready, err)
+	}
+	if err := repository.RecordFeedStart("NVD", now.Add(3*time.Minute)); err != nil {
+		t.Fatalf("restart PostgreSQL CVE feed: %v", err)
+	}
+	if err := repository.RecordFeedResult("NVD", now.Add(4*time.Minute), 0, "upstream unavailable"); err != nil {
+		t.Fatalf("fail PostgreSQL CVE feed: %v", err)
+	}
+	failed, err := repository.FeedStatus()
+	if err != nil || failed.Status != "failed" || failed.LastSuccess == nil || !failed.LastSuccess.Equal(succeededAt) ||
+		failed.Records != 0 || failed.Error != "upstream unavailable" || failed.DatabaseCVEs != 2 {
+		t.Fatalf("PostgreSQL failed CVE feed state changed: %#v %v", failed, err)
+	}
+}
+
 type postgreSQLTestRotationCipher struct{}
 
 func (postgreSQLTestRotationCipher) Decrypt(ciphertext []byte) ([]byte, error) {

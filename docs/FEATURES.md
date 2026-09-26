@@ -509,6 +509,7 @@ failure and health states.
     - [x] Agent-module publisher, release, assignment, offer, health, emergency-stop, and revocation integration contract
     - [x] Administrator asset merge, selected values, history, groups, evidence, services, and endpoint-link integration contract
     - [x] Atomic TOTP, WebAuthn, OIDC, and SMTP ciphertext-rotation integration contract
+    - [x] CVE feed lifecycle, version matching, scan persistence, reference replacement, and critical-news integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
     - [ ] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement
