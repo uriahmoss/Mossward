@@ -461,6 +461,15 @@ func TestPostgreSQLOIDCProviderTrustLifecycle(t *testing.T) {
 	if err != nil || stored.Provider.Enabled || stored.Provider.TestedAt != nil {
 		t.Fatalf("changed PostgreSQL OIDC provider retained trust: %#v %v", stored, err)
 	}
+	providers, err := repository.ListOIDCProviders()
+	if err != nil || len(providers) != 1 || providers[0].Provider.ID != provider.ID ||
+		providers[0].Provider.ClientID != record.Provider.ClientID || providers[0].Provider.Enabled ||
+		providers[0].Provider.TestedAt != nil ||
+		!reflect.DeepEqual(providers[0].ClientSecretCiphertext, record.ClientSecretCiphertext) ||
+		!reflect.DeepEqual(providers[0].Provider.AllowedGroups, provider.AllowedGroups) ||
+		!reflect.DeepEqual(providers[0].Provider.RoleMappings, provider.RoleMappings) {
+		t.Fatalf("PostgreSQL OIDC provider catalog changed: %#v %v", providers, err)
+	}
 }
 
 func TestPostgreSQLOIDCProvisioningModes(t *testing.T) {
@@ -538,6 +547,23 @@ func TestPostgreSQLScopeAndPolicyTargetingContract(t *testing.T) {
 		!reflect.DeepEqual(storedScope.AllowedPorts, scope.AllowedPorts) {
 		t.Fatalf("PostgreSQL scope policy round trip changed: %#v %v", storedScope, err)
 	}
+	disabledScope := scope
+	disabledScope.ID = "postgres-disabled-scope"
+	disabledScope.Name = "Disabled scope"
+	disabledScope.Enabled = false
+	if err := repository.UpsertScopePolicy(disabledScope, scopeEvent); err != nil {
+		t.Fatalf("save disabled PostgreSQL scope policy: %v", err)
+	}
+	allScopes, err := repository.ListScopePolicies(false)
+	if err != nil || len(allScopes) != 2 || allScopes[0].ID != disabledScope.ID || allScopes[1].ID != scope.ID {
+		t.Fatalf("PostgreSQL scope policy catalog changed: %#v %v", allScopes, err)
+	}
+	enabledScopes, err := repository.ListScopePolicies(true)
+	if err != nil || len(enabledScopes) != 1 || enabledScopes[0].ID != scope.ID ||
+		!reflect.DeepEqual(enabledScopes[0].AllowedCIDRs, scope.AllowedCIDRs) ||
+		enabledScopes[0].OrganizationID != organization.ID {
+		t.Fatalf("PostgreSQL enabled scope policy catalog changed: %#v %v", enabledScopes, err)
+	}
 
 	if err := repository.Save(serviceHistoryScan("postgres-policy-asset", "postgres-policy-observation", now, true)); err != nil {
 		t.Fatalf("create PostgreSQL policy target asset: %v", err)
@@ -566,6 +592,25 @@ func TestPostgreSQLScopeAndPolicyTargetingContract(t *testing.T) {
 	policyEvent := postgresIdentityAuditEvent(now, administrator.ID, "scan_policy.updated", "scan_policy", policy.ID)
 	if err := repository.UpsertReusableScanPolicy(policy, policyEvent); err != nil {
 		t.Fatalf("save PostgreSQL reusable scan policy: %v", err)
+	}
+	disabledPolicy := policy
+	disabledPolicy.ID = "postgres-disabled-policy"
+	disabledPolicy.Name = "Disabled scan"
+	disabledPolicy.Enabled = false
+	disabledPolicy.GroupIDs = []string{"postgres-group-one"}
+	disabledPolicy.NextRunAt = nil
+	if err := repository.UpsertReusableScanPolicy(disabledPolicy, policyEvent); err != nil {
+		t.Fatalf("save disabled PostgreSQL reusable scan policy: %v", err)
+	}
+	allPolicies, err := repository.ListReusableScanPolicies(false)
+	if err != nil || len(allPolicies) != 2 || allPolicies[0].ID != disabledPolicy.ID || allPolicies[1].ID != policy.ID ||
+		!reflect.DeepEqual(allPolicies[0].GroupIDs, disabledPolicy.GroupIDs) {
+		t.Fatalf("PostgreSQL reusable scan policy catalog changed: %#v %v", allPolicies, err)
+	}
+	enabledPolicies, err := repository.ListReusableScanPolicies(true)
+	if err != nil || len(enabledPolicies) != 1 || enabledPolicies[0].ID != policy.ID ||
+		!reflect.DeepEqual(enabledPolicies[0].GroupIDs, policy.GroupIDs) || enabledPolicies[0].ScheduleTimezone != policy.ScheduleTimezone {
+		t.Fatalf("PostgreSQL enabled reusable scan policy catalog changed: %#v %v", enabledPolicies, err)
 	}
 	storedPolicy, err := repository.ReusableScanPolicy(policy.ID)
 	if err != nil || !reflect.DeepEqual(storedPolicy.GroupIDs, policy.GroupIDs) || storedPolicy.ScheduleTimezone != policy.ScheduleTimezone ||

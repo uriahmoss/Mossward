@@ -317,10 +317,12 @@ trail. WebAuthn coverage includes encrypted credential state, authenticator
 counters and backup flags, and kind-bound single-use ceremonies. OIDC coverage
 checks encrypted provider secrets, mandatory retesting after
 configuration changes, invite-only provisioning, JIT provisioning, and linked
-role refresh. Scope and targeting coverage verifies the single-organization
+role refresh, plus complete provider catalog decoding. Scope and targeting
+coverage verifies enabled-only catalog filtering, the single-organization
 boundary, scoped CIDRs and ports, overlapping group target deduplication, reverse
-group-to-policy visibility, per-policy maintenance windows, time zones, worker
-sites, and schedule checkpoints. Endpoint identity coverage checks expiring and
+group-to-policy visibility, reusable-policy catalog filtering, per-policy
+maintenance windows, time zones, worker sites, and schedule checkpoints.
+Endpoint identity coverage checks expiring and
 single-use enrollment tokens, collector and telemetry-exclusion policies,
 check-ins, certificate serial rotation with stale-update rejection, and
 revocation. Inventory coverage checks collection and receipt provenance for OS,
