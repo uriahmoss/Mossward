@@ -931,8 +931,39 @@ func TestPostgreSQLRelayAuthorizationBoundaries(t *testing.T) {
 	if err != nil || len(downstreams) != 1 || downstreams[0].Status != model.EndpointRelayActive {
 		t.Fatalf("PostgreSQL active downstream authorization missing: %#v %v", downstreams, err)
 	}
+	downstreamRevokedAt := now.Add(2 * time.Minute)
+	downstreamRevokeEvent := postgresIdentityAuditEvent(downstreamRevokedAt, administrator.ID,
+		"endpoint.relay_downstream.revoked", "endpoint", downstream.ID)
+	if err := repository.RevokeRelayDownstream(relay.ID, downstream.ID, "segment access retired", administrator.ID,
+		downstreamRevokedAt, downstreamRevokeEvent); err != nil {
+		t.Fatalf("revoke PostgreSQL relay downstream: %v", err)
+	}
+	downstreams, err = repository.ListRelayDownstreamAuthorizations()
+	if err != nil || len(downstreams) != 1 || downstreams[0].Status != model.EndpointRelayRevoked ||
+		downstreams[0].RevocationReason != "segment access retired" || downstreams[0].RevokedBy != administrator.ID ||
+		downstreams[0].RevokedAt == nil || !downstreams[0].RevokedAt.Equal(downstreamRevokedAt) {
+		t.Fatalf("PostgreSQL explicit downstream revocation changed: %#v %v", downstreams, err)
+	}
+	relays, err = repository.ListEndpointRelayAuthorizations()
+	if err != nil || len(relays) != 1 || relays[0].Status != model.EndpointRelayActive {
+		t.Fatalf("PostgreSQL downstream revocation changed relay authorization: %#v %v", relays, err)
+	}
+	if err := repository.RevokeRelayDownstream(relay.ID, downstream.ID, "duplicate", administrator.ID,
+		downstreamRevokedAt, downstreamRevokeEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("duplicate PostgreSQL downstream revocation error = %v, want %v", err, ErrNotFound)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "endpoint.relay_downstream.revoked", Limit: 10})
+	if err != nil || len(events) != 1 || events[0].TargetID != downstream.ID {
+		t.Fatalf("PostgreSQL downstream revocation audit evidence changed: %#v %v", events, err)
+	}
 
-	revokedAt := now.Add(2 * time.Minute)
+	authorization.ID = "postgres-downstream-reauthorization"
+	authorization.AuthorizedAt = now.Add(3 * time.Minute)
+	if err := repository.AuthorizeRelayDownstream(authorization, downstreamEvent); err != nil {
+		t.Fatalf("reauthorize PostgreSQL relay downstream: %v", err)
+	}
+
+	revokedAt := now.Add(4 * time.Minute)
 	revokeEvent := postgresIdentityAuditEvent(revokedAt, administrator.ID, "endpoint.relay.revoked", "endpoint", relay.ID)
 	if err := repository.RevokeEndpointRelay(relay.ID, "network path retired", administrator.ID, revokedAt, revokeEvent); err != nil {
 		t.Fatalf("revoke PostgreSQL endpoint relay: %v", err)
@@ -943,7 +974,7 @@ func TestPostgreSQLRelayAuthorizationBoundaries(t *testing.T) {
 		t.Fatalf("PostgreSQL relay revocation state changed: %#v %v", relays, err)
 	}
 	downstreams, err = repository.ListRelayDownstreamAuthorizations()
-	if err != nil || len(downstreams) != 1 || downstreams[0].Status != model.EndpointRelayRevoked ||
+	if err != nil || len(downstreams) != 2 || downstreams[0].Status != model.EndpointRelayRevoked ||
 		downstreams[0].RevocationReason != "relay authorization revoked" || downstreams[0].RevokedAt == nil {
 		t.Fatalf("PostgreSQL downstream cascade revocation changed: %#v %v", downstreams, err)
 	}
@@ -1022,6 +1053,11 @@ func TestPostgreSQLRelayWindowAndDelayedHeartbeatPolicy(t *testing.T) {
 			t.Fatalf("save PostgreSQL delayed-heartbeat policy for %q: %v", policy.TargetID, err)
 		}
 	}
+	storedPolicies, err := repository.ListDelayedHeartbeatPolicies()
+	if err != nil || len(storedPolicies) != 2 || storedPolicies[0].TargetID != groupIDs[0] ||
+		storedPolicies[1].TargetID != groupIDs[1] {
+		t.Fatalf("PostgreSQL delayed-heartbeat policy catalog changed: %#v %v", storedPolicies, err)
+	}
 	resolved, err := repository.ResolveDelayedHeartbeatPolicy(endpoint.ID)
 	if err != nil || resolved.AllowDelayedHeartbeats || !resolved.Conflict || resolved.Source != "group_conflict_deny" {
 		t.Fatalf("PostgreSQL delayed-heartbeat conflict did not fail closed: %#v %v", resolved, err)
@@ -1032,6 +1068,10 @@ func TestPostgreSQLRelayWindowAndDelayedHeartbeatPolicy(t *testing.T) {
 	if err := repository.UpsertDelayedHeartbeatPolicy(override, heartbeatEvent); err != nil {
 		t.Fatalf("save PostgreSQL delayed-heartbeat endpoint override: %v", err)
 	}
+	storedPolicies, err = repository.ListDelayedHeartbeatPolicies()
+	if err != nil || len(storedPolicies) != 3 {
+		t.Fatalf("PostgreSQL delayed-heartbeat endpoint override missing from catalog: %#v %v", storedPolicies, err)
+	}
 	resolved, err = repository.ResolveDelayedHeartbeatPolicy(endpoint.ID)
 	if err != nil || !resolved.AllowDelayedHeartbeats || resolved.Conflict || resolved.Source != "endpoint_override" ||
 		resolved.PostWindowGraceMinutes != override.PostWindowGraceMinutes {
@@ -1039,6 +1079,13 @@ func TestPostgreSQLRelayWindowAndDelayedHeartbeatPolicy(t *testing.T) {
 	}
 	if err := repository.DeleteDelayedHeartbeatPolicy(model.MaintenanceTargetEndpoint, endpoint.ID, heartbeatEvent); err != nil {
 		t.Fatalf("delete PostgreSQL delayed-heartbeat endpoint override: %v", err)
+	}
+	storedPolicies, err = repository.ListDelayedHeartbeatPolicies()
+	if err != nil || len(storedPolicies) != 2 {
+		t.Fatalf("PostgreSQL deleted delayed-heartbeat policy remains in catalog: %#v %v", storedPolicies, err)
+	}
+	if err := repository.DeleteDelayedHeartbeatPolicy(model.MaintenanceTargetEndpoint, endpoint.ID, heartbeatEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("duplicate PostgreSQL delayed-heartbeat deletion error = %v, want %v", err, ErrNotFound)
 	}
 	resolved, err = repository.ResolveDelayedHeartbeatPolicy(endpoint.ID)
 	if err != nil || resolved.AllowDelayedHeartbeats || !resolved.Conflict || resolved.Source != "group_conflict_deny" {

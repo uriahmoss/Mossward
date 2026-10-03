@@ -335,11 +335,13 @@ expired and disabled indicator filtering, process context, and removal of
 obsolete matches when an inventory snapshot is replaced. It does not perform
 traffic blocking or remediation. Relay coverage checks explicit promotion,
 self-assignment and duplicate-assignment rejection, exclusive downstream
-authorization, and cascade revocation. It does not permit peer-to-peer control,
+authorization, explicit downstream deauthorization without demoting the relay,
+immutable revocation history, and cascade revocation. It does not permit peer-to-peer control,
 self-promotion, or automatic downstream discovery. Relay scheduling coverage
 checks direct and group-inherited upload windows, time zones and weekdays,
 existing-target enforcement, fail-closed group conflicts for delayed heartbeats,
-and explicit endpoint overrides. Health-policy coverage checks secure heartbeat
+explicit endpoint overrides, policy catalog reads, and audited deletion behavior.
+Health-policy coverage checks secure heartbeat
 defaults, database-enforced threshold ordering, group and endpoint maintenance
 windows, time-bound activation, cancellation history, and missing-target
 rejection. Coverage checks remain opt-in and distinguish eligible gaps from

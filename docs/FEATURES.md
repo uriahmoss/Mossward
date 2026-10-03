@@ -497,6 +497,7 @@ failure and health states.
     - [x] Endpoint network inventory and active IP/hostname indicator detection integration contract
     - [x] Explicit relay promotion, exclusive downstream authorization, and cascade-revocation integration contract
     - [x] Relay upload-window inheritance and fail-closed delayed-heartbeat policy integration contract
+    - [x] Explicit downstream deauthorization and delayed-heartbeat policy catalog lifecycle integration contract
     - [x] Endpoint heartbeat thresholds and endpoint/group maintenance-suppression integration contract
     - [x] Opt-in endpoint coverage classification and authorized discovery-policy integration contract
     - [x] Scanner-worker enrollment, certificate identity, health, dispatch, and revocation integration contract
