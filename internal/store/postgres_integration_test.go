@@ -268,6 +268,65 @@ func TestPostgreSQLSessionAndInvitationLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLSessionAndInvitationRevocationControls(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	sessions := []model.Session{
+		{PublicID: "postgres-current-session", IDHash: []byte("postgres-current-session-hash"), UserID: administrator.ID,
+			CreatedAt: now, ExpiresAt: now.Add(time.Hour), LastSeenAt: now, SourceIP: "192.0.2.10",
+			UserAgentHash: []byte("postgres-current-user-agent")},
+		{PublicID: "postgres-other-session-one", IDHash: []byte("postgres-other-session-one-hash"), UserID: administrator.ID,
+			CreatedAt: now.Add(time.Second), ExpiresAt: now.Add(time.Hour), LastSeenAt: now.Add(time.Second),
+			SourceIP: "192.0.2.11", UserAgentHash: []byte("postgres-other-user-agent-one")},
+		{PublicID: "postgres-other-session-two", IDHash: []byte("postgres-other-session-two-hash"), UserID: administrator.ID,
+			CreatedAt: now.Add(2 * time.Second), ExpiresAt: now.Add(time.Hour), LastSeenAt: now.Add(2 * time.Second),
+			SourceIP: "192.0.2.12", UserAgentHash: []byte("postgres-other-user-agent-two")},
+	}
+	for _, session := range sessions {
+		event := postgresIdentityAuditEvent(session.CreatedAt, administrator.ID,
+			"identity.login.succeeded", "session", session.PublicID)
+		if err := repository.CreateSession(session, event); err != nil {
+			t.Fatalf("create PostgreSQL session %q: %v", session.PublicID, err)
+		}
+	}
+	revokeOthersEvent := postgresIdentityAuditEvent(now.Add(3*time.Second), administrator.ID,
+		"identity.sessions.others_revoked", "user", administrator.ID)
+	if err := repository.RevokeOtherUserSessions(administrator.ID, sessions[0].IDHash, revokeOthersEvent); err != nil {
+		t.Fatalf("revoke other PostgreSQL user sessions: %v", err)
+	}
+	remaining, err := repository.ListUserSessions(administrator.ID, sessions[0].IDHash, now.Add(4*time.Second))
+	if err != nil || len(remaining) != 1 || remaining[0].ID != sessions[0].PublicID || !remaining[0].Current {
+		t.Fatalf("PostgreSQL current-session preservation changed: %#v %v", remaining, err)
+	}
+	for _, revoked := range sessions[1:] {
+		if _, err := repository.SessionUser(revoked.IDHash, now.Add(4*time.Second)); !errors.Is(err, ErrIdentityNotFound) {
+			t.Fatalf("revoked PostgreSQL session %q lookup error = %v, want %v", revoked.PublicID, err, ErrIdentityNotFound)
+		}
+	}
+	if _, err := repository.SessionUser(sessions[0].IDHash, now.Add(4*time.Second)); err != nil {
+		t.Fatalf("preserved PostgreSQL current session is unavailable: %v", err)
+	}
+	deleteEvent := postgresIdentityAuditEvent(now.Add(5*time.Second), administrator.ID,
+		"identity.session.deleted", "session", sessions[0].PublicID)
+	if err := repository.DeleteSession(sessions[0].IDHash, deleteEvent); err != nil {
+		t.Fatalf("delete PostgreSQL current session: %v", err)
+	}
+	if _, err := repository.SessionUser(sessions[0].IDHash, now.Add(6*time.Second)); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("deleted PostgreSQL session lookup error = %v, want %v", err, ErrIdentityNotFound)
+	}
+	remaining, err = repository.ListUserSessions(administrator.ID, sessions[0].IDHash, now.Add(6*time.Second))
+	if err != nil || len(remaining) != 0 {
+		t.Fatalf("PostgreSQL revoked sessions remain in catalog: %#v %v", remaining, err)
+	}
+	for _, action := range []string{"identity.sessions.others_revoked", "identity.session.deleted"} {
+		events, err := repository.ListAuditEvents(model.AuditQuery{Text: action, Limit: 10})
+		if err != nil || len(events) != 1 || events[0].Action != action {
+			t.Fatalf("PostgreSQL session revocation audit %q changed: %#v %v", action, events, err)
+		}
+	}
+}
+
 func TestPostgreSQLIdentityAdministrationAndFinalAdminBoundary(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

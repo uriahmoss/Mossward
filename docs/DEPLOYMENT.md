@@ -312,8 +312,9 @@ repository to verify migration idempotence, and exercise scan persistence plus
 asset, evidence, and service-history projection. They also cover local
 administrator bootstrap, encrypted MFA persistence, one-time recovery-code use,
 authentication-policy persistence, local invitation acceptance, authenticated
-session lookup, MFA elevation, targeted revocation, and the associated audit
-trail. WebAuthn coverage includes encrypted credential state, authenticator
+session lookup, MFA elevation, targeted revocation, current-session-preserving
+revocation of all other sessions, explicit logout, and the associated audit trail.
+WebAuthn coverage includes encrypted credential state, authenticator
 counters and backup flags, and kind-bound single-use ceremonies. OIDC coverage
 checks encrypted provider secrets, mandatory retesting after
 configuration changes, invite-only provisioning, JIT provisioning, and linked
