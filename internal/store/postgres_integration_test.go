@@ -623,6 +623,10 @@ func TestPostgreSQLEndpointIdentityLifecycle(t *testing.T) {
 	if err := repository.ConsumeAgentEnrollmentToken(token.TokenHash, endpoint, now, enrollEvent); err != nil {
 		t.Fatalf("enroll PostgreSQL endpoint: %v", err)
 	}
+	endpoints, err := repository.ListEndpoints()
+	if err != nil || len(endpoints) != 1 || endpoints[0].ID != endpoint.ID || endpoints[0].Status != model.EndpointActive {
+		t.Fatalf("PostgreSQL endpoint catalog changed after enrollment: %#v %v", endpoints, err)
+	}
 	if err := repository.ConsumeAgentEnrollmentToken(token.TokenHash, endpoint, now, enrollEvent); !errors.Is(err, ErrInvalidEnrollmentToken) {
 		t.Fatalf("PostgreSQL endpoint token reuse error = %v, want %v", err, ErrInvalidEnrollmentToken)
 	}
@@ -642,6 +646,16 @@ func TestPostgreSQLEndpointIdentityLifecycle(t *testing.T) {
 	}
 	if err := repository.SetEndpointNetworkExclusions(endpoint.ID, exclusions, policyEvent); err != nil {
 		t.Fatalf("set PostgreSQL endpoint network exclusions: %v", err)
+	}
+	seenAt := now.Add(90 * time.Second)
+	if err := repository.MarkEndpointSeen(endpoint.ID, seenAt); err != nil {
+		t.Fatalf("mark PostgreSQL endpoint seen: %v", err)
+	}
+	endpoints, err = repository.ListEndpoints()
+	if err != nil || len(endpoints) != 1 || endpoints[0].LastSeenAt == nil || !endpoints[0].LastSeenAt.Equal(seenAt) ||
+		!reflect.DeepEqual(endpoints[0].AllowedCollectors, collectors) ||
+		!reflect.DeepEqual(endpoints[0].NetworkExclusions, exclusions) {
+		t.Fatalf("PostgreSQL endpoint catalog policy or last-seen state changed: %#v %v", endpoints, err)
 	}
 	generatedAt := now.Add(2 * time.Minute)
 	receivedAt := generatedAt.Add(30 * time.Second)
@@ -683,6 +697,11 @@ func TestPostgreSQLEndpointIdentityLifecycle(t *testing.T) {
 		stored.RevocationReason != "device retired" {
 		t.Fatalf("PostgreSQL endpoint revocation state changed: %#v %v", stored, err)
 	}
+	endpoints, err = repository.ListEndpoints()
+	if err != nil || len(endpoints) != 1 || endpoints[0].Status != model.EndpointRevoked ||
+		endpoints[0].RevocationReason != "device retired" {
+		t.Fatalf("PostgreSQL endpoint catalog lost revoked identity state: %#v %v", endpoints, err)
+	}
 }
 
 func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
@@ -716,6 +735,11 @@ func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
 	if err := repository.RecordEndpointSoftwareInventory(endpoint.ID, software, receivedAt); err != nil {
 		t.Fatalf("record PostgreSQL endpoint software inventory: %v", err)
 	}
+	storedSoftware, err := repository.EndpointSoftwareInventory(endpoint.ID)
+	if err != nil || storedSoftware.EndpointID != endpoint.ID || !storedSoftware.CollectedAt.Equal(software.CollectedAt) ||
+		!storedSoftware.ReceivedAt.Equal(receivedAt) || !reflect.DeepEqual(storedSoftware.Items, software.Items) {
+		t.Fatalf("PostgreSQL endpoint software inventory changed: %#v %v", storedSoftware, err)
+	}
 	matches, err := repository.EndpointCVEMatches(endpoint.ID)
 	if err != nil || len(matches) != 1 || matches[0].CVEID != cve.ID || !matches[0].KnownExploited ||
 		matches[0].Confidence != "medium" || matches[0].PackageSource != "dpkg" {
@@ -725,6 +749,11 @@ func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
 	software.CollectedAt = now.Add(2 * time.Minute)
 	if err := repository.RecordEndpointSoftwareInventory(endpoint.ID, software, now.Add(3*time.Minute)); err != nil {
 		t.Fatalf("replace PostgreSQL endpoint software inventory: %v", err)
+	}
+	storedSoftware, err = repository.EndpointSoftwareInventory(endpoint.ID)
+	if err != nil || len(storedSoftware.Items) != 1 || storedSoftware.Items[0].Version != "3.0.2" ||
+		!storedSoftware.CollectedAt.Equal(software.CollectedAt) || !storedSoftware.ReceivedAt.Equal(now.Add(3*time.Minute)) {
+		t.Fatalf("PostgreSQL replacement software inventory changed: %#v %v", storedSoftware, err)
 	}
 	matches, err = repository.EndpointCVEMatches(endpoint.ID)
 	if err != nil || len(matches) != 0 {
@@ -756,6 +785,9 @@ func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
 	}
 	if err := repository.RecordEndpointPostureInventory(endpoint.ID, posture, now.Add(5*time.Minute)); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("revoked PostgreSQL endpoint inventory error = %v, want %v", err, ErrNotFound)
+	}
+	if _, err := repository.EndpointSoftwareInventory("missing-endpoint"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing PostgreSQL software inventory error = %v, want %v", err, ErrNotFound)
 	}
 }
 
@@ -1250,11 +1282,20 @@ func TestPostgreSQLEndpointCoverageAndDiscoveryPolicy(t *testing.T) {
 	if err != nil || report.Enabled || len(report.Gaps) != 0 || len(report.Unclassified) != 0 {
 		t.Fatalf("disabled PostgreSQL coverage report exposed results: %#v %v", report, err)
 	}
+	storedSettings, err := repository.EndpointCoverageSettings()
+	if err != nil || storedSettings.Enabled || storedSettings.UpdatedBy != "" || !storedSettings.UpdatedAt.IsZero() {
+		t.Fatalf("PostgreSQL endpoint coverage defaults changed: %#v %v", storedSettings, err)
+	}
 	settings := model.EndpointCoverageSettings{Enabled: true, UpdatedBy: administrator.ID, UpdatedAt: now}
 	coverageEvent := postgresIdentityAuditEvent(now, administrator.ID,
 		"endpoint.coverage.updated", "endpoint_coverage", "global")
 	if err := repository.SetEndpointCoverageSettings(settings, coverageEvent); err != nil {
 		t.Fatalf("enable PostgreSQL endpoint coverage: %v", err)
+	}
+	storedSettings, err = repository.EndpointCoverageSettings()
+	if err != nil || !storedSettings.Enabled || storedSettings.UpdatedBy != administrator.ID ||
+		!storedSettings.UpdatedAt.Equal(now) {
+		t.Fatalf("PostgreSQL endpoint coverage settings changed: %#v %v", storedSettings, err)
 	}
 	report, err = repository.EndpointCoverageReport(now)
 	if err != nil || !report.Enabled || len(report.Gaps) != 1 || report.Gaps[0].AssetID != eligible.ID ||

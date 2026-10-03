@@ -346,7 +346,9 @@ defaults, database-enforced threshold ordering, group and endpoint maintenance
 windows, time-bound activation, cancellation history, and missing-target
 rejection. Coverage checks remain opt-in and distinguish eligible gaps from
 unclassified assets while excluding active-linked, retired, and explicitly
-ineligible assets. Discovery-policy persistence covers only CIDRs already
+ineligible assets. Endpoint read-model coverage also verifies catalog lifecycle
+state, policy decoding, last-seen timestamps, software snapshot replacement,
+and persisted coverage settings. Discovery-policy persistence covers only CIDRs already
 normalized and authorized by the service layer. Scanner-worker identity coverage
 checks scoped and expiring single-use enrollment, certificate lookup without
 private certificate material, heartbeat health and capabilities, global and
