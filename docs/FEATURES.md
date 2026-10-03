@@ -512,6 +512,7 @@ failure and health states.
     - [x] CVE feed lifecycle, version matching, scan persistence, reference replacement, and critical-news integration contract
     - [x] TOTP replay-counter and bounded login-throttle integration contract
     - [x] Asset metadata, eligibility, calculated aging, retirement, and restoration integration contract
+    - [x] Identity administration, invitation listing, session invalidation, and final-admin integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
       - [ ] Provision a dedicated least-privilege PostgreSQL test database and configure `MOSSWARD_TEST_POSTGRES_DSN`
     - [ ] Remaining repository operation integration coverage

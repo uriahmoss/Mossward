@@ -268,6 +268,101 @@ func TestPostgreSQLSessionAndInvitationLifecycle(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLIdentityAdministrationAndFinalAdminBoundary(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	accessEvent := postgresIdentityAuditEvent(now, administrator.ID,
+		"identity.user_access.updated", "user", administrator.ID)
+	if err := repository.UpdateUserAccess(administrator.ID, model.RoleViewer, model.UserActive, now,
+		accessEvent); !errors.Is(err, ErrFinalAdministrator) {
+		t.Fatalf("final PostgreSQL administrator demotion error = %v, want %v", err, ErrFinalAdministrator)
+	}
+	invitation := model.Invitation{ID: "postgres-admin-boundary-invitation", Email: "Analyst@Example.Test",
+		Role: model.RoleAnalyst, IdentityKind: model.IdentityLocal, InvitedBy: administrator.ID,
+		ExpiresAt: now.Add(time.Hour), CreatedAt: now, TokenHash: []byte("postgres-admin-boundary-token")}
+	if err := repository.CreateInvitation(invitation, postgresIdentityAuditEvent(now, administrator.ID,
+		"identity.invitation.created", "invitation", invitation.ID)); err != nil {
+		t.Fatalf("create PostgreSQL administration invitation: %v", err)
+	}
+	pending, err := repository.ListInvitations(now)
+	if err != nil || len(pending) != 1 || pending[0].ID != invitation.ID || pending[0].Email != "analyst@example.test" ||
+		pending[0].IdentityKind != model.IdentityLocal || len(pending[0].TokenHash) != 0 {
+		t.Fatalf("PostgreSQL pending invitation listing changed: %#v %v", pending, err)
+	}
+	analyst := model.User{ID: "postgres-boundary-analyst", Email: invitation.Email, DisplayName: "Boundary Analyst",
+		Role: invitation.Role, Status: model.UserActive, MFARequired: true, CreatedAt: now, UpdatedAt: now}
+	analystMFA := model.BootstrapMFA{TOTPSecretCiphertext: []byte("postgres-boundary-totp"),
+		RecoveryCodeHashes: [][]byte{[]byte("postgres-boundary-recovery")}}
+	if err := repository.AcceptLocalInvitation(invitation, analyst, "analyst-password-hash", analystMFA,
+		now.Add(time.Minute), postgresIdentityAuditEvent(now.Add(time.Minute), administrator.ID,
+			"identity.invitation.accepted", "user", analyst.ID)); err != nil {
+		t.Fatalf("accept PostgreSQL administration invitation: %v", err)
+	}
+	pending, err = repository.ListInvitations(now.Add(time.Minute))
+	if err != nil || len(pending) != 0 {
+		t.Fatalf("accepted PostgreSQL invitation remained pending: %#v %v", pending, err)
+	}
+	users, err := repository.ListUsers()
+	if err != nil || len(users) != 2 || users[0].Email != "admin@example.test" ||
+		users[1].Email != "analyst@example.test" {
+		t.Fatalf("PostgreSQL user catalog changed: %#v %v", users, err)
+	}
+	identity, err := repository.LocalIdentityByID(analyst.ID)
+	if err != nil || identity.User.Email != "analyst@example.test" ||
+		identity.PasswordHash != "analyst-password-hash" || !identity.User.MFARequired {
+		t.Fatalf("PostgreSQL local identity by ID changed: %#v %v", identity, err)
+	}
+	session := model.Session{IDHash: []byte("postgres-boundary-session-hash"), PublicID: "postgres-boundary-session",
+		UserID: analyst.ID, CreatedAt: now.Add(2 * time.Minute), ExpiresAt: now.Add(time.Hour),
+		LastSeenAt: now.Add(2 * time.Minute), SourceIP: "192.0.2.100", UserAgentHash: []byte("user-agent-hash")}
+	if err := repository.CreateSession(session, postgresIdentityAuditEvent(session.CreatedAt, analyst.ID,
+		"identity.session.created", "session", session.PublicID)); err != nil {
+		t.Fatalf("create PostgreSQL administration session: %v", err)
+	}
+	verifiedAt, err := repository.SessionMFAVerifiedAt(session.IDHash, analyst.ID, now.Add(2*time.Minute))
+	if err != nil || verifiedAt != nil {
+		t.Fatalf("unexpected initial PostgreSQL session MFA state: %v %v", verifiedAt, err)
+	}
+	mfaVerifiedAt := now.Add(3 * time.Minute)
+	if err := repository.UpdateSessionMFAVerifiedAt(session.IDHash, analyst.ID, mfaVerifiedAt); err != nil {
+		t.Fatalf("update PostgreSQL administration session MFA state: %v", err)
+	}
+	verifiedAt, err = repository.SessionMFAVerifiedAt(session.IDHash, analyst.ID, now.Add(3*time.Minute))
+	if err != nil || verifiedAt == nil || !verifiedAt.Equal(mfaVerifiedAt) {
+		t.Fatalf("PostgreSQL session MFA state changed: %v %v", verifiedAt, err)
+	}
+	analystAccessAt := now.Add(4 * time.Minute)
+	if err := repository.UpdateUserAccess(analyst.ID, model.RoleAdministrator, model.UserActive, analystAccessAt,
+		postgresIdentityAuditEvent(analystAccessAt, administrator.ID, "identity.user_access.updated", "user",
+			analyst.ID)); err != nil {
+		t.Fatalf("promote PostgreSQL analyst to administrator: %v", err)
+	}
+	if _, err := repository.SessionUser(session.IDHash, analystAccessAt); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("PostgreSQL access change retained an existing session: %v", err)
+	}
+	disableAt := now.Add(5 * time.Minute)
+	if err := repository.UpdateUserAccess(administrator.ID, model.RoleAdministrator, model.UserDisabled, disableAt,
+		postgresIdentityAuditEvent(disableAt, analyst.ID, "identity.user_access.updated", "user",
+			administrator.ID)); err != nil {
+		t.Fatalf("disable PostgreSQL administrator with a replacement: %v", err)
+	}
+	if err := repository.UpdateUserAccess(analyst.ID, model.RoleAnalyst, model.UserActive, now.Add(6*time.Minute),
+		postgresIdentityAuditEvent(now.Add(6*time.Minute), analyst.ID, "identity.user_access.updated", "user",
+			analyst.ID)); !errors.Is(err, ErrFinalAdministrator) {
+		t.Fatalf("replacement final PostgreSQL administrator demotion error = %v, want %v", err, ErrFinalAdministrator)
+	}
+	users, err = repository.ListUsers()
+	if err != nil || len(users) != 2 || users[0].Status != model.UserDisabled ||
+		users[1].Role != model.RoleAdministrator || users[1].Status != model.UserActive {
+		t.Fatalf("PostgreSQL final-administrator state changed: %#v %v", users, err)
+	}
+	if err := repository.UpdateUserAccess("missing-user", model.RoleViewer, model.UserDisabled, now,
+		accessEvent); !errors.Is(err, ErrIdentityNotFound) {
+		t.Fatalf("missing PostgreSQL user access error = %v, want %v", err, ErrIdentityNotFound)
+	}
+}
+
 func TestPostgreSQLWebAuthnStateAndCeremonyLifecycle(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

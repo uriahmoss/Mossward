@@ -387,7 +387,10 @@ strictly increasing TOTP counters, login-failure windows, threshold blocking,
 bounded escalation, expiry, and multi-key reset behavior. Asset-governance
 coverage checks audited metadata and agent eligibility, configurable calculated
 staleness, explicit retirement precedence, restoration, and retirement-attribution
-cleanup. The configured database role
+cleanup. Identity-administration coverage checks secret-free invitation lists,
+user and local-identity readback, session MFA state, session invalidation after
+access changes, replacement-administrator promotion, and protection of the last
+active local administrator. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 
