@@ -2131,6 +2131,91 @@ func TestPostgreSQLAssetMergePreservesSelectedValuesAndRelationships(t *testing.
 	}
 }
 
+func TestPostgreSQLAssetLifecycleAgingAndMetadataControls(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
+	settings, err := repository.AssetAgingSettings()
+	if err != nil || settings.StaleAfterDays != 30 {
+		t.Fatalf("PostgreSQL asset-aging default changed: %#v %v", settings, err)
+	}
+	observedAt := now.Add(-10 * 24 * time.Hour)
+	if err := repository.Save(completedAssetScan("postgres-aging-scan", "postgres-aging-observation",
+		"aging.example.test", "192.0.2.90", observedAt)); err != nil {
+		t.Fatalf("create PostgreSQL aging asset: %v", err)
+	}
+	assets, err := repository.ListAssets()
+	if err != nil || len(assets) != 1 || assets[0].Lifecycle.Status != model.AssetActive {
+		t.Fatalf("PostgreSQL asset aged before its threshold: %#v %v", assets, err)
+	}
+	asset := assets[0]
+	agingEvent := postgresIdentityAuditEvent(now, administrator.ID, "asset.aging.updated", "asset_aging", "global")
+	if err := repository.UpdateAssetAgingSettings(model.AssetAgingSettings{StaleAfterDays: 0}, agingEvent); err == nil {
+		t.Fatal("PostgreSQL asset aging accepted a zero-day threshold")
+	}
+	if err := repository.UpdateAssetAgingSettings(model.AssetAgingSettings{StaleAfterDays: 5}, agingEvent); err != nil {
+		t.Fatalf("update PostgreSQL asset-aging threshold: %v", err)
+	}
+	assets, err = repository.ListAssets()
+	if err != nil || assets[0].Lifecycle.Status != model.AssetStale || assets[0].Lifecycle.RetiredAt != nil {
+		t.Fatalf("PostgreSQL calculated asset staleness changed: %#v %v", assets, err)
+	}
+	metadata := model.AssetMetadata{Owner: "Infrastructure", Environment: "Production", Classification: "Critical"}
+	if err := repository.UpdateAssetMetadata(asset.ID, metadata, postgresIdentityAuditEvent(now, administrator.ID,
+		"asset.metadata.updated", "asset", asset.ID)); err != nil {
+		t.Fatalf("update PostgreSQL asset metadata: %v", err)
+	}
+	eligibility := model.AssetAgentEligibilityUpdate{Status: model.AgentEligibilityEligible,
+		Reason: "managed server"}
+	if err := repository.UpdateAssetAgentEligibility(asset.ID, eligibility, postgresIdentityAuditEvent(now,
+		administrator.ID, "asset.agent_eligibility.updated", "asset", asset.ID)); err != nil {
+		t.Fatalf("update PostgreSQL asset agent eligibility: %v", err)
+	}
+	if err := repository.UpdateAssetMetadata("missing-asset", metadata, postgresIdentityAuditEvent(now,
+		administrator.ID, "asset.metadata.updated", "asset", "missing-asset")); !errors.Is(err, ErrAssetNotFound) {
+		t.Fatalf("missing PostgreSQL asset metadata error = %v, want %v", err, ErrAssetNotFound)
+	}
+	if err := repository.UpdateAssetLifecycle(asset.ID, model.AssetLifecycleUpdate{Status: model.AssetStale},
+		postgresIdentityAuditEvent(now, administrator.ID, "asset.retired", "asset", asset.ID)); !errors.Is(err, ErrInvalidAssetLifecycle) {
+		t.Fatalf("explicit PostgreSQL stale lifecycle error = %v, want %v", err, ErrInvalidAssetLifecycle)
+	}
+	retiredAt := now.Add(time.Minute)
+	retirement := model.AssetLifecycleUpdate{Status: model.AssetRetired, Reason: "device decommissioned"}
+	if err := repository.UpdateAssetLifecycle(asset.ID, retirement, postgresIdentityAuditEvent(retiredAt,
+		administrator.ID, "asset.retired", "asset", asset.ID)); err != nil {
+		t.Fatalf("retire PostgreSQL asset: %v", err)
+	}
+	assets, err = repository.ListAssets()
+	if err != nil || len(assets) != 1 || assets[0].Lifecycle.Status != model.AssetRetired ||
+		assets[0].Lifecycle.RetiredAt == nil || !assets[0].Lifecycle.RetiredAt.Equal(retiredAt) ||
+		assets[0].Lifecycle.RetiredBy != administrator.ID ||
+		assets[0].Lifecycle.RetirementReason != retirement.Reason || assets[0].Owner != metadata.Owner ||
+		assets[0].Environment != metadata.Environment || assets[0].Classification != metadata.Classification ||
+		assets[0].AgentEligibility.Status != eligibility.Status || assets[0].AgentEligibility.Reason != eligibility.Reason ||
+		assets[0].AgentEligibility.UpdatedBy != administrator.ID || assets[0].AgentEligibility.UpdatedAt == nil {
+		t.Fatalf("PostgreSQL retired asset governance state changed: %#v %v", assets, err)
+	}
+	if err := repository.UpdateAssetAgingSettings(model.AssetAgingSettings{StaleAfterDays: 30},
+		postgresIdentityAuditEvent(now.Add(2*time.Minute), administrator.ID, "asset.aging.updated",
+			"asset_aging", "global")); err != nil {
+		t.Fatalf("restore PostgreSQL asset-aging threshold: %v", err)
+	}
+	restoredAt := now.Add(3 * time.Minute)
+	if err := repository.UpdateAssetLifecycle(asset.ID, model.AssetLifecycleUpdate{Status: model.AssetActive},
+		postgresIdentityAuditEvent(restoredAt, administrator.ID, "asset.restored", "asset", asset.ID)); err != nil {
+		t.Fatalf("restore PostgreSQL asset: %v", err)
+	}
+	assets, err = repository.ListAssets()
+	if err != nil || assets[0].Lifecycle.Status != model.AssetActive || assets[0].Lifecycle.RetiredAt != nil ||
+		assets[0].Lifecycle.RetiredBy != "" || assets[0].Lifecycle.RetirementReason != "" {
+		t.Fatalf("PostgreSQL restored asset lifecycle changed: %#v %v", assets, err)
+	}
+	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "asset.", Limit: 20})
+	if err != nil || len(events) != 6 {
+		t.Fatalf("PostgreSQL asset-governance audit trail changed: %#v %v", events, err)
+	}
+}
+
 func TestPostgreSQLIdentityCiphertextRotationIsAtomic(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

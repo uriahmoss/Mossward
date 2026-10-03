@@ -384,7 +384,10 @@ feed success and failure state, preserved last-success timestamps, normalized
 affected-version boundaries, scan-match enrichment, reference replacement, and
 environment-matched critical-news priority. Local-auth abuse coverage checks
 strictly increasing TOTP counters, login-failure windows, threshold blocking,
-bounded escalation, expiry, and multi-key reset behavior. The configured database role
+bounded escalation, expiry, and multi-key reset behavior. Asset-governance
+coverage checks audited metadata and agent eligibility, configurable calculated
+staleness, explicit retirement precedence, restoration, and retirement-attribution
+cleanup. The configured database role
 therefore needs permission to create and drop schemas. Never point these tests
 at a database where that role has broader privileges than necessary.
 
