@@ -214,6 +214,43 @@ func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
 	}
 }
 
+func TestPostgreSQLAuditAppendAndFiltering(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	events := []model.AuditEvent{
+		{OccurredAt: now, ActorID: "postgres-audit-actor", Action: "system.audit.info", Severity: model.AuditInfo,
+			TargetType: "system", TargetID: "postgres-audit-target", SourceIP: "192.0.2.40"},
+		{OccurredAt: now.Add(time.Second), ActorID: "postgres-audit-actor", Action: "system.audit.warning",
+			Severity: model.AuditWarning, TargetType: "system", TargetID: "postgres-warning-target",
+			SourceIP: "192.0.2.41", Details: `{"reason":"integration sentinel"}`},
+	}
+	for _, event := range events {
+		if err := repository.AppendAuditEvent(event); err != nil {
+			t.Fatalf("append PostgreSQL audit event %q: %v", event.Action, err)
+		}
+	}
+	stored, err := repository.ListAuditEvents(model.AuditQuery{Text: "system.audit.", Limit: 10})
+	if err != nil || len(stored) != 2 || stored[0].Action != events[1].Action || stored[1].Action != events[0].Action ||
+		stored[0].ActorID != events[1].ActorID || stored[0].TargetType != events[1].TargetType ||
+		stored[0].TargetID != events[1].TargetID || stored[0].SourceIP != events[1].SourceIP ||
+		stored[0].Details != events[1].Details || stored[1].Details != "{}" ||
+		!stored[0].OccurredAt.Equal(events[1].OccurredAt) || stored[0].ID == 0 || stored[1].ID == 0 {
+		t.Fatalf("PostgreSQL direct audit persistence changed: %#v %v", stored, err)
+	}
+	warnings, err := repository.ListAuditEvents(model.AuditQuery{Severity: model.AuditWarning, Limit: 10})
+	if err != nil || len(warnings) != 1 || warnings[0].Action != events[1].Action {
+		t.Fatalf("PostgreSQL audit severity filtering changed: %#v %v", warnings, err)
+	}
+	byTarget, err := repository.ListAuditEvents(model.AuditQuery{Text: "postgres-warning-target", Limit: 10})
+	if err != nil || len(byTarget) != 1 || byTarget[0].TargetID != events[1].TargetID {
+		t.Fatalf("PostgreSQL audit target filtering changed: %#v %v", byTarget, err)
+	}
+	byDetails, err := repository.ListAuditEvents(model.AuditQuery{Text: "integration sentinel", Limit: 10})
+	if err != nil || len(byDetails) != 1 || byDetails[0].Details != events[1].Details {
+		t.Fatalf("PostgreSQL audit details filtering changed: %#v %v", byDetails, err)
+	}
+}
+
 func TestPostgreSQLLocalAuthReplayAndThrottleState(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

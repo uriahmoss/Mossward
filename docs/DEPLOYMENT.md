@@ -315,6 +315,9 @@ administrator bootstrap, encrypted MFA persistence, one-time recovery-code use,
 authentication-policy persistence, local invitation acceptance, authenticated
 session lookup, MFA elevation, targeted revocation, current-session-preserving
 revocation of all other sessions, explicit logout, and the associated audit trail.
+Direct audit coverage verifies timestamp ordering, generated identifiers,
+structured actor and target fields, source addresses, JSON details, and text and
+severity filters. Append-only database enforcement remains a separate roadmap item.
 WebAuthn coverage includes encrypted credential state, authenticator
 counters and backup flags, and kind-bound single-use ceremonies. OIDC coverage
 checks encrypted provider secrets, mandatory retesting after

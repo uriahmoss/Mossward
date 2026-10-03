@@ -519,9 +519,10 @@ failure and health states.
     - [x] Current-session preservation, other-session revocation, and explicit logout integration contract
     - [x] Endpoint evidence, group-member removal, target recalculation, and explicit CVE refresh integration contract
     - [x] Database readiness, default-scope idempotence, scan listing, and interrupted-scan recovery integration contract
+    - [x] Direct audit append, structured-field persistence, ordering, and query-filter integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
       - [ ] Provision a dedicated least-privilege PostgreSQL test database and configure `MOSSWARD_TEST_POSTGRES_DSN`
-    - [ ] Remaining repository operation integration coverage
+    - [x] Remaining repository operation integration coverage
     - [ ] PostgreSQL server startup enablement
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
