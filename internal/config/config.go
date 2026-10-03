@@ -31,6 +31,7 @@ type Config struct {
 	DatabaseFile         string
 	DatabaseBackend      DatabaseBackend
 	DatabaseURL          string
+	MigrationDatabaseURL string
 	LegacyDataFile       string
 	IdentityKeyFile      string
 	WebAuthnRPID         string
@@ -70,6 +71,7 @@ func Load() (Config, error) {
 		DatabaseFile:         env("MOSSWARD_DATABASE_FILE", "data/mossward.db"),
 		DatabaseBackend:      DatabaseBackend(env("MOSSWARD_DATABASE_BACKEND", string(DatabaseSQLite))),
 		DatabaseURL:          env("MOSSWARD_DATABASE_URL", ""),
+		MigrationDatabaseURL: env("MOSSWARD_MIGRATION_POSTGRES_URL", ""),
 		LegacyDataFile:       env("MOSSWARD_DATA_FILE", "data/scans.json"),
 		IdentityKeyFile:      env("MOSSWARD_IDENTITY_KEY_FILE", "data/identity.key"),
 		WebAuthnRPID:         env("MOSSWARD_WEBAUTHN_RP_ID", "localhost"),
@@ -129,6 +131,11 @@ func Load() (Config, error) {
 	if err := validateDatabase(cfg); err != nil {
 		return Config{}, err
 	}
+	if cfg.MigrationDatabaseURL != "" {
+		if err := validatePostgreSQLURL("MOSSWARD_MIGRATION_POSTGRES_URL", cfg.MigrationDatabaseURL); err != nil {
+			return Config{}, err
+		}
+	}
 	return cfg, nil
 }
 
@@ -143,17 +150,21 @@ func validateDatabase(cfg Config) error {
 		}
 		return nil
 	case DatabasePostgreSQL:
-		parsed, err := url.Parse(cfg.DatabaseURL)
-		if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" || strings.Trim(parsed.Path, "/") == "" {
-			return fmt.Errorf("MOSSWARD_DATABASE_URL must be a valid PostgreSQL URL with a host and database name")
-		}
-		if parsed.Query().Get("sslmode") != "verify-full" {
-			return fmt.Errorf("PostgreSQL requires sslmode=verify-full")
-		}
-		return nil
+		return validatePostgreSQLURL("MOSSWARD_DATABASE_URL", cfg.DatabaseURL)
 	default:
 		return fmt.Errorf("MOSSWARD_DATABASE_BACKEND must be sqlite or postgresql")
 	}
+}
+
+func validatePostgreSQLURL(name, value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") || parsed.Hostname() == "" || strings.Trim(parsed.Path, "/") == "" {
+		return fmt.Errorf("%s must be a valid PostgreSQL URL with a host and database name", name)
+	}
+	if parsed.Query().Get("sslmode") != "verify-full" {
+		return fmt.Errorf("%s requires sslmode=verify-full", name)
+	}
+	return nil
 }
 
 func (c Config) AgentUpdateTrust() (string, ed25519.PublicKey, error) {

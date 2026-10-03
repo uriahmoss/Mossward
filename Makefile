@@ -15,6 +15,7 @@ test:
 
 test-postgres:
 	GOCACHE=$(GOCACHE) go test -race ./internal/store -run '^TestPostgreSQL(Migrations|Startup|ScanAndAsset|LocalAuth|Audit|SessionAndInvitation|IdentityAdministration|WebAuthn|OIDC|ScopeAndPolicy|EndpointIdentity|EndpointInventory|EndpointIntegrity|EndpointNetwork|Relay|Maintenance|EndpointCoverage|WorkerIdentity|WorkerJobLease|WorkerEvidence|WorkerReassignment|WorkerJobDeadLetter|FindingWorkflow|Notification|AgentUpdate|AgentModule|AssetMerge|AssetLifecycle|IdentityCiphertext|CVEFeed)' -count=1
+	GOCACHE=$(GOCACHE) go test -race ./internal/datamigration -run '^TestPostgreSQLDestination' -count=1
 
 verify:
 	GOCACHE=$(GOCACHE) go test -race ./...

@@ -79,6 +79,18 @@ func TestLoadRejectsAmbiguousDatabaseConfiguration(t *testing.T) {
 	}
 }
 
+func TestLoadValidatesMigrationPostgreSQLDestination(t *testing.T) {
+	t.Setenv("MOSSWARD_MIGRATION_POSTGRES_URL", "postgresql://mossward@db.example.test/mossward?sslmode=verify-full")
+	cfg, err := Load()
+	if err != nil || cfg.MigrationDatabaseURL == "" {
+		t.Fatalf("migration PostgreSQL configuration = %#v, error = %v", cfg, err)
+	}
+	t.Setenv("MOSSWARD_MIGRATION_POSTGRES_URL", "postgresql://mossward@db.example.test/mossward?sslmode=disable")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "MOSSWARD_MIGRATION_POSTGRES_URL requires sslmode=verify-full") {
+		t.Fatalf("insecure migration PostgreSQL transport result = %v", err)
+	}
+}
+
 func TestLoadRejectsInsecureRemoteWebAuthnOrigin(t *testing.T) {
 	t.Setenv("MOSSWARD_WEBAUTHN_RP_ID", "mossward.example.com")
 	t.Setenv("MOSSWARD_WEBAUTHN_ORIGINS", "http://mossward.example.com")

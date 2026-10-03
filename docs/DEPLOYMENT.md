@@ -327,6 +327,17 @@ The JSON report includes the integrity result, schema version, file size, and
 per-table row counts. Destination validation and copying are separate unfinished
 slices; this command does not connect to PostgreSQL or move data.
 
+Validate a dedicated empty PostgreSQL destination schema separately:
+
+```sh
+MOSSWARD_MIGRATION_POSTGRES_URL='postgresql://user@db.example/mossward?sslmode=verify-full' \
+./bin/mossward database migration-destination-preflight
+```
+
+This read-only check verifies connectivity, PostgreSQL 14 or newer, the current
+schema, and that the schema contains no tables, views, sequences, or foreign
+tables. It never prints the connection URL and refuses a non-empty target.
+
 The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify
 the current schema version and single-organization boundary, reopen the

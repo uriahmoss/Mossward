@@ -236,15 +236,24 @@ func run(stop <-chan string) error {
 }
 
 func runDatabaseCommand(cfg config.Config, args []string) error {
-	if len(args) != 1 || args[0] != "migration-preflight" {
-		return errors.New("usage: mossward database migration-preflight")
-	}
-	if cfg.DatabaseBackend != config.DatabaseSQLite {
-		return errors.New("SQLite migration preflight requires MOSSWARD_DATABASE_BACKEND=sqlite")
+	if len(args) != 1 {
+		return errors.New("usage: mossward database migration-preflight|migration-destination-preflight")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), databaseStartupTimeout)
 	defer cancel()
-	report, err := datamigration.PreflightSQLiteSource(ctx, cfg.DatabaseFile)
+	var report any
+	var err error
+	switch args[0] {
+	case "migration-preflight":
+		if cfg.DatabaseBackend != config.DatabaseSQLite {
+			return errors.New("SQLite migration preflight requires MOSSWARD_DATABASE_BACKEND=sqlite")
+		}
+		report, err = datamigration.PreflightSQLiteSource(ctx, cfg.DatabaseFile)
+	case "migration-destination-preflight":
+		report, err = datamigration.PreflightPostgreSQLDestination(ctx, cfg.MigrationDatabaseURL)
+	default:
+		return errors.New("usage: mossward database migration-preflight|migration-destination-preflight")
+	}
 	if err != nil {
 		return err
 	}
