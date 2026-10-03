@@ -19,6 +19,7 @@ import (
 	"mossward/internal/api"
 	"mossward/internal/auth"
 	"mossward/internal/config"
+	"mossward/internal/datamigration"
 	"mossward/internal/intelligence"
 	"mossward/internal/model"
 	"mossward/internal/notification"
@@ -66,6 +67,9 @@ func run(stop <-chan string) error {
 			return errors.New("backup inspect and restore currently require the SQLite backend")
 		}
 		return runBackupCommand(cfg, nil, os.Args[2:])
+	}
+	if len(os.Args) > 1 && os.Args[1] == "database" {
+		return runDatabaseCommand(cfg, os.Args[2:])
 	}
 	maintenanceCommand := len(os.Args) > 1 && (os.Args[1] == "backup" || os.Args[1] == "identity-key" || os.Args[1] == "cve")
 	if !maintenanceCommand {
@@ -229,6 +233,24 @@ func run(stop <-chan string) error {
 	}
 	slog.Info("Mossward server stopped")
 	return nil
+}
+
+func runDatabaseCommand(cfg config.Config, args []string) error {
+	if len(args) != 1 || args[0] != "migration-preflight" {
+		return errors.New("usage: mossward database migration-preflight")
+	}
+	if cfg.DatabaseBackend != config.DatabaseSQLite {
+		return errors.New("SQLite migration preflight requires MOSSWARD_DATABASE_BACKEND=sqlite")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), databaseStartupTimeout)
+	defer cancel()
+	report, err := datamigration.PreflightSQLiteSource(ctx, cfg.DatabaseFile)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(os.Stdout)
+	encoder.SetIndent("", "  ")
+	return encoder.Encode(report)
 }
 
 func openRepository(ctx context.Context, cfg config.Config) (runtimeRepository, error) {

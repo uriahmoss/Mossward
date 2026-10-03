@@ -314,6 +314,19 @@ PostgreSQL deployments can run the CVE maintenance command, but the current
 backup/restore and identity-key rotation commands intentionally fail closed
 because those workflows still operate on SQLite files.
 
+Before an offline SQLite-to-PostgreSQL migration, stop Mossward and inspect the
+SQLite source without modifying it:
+
+```sh
+MOSSWARD_DATABASE_BACKEND=sqlite \
+MOSSWARD_DATABASE_FILE=/path/to/mossward.db \
+./bin/mossward database migration-preflight
+```
+
+The JSON report includes the integrity result, schema version, file size, and
+per-table row counts. Destination validation and copying are separate unfinished
+slices; this command does not connect to PostgreSQL or move data.
+
 The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify
 the current schema version and single-organization boundary, reopen the

@@ -527,6 +527,9 @@ failure and health states.
       - [x] Backend-aware repository opening with bounded startup connection time
       - [x] SQLite-only backup and identity-key maintenance fail closed on PostgreSQL
   - [ ] Offline SQLite-to-PostgreSQL migration utility
+    - [x] Read-only SQLite integrity, schema-version, and row-inventory preflight
+    - [ ] PostgreSQL destination preflight and empty-target enforcement
+    - [ ] Transactional ordered data copy with sequence repair and verification
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,
