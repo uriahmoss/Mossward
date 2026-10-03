@@ -518,6 +518,7 @@ failure and health states.
     - [x] OIDC, scope-policy, and reusable-scan-policy catalog filtering integration contract
     - [x] Current-session preservation, other-session revocation, and explicit logout integration contract
     - [x] Endpoint evidence, group-member removal, target recalculation, and explicit CVE refresh integration contract
+    - [x] Database readiness, default-scope idempotence, scan listing, and interrupted-scan recovery integration contract
     - [ ] Execute live PostgreSQL migration tests in supported environments
       - [ ] Provision a dedicated least-privilege PostgreSQL test database and configure `MOSSWARD_TEST_POSTGRES_DSN`
     - [ ] Remaining repository operation integration coverage

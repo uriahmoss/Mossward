@@ -39,6 +39,67 @@ func TestPostgreSQLMigrationsInIsolatedSchema(t *testing.T) {
 	assertPostgreSQLMigrationState(t, reopened.db)
 }
 
+func TestPostgreSQLStartupReadinessAndInterruptedScanRecovery(t *testing.T) {
+	repository, _ := openPostgreSQLIntegrationStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := repository.Ping(ctx); err != nil {
+		t.Fatalf("ping PostgreSQL repository: %v", err)
+	}
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	defaultScope := model.ScopePolicy{ID: "postgres-default-scope", Name: "Default private scope",
+		AllowedCIDRs: []string{"10.0.0.0/8"}, AllowedPorts: []int{443}, MaxTargets: 256, MaxConcurrent: 8,
+		Enabled: true, CreatedAt: now, UpdatedAt: now}
+	if err := repository.EnsureDefaultScopePolicy(defaultScope); err != nil {
+		t.Fatalf("create default PostgreSQL scope policy: %v", err)
+	}
+	replacement := defaultScope
+	replacement.ID = "postgres-replacement-default-scope"
+	replacement.Name = "Replacement must not win"
+	if err := repository.EnsureDefaultScopePolicy(replacement); err != nil {
+		t.Fatalf("repeat default PostgreSQL scope policy creation: %v", err)
+	}
+	policies, err := repository.ListScopePolicies(false)
+	if err != nil || len(policies) != 1 || policies[0].ID != defaultScope.ID || policies[0].Name != defaultScope.Name {
+		t.Fatalf("PostgreSQL default scope idempotence changed: %#v %v", policies, err)
+	}
+
+	queued := model.Scan{ID: "postgres-interrupted-queued", Name: "Interrupted ad hoc scan", Status: model.StatusQueued,
+		CreatedAt: now, MaxConcurrent: 1}
+	startedAt := now.Add(-2 * time.Minute)
+	scheduled := model.Scan{ID: "postgres-interrupted-scheduled", Name: "Interrupted scheduled scan",
+		Status: model.StatusRunning, CreatedAt: startedAt, StartedAt: &startedAt, ScanPolicyID: "postgres-scheduled-policy",
+		MaxConcurrent: 1, RateLimitPerSecond: 7}
+	for _, scan := range []model.Scan{queued, scheduled} {
+		if err := repository.Save(scan); err != nil {
+			t.Fatalf("save PostgreSQL interrupted scan %q: %v", scan.ID, err)
+		}
+	}
+	if err := repository.ReconcileInterrupted(); err != nil {
+		t.Fatalf("reconcile interrupted PostgreSQL scans: %v", err)
+	}
+	scans, err := repository.List()
+	if err != nil || len(scans) != 2 {
+		t.Fatalf("list reconciled PostgreSQL scans: %#v %v", scans, err)
+	}
+	scansByID := map[string]model.Scan{}
+	for _, scan := range scans {
+		scansByID[scan.ID] = scan
+	}
+	reconciledQueued := scansByID[queued.ID]
+	if reconciledQueued.Status != model.StatusFailed || reconciledQueued.CompletedAt == nil ||
+		!strings.Contains(reconciledQueued.Error, "interrupted") {
+		t.Fatalf("PostgreSQL ad hoc interruption state changed: %#v", reconciledQueued)
+	}
+	reconciledScheduled := scansByID[scheduled.ID]
+	if reconciledScheduled.Status != model.StatusPaused || reconciledScheduled.CompletedAt != nil ||
+		reconciledScheduled.StartedAt != nil || reconciledScheduled.ActiveSeconds < 100 ||
+		reconciledScheduled.RateLimitPerSecond != scheduled.RateLimitPerSecond ||
+		!strings.Contains(reconciledScheduled.Error, "paused") {
+		t.Fatalf("PostgreSQL resumable interruption state changed: %#v", reconciledScheduled)
+	}
+}
+
 func TestPostgreSQLScanAndAssetProjectionRoundTrip(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)

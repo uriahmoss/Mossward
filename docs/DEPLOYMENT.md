@@ -308,7 +308,8 @@ make test-postgres
 The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify
 the current schema version and single-organization boundary, reopen the
-repository to verify migration idempotence, and exercise scan persistence plus
+repository to verify migration idempotence, check database readiness and
+default-scope idempotence, and exercise scan persistence plus
 asset, evidence, and service-history projection. They also cover local
 administrator bootstrap, encrypted MFA persistence, one-time recovery-code use,
 authentication-policy persistence, local invitation acceptance, authenticated
@@ -324,6 +325,8 @@ boundary, scoped CIDRs and ports, overlapping group target deduplication, revers
 group-to-policy visibility, reusable-policy catalog filtering, per-policy
 membership removal with immediate target recalculation, maintenance windows,
 time zones, worker sites, and schedule checkpoints.
+Interrupted-scan recovery marks ad hoc work failed while pausing scheduled work
+with its accumulated active time intact so it can resume in a later window.
 Endpoint identity coverage checks expiring and
 single-use enrollment tokens, collector and telemetry-exclusion policies,
 check-ins, certificate serial rotation with stale-update rejection, and
