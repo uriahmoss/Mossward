@@ -523,7 +523,9 @@ failure and health states.
     - [ ] Execute live PostgreSQL migration tests in supported environments
       - [ ] Provision a dedicated least-privilege PostgreSQL test database and configure `MOSSWARD_TEST_POSTGRES_DSN`
     - [x] Remaining repository operation integration coverage
-    - [ ] PostgreSQL server startup enablement
+    - [x] PostgreSQL server startup enablement
+      - [x] Backend-aware repository opening with bounded startup connection time
+      - [x] SQLite-only backup and identity-key maintenance fail closed on PostgreSQL
   - [ ] Offline SQLite-to-PostgreSQL migration utility
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback

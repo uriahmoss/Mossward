@@ -305,6 +305,15 @@ database, then run:
 make test-postgres
 ```
 
+To run the Mossward server against PostgreSQL, set
+`MOSSWARD_DATABASE_BACKEND=postgresql` and provide `MOSSWARD_DATABASE_URL` as a
+PostgreSQL URL containing `sslmode=verify-full`. Startup uses a bounded connection
+window, verifies the server version, applies migrations under an advisory lock,
+and starts only after the repository is ready. SQLite remains the default.
+PostgreSQL deployments can run the CVE maintenance command, but the current
+backup/restore and identity-key rotation commands intentionally fail closed
+because those workflows still operate on SQLite files.
+
 The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify
 the current schema version and single-organization boundary, reopen the

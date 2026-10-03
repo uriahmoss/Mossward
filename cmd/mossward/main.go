@@ -37,11 +37,17 @@ const (
 	serverWriteTimeout      = 30 * time.Second
 	serverIdleTimeout       = 60 * time.Second
 	shutdownTimeout         = 10 * time.Second
+	databaseStartupTimeout  = 15 * time.Second
 	defaultCVELookbackDays  = 120
 	maxCVELookbackDays      = 120
 	publicNVDPageDelay      = 6 * time.Second
 	keyedNVDPageDelay       = 700 * time.Millisecond
 )
+
+type runtimeRepository interface {
+	store.Repository
+	auth.IdentityStore
+}
 
 func main() {
 	if err := runPlatform(run); err != nil {
@@ -55,10 +61,10 @@ func run(stop <-chan string) error {
 	if err != nil {
 		return err
 	}
-	if cfg.DatabaseBackend == config.DatabasePostgreSQL {
-		return errors.New("PostgreSQL backend foundation is installed but full schema and query parity are not complete")
-	}
 	if len(os.Args) > 2 && os.Args[1] == "backup" && (os.Args[2] == "restore" || os.Args[2] == "inspect") {
+		if cfg.DatabaseBackend != config.DatabaseSQLite {
+			return errors.New("backup inspect and restore currently require the SQLite backend")
+		}
 		return runBackupCommand(cfg, nil, os.Args[2:])
 	}
 	maintenanceCommand := len(os.Args) > 1 && (os.Args[1] == "backup" || os.Args[1] == "identity-key" || os.Args[1] == "cve")
@@ -68,7 +74,9 @@ func run(stop <-chan string) error {
 		}
 	}
 
-	repository, err := store.NewSQLiteStore(cfg.DatabaseFile, cfg.LegacyDataFile)
+	databaseContext, cancelDatabase := context.WithTimeout(context.Background(), databaseStartupTimeout)
+	defer cancelDatabase()
+	repository, err := openRepository(databaseContext, cfg)
 	if err != nil {
 		return err
 	}
@@ -81,10 +89,18 @@ func run(stop <-chan string) error {
 		return runCVECommand(repository, os.Args[2:])
 	}
 	if len(os.Args) > 1 && os.Args[1] == "backup" {
-		return runBackupCommand(cfg, repository, os.Args[2:])
+		sqliteRepository, err := requireSQLiteMaintenanceRepository(cfg, repository)
+		if err != nil {
+			return err
+		}
+		return runBackupCommand(cfg, sqliteRepository, os.Args[2:])
 	}
 	if len(os.Args) > 1 && os.Args[1] == "identity-key" {
-		return runIdentityKeyCommand(cfg, repository, os.Args[2:])
+		sqliteRepository, err := requireSQLiteMaintenanceRepository(cfg, repository)
+		if err != nil {
+			return err
+		}
+		return runIdentityKeyCommand(cfg, sqliteRepository, os.Args[2:])
 	}
 	secretBox, err := auth.LoadOrCreateSecretBox(cfg.IdentityKeyFile)
 	if err != nil {
@@ -213,6 +229,30 @@ func run(stop <-chan string) error {
 	}
 	slog.Info("Mossward server stopped")
 	return nil
+}
+
+func openRepository(ctx context.Context, cfg config.Config) (runtimeRepository, error) {
+	switch cfg.DatabaseBackend {
+	case config.DatabaseSQLite:
+		return store.NewSQLiteStore(cfg.DatabaseFile, cfg.LegacyDataFile)
+	case config.DatabasePostgreSQL:
+		repository, err := store.OpenPostgreSQL(ctx, cfg.DatabaseURL)
+		if err != nil {
+			return nil, fmt.Errorf("open PostgreSQL repository: %w", err)
+		}
+		slog.Info("Mossward PostgreSQL repository ready")
+		return repository, nil
+	default:
+		return nil, fmt.Errorf("unsupported database backend %q", cfg.DatabaseBackend)
+	}
+}
+
+func requireSQLiteMaintenanceRepository(cfg config.Config, repository store.Repository) (*store.SQLiteStore, error) {
+	sqliteRepository, ok := repository.(*store.SQLiteStore)
+	if cfg.DatabaseBackend != config.DatabaseSQLite || !ok {
+		return nil, errors.New("backup and identity-key maintenance currently require the SQLite backend")
+	}
+	return sqliteRepository, nil
 }
 
 func runIdentityKeyCommand(cfg config.Config, repository *store.SQLiteStore, args []string) error {
