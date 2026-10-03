@@ -322,13 +322,16 @@ role refresh, plus complete provider catalog decoding. Scope and targeting
 coverage verifies enabled-only catalog filtering, the single-organization
 boundary, scoped CIDRs and ports, overlapping group target deduplication, reverse
 group-to-policy visibility, reusable-policy catalog filtering, per-policy
-maintenance windows, time zones, worker sites, and schedule checkpoints.
+membership removal with immediate target recalculation, maintenance windows,
+time zones, worker sites, and schedule checkpoints.
 Endpoint identity coverage checks expiring and
 single-use enrollment tokens, collector and telemetry-exclusion policies,
 check-ins, certificate serial rotation with stale-update rejection, and
 revocation. Inventory coverage checks collection and receipt provenance for OS,
 software, listening-service, and security-posture snapshots; CVE matches are
-created from affected software and removed after inventory changes. Revoked
+created from affected software, can be explicitly rebuilt, and are removed after
+inventory changes. Asset evidence coverage preserves source and record provenance
+while deduplicating repeated records. Revoked
 endpoints cannot submit new inventory. Integrity coverage checks baseline
 snapshots, strictly increasing bounded sequences, replay rejection,
 per-component tamper evidence, and revoked-endpoint rejection; signature

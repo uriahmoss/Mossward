@@ -84,6 +84,27 @@ func TestPostgreSQLScanAndAssetProjectionRoundTrip(t *testing.T) {
 		service.ObservationCount != 1 || len(service.Events) != 1 || !reflect.DeepEqual(service.Events[0].FindingIDs, []string{"postgres-finding"}) {
 		t.Fatalf("PostgreSQL service history projection changed: %#v", service)
 	}
+	endpointEvidence := model.AssetEvidence{ID: "postgres-endpoint-evidence", AssetID: assets[0].ID,
+		Address: assets[0].Address, Summary: "Endpoint operating-system inventory collected",
+		EvidenceProvenance: model.EvidenceProvenance{SourceType: model.EvidenceSourceEndpoint,
+			SourceID: "postgres-endpoint", RecordType: "os_inventory", RecordID: "postgres-os-inventory", CollectedAt: now.Add(time.Minute)}}
+	if err := repository.RecordAssetEvidence(endpointEvidence); err != nil {
+		t.Fatalf("record PostgreSQL endpoint asset evidence: %v", err)
+	}
+	if err := repository.RecordAssetEvidence(endpointEvidence); err != nil {
+		t.Fatalf("repeat PostgreSQL endpoint asset evidence: %v", err)
+	}
+	detail, err = repository.AssetDetail(assets[0].ID, now.Add(time.Minute))
+	if err != nil || len(detail.Evidence) != 2 || detail.Evidence[0].ID != endpointEvidence.ID ||
+		detail.Evidence[0].SourceType != model.EvidenceSourceEndpoint || detail.Evidence[0].RecordID != endpointEvidence.RecordID {
+		t.Fatalf("PostgreSQL endpoint evidence provenance changed: %#v %v", detail.Evidence, err)
+	}
+	invalidEvidence := endpointEvidence
+	invalidEvidence.ID = "postgres-invalid-evidence"
+	invalidEvidence.SourceType = "unknown"
+	if err := repository.RecordAssetEvidence(invalidEvidence); err == nil {
+		t.Fatal("invalid PostgreSQL asset evidence provenance was accepted")
+	}
 }
 
 func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
@@ -685,6 +706,22 @@ func TestPostgreSQLScopeAndPolicyTargetingContract(t *testing.T) {
 	if err != nil || len(groups) != 2 || len(groups[0].ScanPolicyIDs) != 1 || len(groups[1].ScanPolicyIDs) != 1 {
 		t.Fatalf("PostgreSQL reverse group policy visibility missing: %#v %v", groups, err)
 	}
+	removeMemberEvent := postgresIdentityAuditEvent(now.Add(15*time.Minute), administrator.ID,
+		"asset_group.member.removed", "asset_group", "postgres-group-one")
+	if err := repository.RemoveAssetGroupMember("postgres-group-one", assets[0].ID, removeMemberEvent); err != nil {
+		t.Fatalf("remove PostgreSQL asset-group member: %v", err)
+	}
+	memberships, err := repository.AssetGroupMemberships(assets[0].ID)
+	if err != nil || !reflect.DeepEqual(memberships, []string{"postgres-group-two"}) {
+		t.Fatalf("PostgreSQL asset-group membership removal changed: %#v %v", memberships, err)
+	}
+	targets, err = repository.ReusableScanPolicyTargets(policy.ID)
+	if err != nil || len(targets) != 1 || !reflect.DeepEqual(targets[0].GroupIDs, []string{"postgres-group-two"}) {
+		t.Fatalf("PostgreSQL policy targeting after membership removal changed: %#v %v", targets, err)
+	}
+	if err := repository.RemoveAssetGroupMember("postgres-group-one", assets[0].ID, removeMemberEvent); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("duplicate PostgreSQL asset-group removal error = %v, want %v", err, ErrNotFound)
+	}
 	lastScheduled := now.Add(30 * time.Minute)
 	updatedNextRun := now.Add(24 * time.Hour)
 	if err := repository.UpdateReusablePolicySchedule(policy.ID, &updatedNextRun, &lastScheduled, policyEvent); err != nil {
@@ -848,6 +885,17 @@ func TestPostgreSQLEndpointInventoryAndCVEProjection(t *testing.T) {
 	if err != nil || len(matches) != 1 || matches[0].CVEID != cve.ID || !matches[0].KnownExploited ||
 		matches[0].Confidence != "medium" || matches[0].PackageSource != "dpkg" {
 		t.Fatalf("PostgreSQL endpoint CVE projection changed: %#v %v", matches, err)
+	}
+	if _, err := repository.db.Exec(`DELETE FROM endpoint_cve_matches WHERE endpoint_id=$1`, endpoint.ID); err != nil {
+		t.Fatalf("clear PostgreSQL endpoint CVE projection fixture: %v", err)
+	}
+	refreshedAt := now.Add(90 * time.Second)
+	if err := repository.RefreshEndpointCVEMatches(endpoint.ID, refreshedAt); err != nil {
+		t.Fatalf("refresh PostgreSQL endpoint CVE matches: %v", err)
+	}
+	matches, err = repository.EndpointCVEMatches(endpoint.ID)
+	if err != nil || len(matches) != 1 || matches[0].CVEID != cve.ID || !matches[0].MatchedAt.Equal(refreshedAt) {
+		t.Fatalf("PostgreSQL explicit endpoint CVE refresh changed: %#v %v", matches, err)
 	}
 	software.Items[0].Version = "3.0.2"
 	software.CollectedAt = now.Add(2 * time.Minute)
