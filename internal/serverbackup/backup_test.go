@@ -65,10 +65,31 @@ func TestBackupInspectAndRestore(t *testing.T) {
 }
 
 func TestSafeArchivePathRejectsTraversal(t *testing.T) {
-	for _, path := range []string{"../identity.key", "/etc/passwd", "nested/../../escape", ""} {
+	for _, path := range []string{"../identity.key", "/etc/passwd", "nested/../../escape", `C:\identity.key`, `acme\..\escape`, ""} {
 		if safeArchivePath(path) {
 			t.Errorf("unsafe path accepted: %q", path)
 		}
+	}
+}
+
+func TestPostgreSQLArchiveRejectedBySQLiteRestoreWithoutMutation(t *testing.T) {
+	directory := t.TempDir()
+	dump := filepath.Join(directory, "native.dump")
+	key := filepath.Join(directory, "identity.key")
+	writeTestFile(t, dump, []byte("PGDMPfixture"))
+	writeTestFile(t, key, make([]byte, 32))
+	archive := filepath.Join(directory, "postgres.tar.gz")
+	manifest := Manifest{FormatVersion: postgresArchiveVersion, Backend: "postgresql", SchemaVersion: store.PostgreSQLSchemaVersion(), OrganizationID: "test-installation"}
+	if err := writeManifestArchive(archive, map[string]string{postgresDumpEntry: dump, "identity/identity.key": key}, manifest); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(directory, "original.db")
+	writeTestFile(t, target, []byte("original-data"))
+	if _, err := Restore(archive, RestoreTargets{DatabaseFile: target}, time.Now().UTC()); err == nil {
+		t.Fatal("native PostgreSQL archive accepted by SQLite restore")
+	}
+	if data, err := os.ReadFile(target); err != nil || string(data) != "original-data" {
+		t.Fatal("incompatible restore mutated destination")
 	}
 }
 

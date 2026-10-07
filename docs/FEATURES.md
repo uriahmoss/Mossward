@@ -524,12 +524,19 @@ failure and health states.
       - [x] Provision an isolated Unix-socket-only test cluster, least-privilege database role, and `MOSSWARD_TEST_POSTGRES_DSN`
       - [x] Make explicit PostgreSQL verification fail if the test DSN is absent
     - [ ] Repeat deployment verification on Linux/Windows and other supported PostgreSQL versions
-    - [ ] PostgreSQL-native backup/restore and disaster-recovery rehearsal
-    - [ ] PostgreSQL identity-key rotation maintenance command
+    - [x] PostgreSQL-native backup/restore and disaster-recovery rehearsal (PostgreSQL 16.15/macOS)
+      - [x] Offline native custom-format dump, complete keyring/PKI archive, and verified versioned manifest
+      - [x] Empty-database/non-superuser guard, no-overwrite file destinations, and transactional native restore
+      - [x] Installation verification, recoverable file staging, credential-safe tool execution, and operator runbook
+      - [x] Live recovery with historical encrypted MFA, PKI, and repaired audit sequence
+      - [x] Explicit recovery test target requiring dedicated test databases
+    - [x] PostgreSQL identity-key rotation maintenance command
+      - [x] Mandatory verified pre-rotation backup, transactional ciphertext rotation, and safe keyring finalization
+      - [x] Live CLI rotation and failed-backup/no-key-change regression coverage
     - [x] Remaining repository operation integration coverage
     - [x] PostgreSQL server startup enablement
       - [x] Backend-aware repository opening with bounded startup connection time
-      - [x] SQLite-only backup and identity-key maintenance fail closed on PostgreSQL
+      - [x] Backend-aware maintenance routing; incompatible archive/destination combinations fail closed
   - [x] Offline SQLite-to-PostgreSQL migration utility
     - [x] Read-only SQLite integrity, schema-version, and row-inventory preflight
     - [x] PostgreSQL destination preflight and empty-target enforcement

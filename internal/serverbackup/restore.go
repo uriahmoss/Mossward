@@ -36,6 +36,9 @@ func Restore(archive string, targets RestoreTargets, now time.Time) (RestoreResu
 		return RestoreResult{}, err
 	}
 	defer os.RemoveAll(directory)
+	if manifest.Backend == "postgresql" {
+		return RestoreResult{}, errors.New("PostgreSQL archive requires PostgreSQL restore; SQLite destination was not modified")
+	}
 	items := []restoreItem{
 		{source: filepath.Join(directory, "database", "mossward.db"), destination: targets.DatabaseFile},
 		{source: filepath.Join(directory, "identity", "identity.key"), destination: targets.IdentityKeyFile},

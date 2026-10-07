@@ -22,6 +22,8 @@ type PostgreSQLStore struct {
 	db *sql.DB
 }
 
+func PostgreSQLSchemaVersion() int { return postgresFoundationSchemaVersion }
+
 var _ Repository = (*PostgreSQLStore)(nil)
 
 func OpenPostgreSQL(ctx context.Context, dataSourceName string) (*PostgreSQLStore, error) {

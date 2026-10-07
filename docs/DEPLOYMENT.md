@@ -310,9 +310,10 @@ To run the Mossward server against PostgreSQL, set
 PostgreSQL URL containing `sslmode=verify-full`. Startup uses a bounded connection
 window, verifies the server version, applies migrations under an advisory lock,
 and starts only after the repository is ready. SQLite remains the default.
-PostgreSQL deployments can run the CVE maintenance command, but the current
-backup/restore and identity-key rotation commands intentionally fail closed
-because those workflows still operate on SQLite files.
+PostgreSQL deployments support CVE maintenance, native complete backups,
+empty-destination recovery, and mandatory-backup identity-key rotation. Install
+compatible PostgreSQL client tools and follow the offline procedures in
+[PostgreSQL recovery](POSTGRESQL_RECOVERY.md). SQLite backups remain compatible.
 
 Before an offline SQLite-to-PostgreSQL migration, stop Mossward and inspect the
 SQLite source without modifying it:

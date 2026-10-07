@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"time"
@@ -53,9 +54,13 @@ func (s *SQLiteStore) RotateIdentityCiphertexts(cipher IdentityCipher, now time.
 }
 
 func rotateEncryptedColumn(tx *sql.Tx, cipher IdentityCipher, column encryptedColumn, dialect sqlDialect) (int, error) {
+	return rotateEncryptedColumnContext(context.Background(), tx, cipher, column, dialect)
+}
+
+func rotateEncryptedColumnContext(ctx context.Context, tx *sql.Tx, cipher IdentityCipher, column encryptedColumn, dialect sqlDialect) (int, error) {
 	query := fmt.Sprintf("SELECT %s, %s FROM %s WHERE %s IS NOT NULL AND length(%s)>0",
 		column.keyColumn, column.value, column.table, column.value, column.value)
-	rows, err := tx.Query(query)
+	rows, err := tx.QueryContext(ctx, query)
 	if err != nil {
 		return 0, fmt.Errorf("read %s for identity-key rotation: %w", column.table, err)
 	}
@@ -72,6 +77,10 @@ func rotateEncryptedColumn(tx *sql.Tx, cipher IdentityCipher, column encryptedCo
 		}
 		records = append(records, item)
 	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return 0, err
+	}
 	if err := rows.Close(); err != nil {
 		return 0, err
 	}
@@ -85,7 +94,7 @@ func rotateEncryptedColumn(tx *sql.Tx, cipher IdentityCipher, column encryptedCo
 		if err != nil {
 			return 0, fmt.Errorf("encrypt %s during identity-key rotation: %w", column.table, err)
 		}
-		if _, err := tx.Exec(update, ciphertext, item.key); err != nil {
+		if _, err := tx.ExecContext(ctx, update, ciphertext, item.key); err != nil {
 			return 0, fmt.Errorf("update %s during identity-key rotation: %w", column.table, err)
 		}
 	}

@@ -62,10 +62,10 @@ func run(stop <-chan string) error {
 	if err != nil {
 		return err
 	}
+	if len(os.Args) > 1 && cfg.DatabaseBackend == config.DatabasePostgreSQL && (os.Args[1] == "backup" || os.Args[1] == "identity-key") {
+		return runPostgreSQLMaintenance(cfg, os.Args[1:])
+	}
 	if len(os.Args) > 2 && os.Args[1] == "backup" && (os.Args[2] == "restore" || os.Args[2] == "inspect") {
-		if cfg.DatabaseBackend != config.DatabaseSQLite {
-			return errors.New("backup inspect and restore currently require the SQLite backend")
-		}
 		return runBackupCommand(cfg, nil, os.Args[2:])
 	}
 	if len(os.Args) > 1 && os.Args[1] == "database" {

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -16,14 +17,18 @@ var postgresIdentityEncryptedColumns = []encryptedColumn{
 }
 
 func (s *PostgreSQLStore) RotateIdentityCiphertexts(cipher IdentityCipher, now time.Time) (int, error) {
-	tx, err := s.db.Begin()
+	return s.RotateIdentityCiphertextsContext(context.Background(), cipher, now)
+}
+
+func (s *PostgreSQLStore) RotateIdentityCiphertextsContext(ctx context.Context, cipher IdentityCipher, now time.Time) (int, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, fmt.Errorf("begin PostgreSQL identity-key rotation: %w", err)
 	}
 	defer tx.Rollback()
 	rotated := 0
 	for _, column := range postgresIdentityEncryptedColumns {
-		count, err := rotateEncryptedColumn(tx, cipher, column, dialectPostgreSQL)
+		count, err := rotateEncryptedColumnContext(ctx, tx, cipher, column, dialectPostgreSQL)
 		if err != nil {
 			return 0, err
 		}

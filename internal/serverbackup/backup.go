@@ -20,9 +20,10 @@ import (
 )
 
 const (
-	FormatVersion       = 1
-	maximumArchiveBytes = 1 << 30
-	maximumArchiveFiles = 10000
+	FormatVersion           = 1
+	maximumArchiveBytes     = 1 << 30
+	maximumArchiveFiles     = 10000
+	maximumIdentityKeyBytes = 1 << 20
 )
 
 type Source struct {
@@ -32,10 +33,12 @@ type Source struct {
 }
 
 type Manifest struct {
-	FormatVersion int             `json:"format_version"`
-	CreatedAt     time.Time       `json:"created_at"`
-	SchemaVersion int             `json:"schema_version"`
-	Files         []ManifestEntry `json:"files"`
+	FormatVersion  int             `json:"format_version"`
+	CreatedAt      time.Time       `json:"created_at"`
+	SchemaVersion  int             `json:"schema_version"`
+	Files          []ManifestEntry `json:"files"`
+	Backend        string          `json:"backend,omitempty"`
+	OrganizationID string          `json:"organization_id,omitempty"`
 }
 
 type ManifestEntry struct {
@@ -96,6 +99,12 @@ func addDirectory(files map[string]string, source, archiveRoot string) error {
 }
 
 func writeArchive(output string, files map[string]string, schemaVersion int, now time.Time) (resultErr error) {
+	return writeManifestArchive(output, files, Manifest{FormatVersion: FormatVersion, CreatedAt: now.UTC(), SchemaVersion: schemaVersion})
+}
+
+func writeManifestArchive(output string, files map[string]string, manifest Manifest) (resultErr error) {
+	// File metadata is derived solely from the files written in this archive.
+	manifest.Files = nil
 	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
 		return err
 	}
@@ -113,24 +122,34 @@ func writeArchive(output string, files map[string]string, schemaVersion int, now
 	}()
 	gzipWriter := gzip.NewWriter(file)
 	tarWriter := tar.NewWriter(gzipWriter)
-	manifest := Manifest{FormatVersion: FormatVersion, CreatedAt: now.UTC(), SchemaVersion: schemaVersion}
 	paths := make([]string, 0, len(files))
 	for path := range files {
 		paths = append(paths, path)
 	}
 	sort.Strings(paths)
+	if len(paths)+1 > maximumArchiveFiles {
+		return errors.New("backup contains too many files")
+	}
+	var totalSize int64
 	for _, path := range paths {
 		entry, err := writeFile(tarWriter, path, files[path])
 		if err != nil {
 			return err
 		}
 		manifest.Files = append(manifest.Files, entry)
+		totalSize += entry.Size
+		if totalSize > maximumArchiveBytes {
+			return errors.New("backup expands beyond the maximum supported size")
+		}
 	}
 	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := tarWriter.WriteHeader(&tar.Header{Name: "manifest.json", Mode: 0o600, Size: int64(len(manifestJSON)), ModTime: now}); err != nil {
+	if totalSize+int64(len(manifestJSON)) > maximumArchiveBytes {
+		return errors.New("backup manifest exceeds the maximum supported archive size")
+	}
+	if err := tarWriter.WriteHeader(&tar.Header{Name: "manifest.json", Mode: 0o600, Size: int64(len(manifestJSON)), ModTime: manifest.CreatedAt}); err != nil {
 		return err
 	}
 	if _, err := tarWriter.Write(manifestJSON); err != nil {
@@ -143,24 +162,40 @@ func writeArchive(output string, files map[string]string, schemaVersion int, now
 }
 
 func writeFile(writer *tar.Writer, archivePath, sourcePath string) (ManifestEntry, error) {
-	data, err := os.ReadFile(sourcePath)
+	info, err := os.Lstat(sourcePath)
+	if err != nil || !info.Mode().IsRegular() || info.Size() > maximumArchiveBytes {
+		return ManifestEntry{}, fmt.Errorf("backup source %q must be a bounded regular file", sourcePath)
+	}
+	input, err := os.Open(sourcePath)
 	if err != nil {
 		return ManifestEntry{}, fmt.Errorf("read backup source %q: %w", sourcePath, err)
 	}
+	defer input.Close()
 	if archivePath == "identity/identity.key" {
+		data, err := io.ReadAll(io.LimitReader(input, maximumIdentityKeyBytes+1))
+		if err != nil || len(data) > maximumIdentityKeyBytes {
+			return ManifestEntry{}, errors.New("identity key exceeds the maximum supported size")
+		}
 		if err := auth.ValidateIdentityKeyData(data); err != nil {
 			return ManifestEntry{}, fmt.Errorf("identity key is invalid: %w", err)
 		}
+		if _, err := input.Seek(0, io.SeekStart); err != nil {
+			return ManifestEntry{}, err
+		}
 	}
-	digest := sha256.Sum256(data)
-	header := &tar.Header{Name: archivePath, Mode: 0o600, Size: int64(len(data)), ModTime: time.Now().UTC()}
+	digest := sha256.New()
+	header := &tar.Header{Name: archivePath, Mode: 0o600, Size: info.Size(), ModTime: time.Now().UTC()}
 	if err := writer.WriteHeader(header); err != nil {
 		return ManifestEntry{}, err
 	}
-	if _, err := writer.Write(data); err != nil {
+	if _, err := io.CopyN(io.MultiWriter(writer, digest), input, info.Size()); err != nil {
 		return ManifestEntry{}, err
 	}
-	return ManifestEntry{Path: archivePath, SHA256: hex.EncodeToString(digest[:]), Size: int64(len(data))}, nil
+	var extra [1]byte
+	if count, err := input.Read(extra[:]); count != 0 || err != io.EOF {
+		return ManifestEntry{}, errors.New("backup source changed during archive creation; stop Mossward and retry")
+	}
+	return ManifestEntry{Path: archivePath, SHA256: hex.EncodeToString(digest.Sum(nil)), Size: info.Size()}, nil
 }
 
 func Inspect(path string) (Manifest, error) {
@@ -231,7 +266,7 @@ func extractAndValidate(path string) (string, Manifest, error) {
 		return fail(errors.New("backup manifest is missing"))
 	}
 	var manifest Manifest
-	if err := json.Unmarshal(manifestData, &manifest); err != nil || manifest.FormatVersion != FormatVersion {
+	if err := json.Unmarshal(manifestData, &manifest); err != nil || !supportedManifest(manifest) {
 		return fail(errors.New("backup manifest is invalid or unsupported"))
 	}
 	if err := validateExtracted(directory, manifest); err != nil {
@@ -241,18 +276,27 @@ func extractAndValidate(path string) (string, Manifest, error) {
 }
 
 func validateExtracted(directory string, manifest Manifest) error {
-	required := map[string]bool{"database/mossward.db": false, "identity/identity.key": false}
+	databaseEntry := "database/mossward.db"
+	if manifest.Backend == "postgresql" {
+		databaseEntry = postgresDumpEntry
+	}
+	required := map[string]bool{databaseEntry: false, "identity/identity.key": false}
 	expected := map[string]bool{"manifest.json": true}
 	for _, entry := range manifest.Files {
-		if !safeArchivePath(entry.Path) {
+		if !safeArchivePath(entry.Path) || !allowedBackupEntry(entry.Path, databaseEntry) {
 			return fmt.Errorf("unsafe manifest path %q", entry.Path)
 		}
-		data, err := os.ReadFile(filepath.Join(directory, filepath.FromSlash(entry.Path)))
-		if err != nil || int64(len(data)) != entry.Size {
+		input, err := os.Open(filepath.Join(directory, filepath.FromSlash(entry.Path)))
+		if err != nil {
 			return fmt.Errorf("backup entry %q is missing or has the wrong size", entry.Path)
 		}
-		digest := sha256.Sum256(data)
-		if hex.EncodeToString(digest[:]) != entry.SHA256 {
+		digest := sha256.New()
+		size, copyErr := io.Copy(digest, input)
+		closeErr := input.Close()
+		if copyErr != nil || closeErr != nil || size != entry.Size {
+			return fmt.Errorf("backup entry %q is missing or has the wrong size", entry.Path)
+		}
+		if hex.EncodeToString(digest.Sum(nil)) != entry.SHA256 {
 			return fmt.Errorf("backup entry %q failed its SHA-256 check", entry.Path)
 		}
 		if _, ok := required[entry.Path]; ok {
@@ -280,9 +324,16 @@ func validateExtracted(directory string, manifest Manifest) error {
 			return fmt.Errorf("required backup entry %q is missing", path)
 		}
 	}
+	identityInfo, err := os.Stat(filepath.Join(directory, "identity", "identity.key"))
+	if err != nil || identityInfo.Size() > maximumIdentityKeyBytes {
+		return errors.New("identity key is missing or exceeds the maximum supported size")
+	}
 	identity, _ := os.ReadFile(filepath.Join(directory, "identity", "identity.key"))
 	if err := auth.ValidateIdentityKeyData(identity); err != nil {
 		return fmt.Errorf("identity key is invalid: %w", err)
+	}
+	if manifest.Backend == "postgresql" {
+		return validatePostgreSQLDump(filepath.Join(directory, filepath.FromSlash(postgresDumpEntry)))
 	}
 	version, err := store.ValidateSQLiteSnapshot(filepath.Join(directory, "database", "mossward.db"))
 	if err != nil {
@@ -296,5 +347,16 @@ func validateExtracted(directory string, manifest Manifest) error {
 
 func safeArchivePath(path string) bool {
 	clean := filepath.ToSlash(filepath.Clean(path))
-	return path != "" && clean == path && !strings.HasPrefix(clean, "/") && clean != ".." && !strings.HasPrefix(clean, "../")
+	return path != "" && !strings.ContainsAny(path, "\\:") && clean == path && !strings.HasPrefix(clean, "/") && clean != ".." && !strings.HasPrefix(clean, "../")
+}
+
+func supportedManifest(manifest Manifest) bool {
+	if manifest.FormatVersion == FormatVersion {
+		return manifest.Backend == "" || manifest.Backend == "sqlite"
+	}
+	return manifest.FormatVersion == postgresArchiveVersion && manifest.Backend == "postgresql" && manifest.SchemaVersion > 0 && manifest.SchemaVersion <= store.PostgreSQLSchemaVersion() && manifest.OrganizationID != ""
+}
+
+func allowedBackupEntry(path, databaseEntry string) bool {
+	return path == databaseEntry || path == "identity/identity.key" || strings.HasPrefix(path, "acme/") || strings.HasPrefix(path, "agent-pki/")
 }
