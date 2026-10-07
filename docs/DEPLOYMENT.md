@@ -323,9 +323,10 @@ MOSSWARD_DATABASE_FILE=/path/to/mossward.db \
 ./bin/mossward database migration-preflight
 ```
 
-The JSON report includes the integrity result, schema version, file size, and
-per-table row counts. Destination validation and copying are separate unfinished
-slices; this command does not connect to PostgreSQL or move data.
+The JSON report includes the integrity result, schema version, file size,
+per-table row counts, excluded migration-control tables, and a deterministic
+foreign-key-aware copy order. Destination validation and copying are separate
+unfinished slices; this command does not connect to PostgreSQL or move data.
 
 Validate a dedicated empty PostgreSQL destination schema separately:
 

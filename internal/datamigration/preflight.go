@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -19,6 +20,8 @@ type SourceReport struct {
 	TableCount    int            `json:"table_count"`
 	TotalRows     int64          `json:"total_rows"`
 	Tables        []TableSummary `json:"tables"`
+	CopyOrder     []string       `json:"copy_order"`
+	Excluded      []string       `json:"excluded"`
 }
 
 type TableSummary struct {
@@ -34,7 +37,11 @@ func PreflightSQLiteSource(ctx context.Context, path string) (SourceReport, erro
 	if !info.Mode().IsRegular() {
 		return SourceReport{}, fmt.Errorf("SQLite migration source must be a regular file")
 	}
-	database, err := sql.Open("sqlite", readOnlySQLiteDSN(path))
+	absolutePath, err := filepath.Abs(path)
+	if err != nil {
+		return SourceReport{}, fmt.Errorf("resolve SQLite migration source path: %w", err)
+	}
+	database, err := sql.Open("sqlite", readOnlySQLiteDSN(absolutePath))
 	if err != nil {
 		return SourceReport{}, fmt.Errorf("open SQLite migration source: %w", err)
 	}
@@ -67,7 +74,98 @@ func PreflightSQLiteSource(ctx context.Context, path string) (SourceReport, erro
 		report.TotalRows += rows
 	}
 	report.TableCount = len(report.Tables)
+	report.Excluded = []string{"schema_migrations"}
+	report.CopyOrder, err = sqliteCopyOrder(ctx, database, tableNames, report.Excluded)
+	if err != nil {
+		return SourceReport{}, err
+	}
 	return report, nil
+}
+
+func sqliteCopyOrder(ctx context.Context, database *sql.DB, tableNames, excluded []string) ([]string, error) {
+	excludedSet := make(map[string]bool, len(excluded))
+	for _, name := range excluded {
+		excludedSet[name] = true
+	}
+	known := make(map[string]bool, len(tableNames))
+	dependencies := map[string]map[string]bool{}
+	for _, name := range tableNames {
+		known[name] = true
+		if !excludedSet[name] {
+			dependencies[name] = map[string]bool{}
+		}
+	}
+	for name := range dependencies {
+		foreignKeys, err := sqliteForeignKeyTables(ctx, database, name)
+		if err != nil {
+			return nil, err
+		}
+		for _, dependency := range foreignKeys {
+			if dependency == name {
+				continue
+			}
+			if excludedSet[dependency] {
+				continue
+			}
+			if !known[dependency] {
+				return nil, fmt.Errorf("SQLite migration source table %q references missing table %q", name, dependency)
+			}
+			dependencies[name][dependency] = true
+		}
+	}
+	order := make([]string, 0, len(dependencies))
+	for len(order) < len(dependencies) {
+		ready := []string{}
+		for name, required := range dependencies {
+			if containsString(order, name) || hasPendingDependency(required, order) {
+				continue
+			}
+			ready = append(ready, name)
+		}
+		if len(ready) == 0 {
+			return nil, fmt.Errorf("SQLite migration source contains cyclic table dependencies")
+		}
+		sort.Strings(ready)
+		order = append(order, ready...)
+	}
+	return order, nil
+}
+
+func sqliteForeignKeyTables(ctx context.Context, database *sql.DB, table string) ([]string, error) {
+	query := `PRAGMA foreign_key_list("` + strings.ReplaceAll(table, `"`, `""`) + `")`
+	rows, err := database.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("read SQLite migration source dependencies for %q: %w", table, err)
+	}
+	defer rows.Close()
+	dependencies := []string{}
+	for rows.Next() {
+		var id, sequence int
+		var dependency, from, to, onUpdate, onDelete, match string
+		if err := rows.Scan(&id, &sequence, &dependency, &from, &to, &onUpdate, &onDelete, &match); err != nil {
+			return nil, fmt.Errorf("scan SQLite migration source dependency for %q: %w", table, err)
+		}
+		dependencies = append(dependencies, dependency)
+	}
+	return dependencies, rows.Err()
+}
+
+func hasPendingDependency(dependencies map[string]bool, ordered []string) bool {
+	for dependency := range dependencies {
+		if !containsString(ordered, dependency) {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(values []string, wanted string) bool {
+	for _, value := range values {
+		if value == wanted {
+			return true
+		}
+	}
+	return false
 }
 
 func sqliteTableNames(ctx context.Context, database *sql.DB) ([]string, error) {
