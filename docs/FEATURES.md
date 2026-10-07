@@ -532,6 +532,8 @@ failure and health states.
     - [x] Deterministic foreign-key-aware source copy plan with migration-control exclusions
     - [x] Source reference integrity and column manifest with missing-column rejection
     - [ ] Destination initialization, type conversion, and required-field compatibility
+      - [x] Strict boolean, timestamp, JSON, and binary value conversion
+      - [ ] Destination schema initialization and required-field validation
     - [ ] Transactional ordered data copy with sequence repair and verification
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback

@@ -328,8 +328,11 @@ per-table row counts, excluded migration-control tables, and a deterministic
 foreign-key-aware copy order. Destination validation and copying are separate
 unfinished slices; this command does not connect to PostgreSQL or move data.
 The source preflight also rejects broken foreign-key references and inventories
-column names for copy compatibility checks. Destination initialization, required
-field checks, and type conversion remain pending.
+column names for copy compatibility checks. Destination initialization and
+required-field checks remain pending.
+The copy conversion helpers now preserve NULL, binary data, JSON numeric
+precision, and timestamp offsets while rejecting malformed input. Integration
+of these helpers into destination copying remains pending.
 
 Validate a dedicated empty PostgreSQL destination schema separately:
 
