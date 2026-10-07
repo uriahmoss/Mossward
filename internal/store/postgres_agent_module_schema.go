@@ -9,7 +9,7 @@ import (
 
 func migratePostgreSQLAgentModules(ctx context.Context, tx *sql.Tx) error {
 	statements := []string{
-		`ALTER TABLE endpoints ADD COLUMN asset_id TEXT REFERENCES assets(id)`,
+		`ALTER TABLE endpoints ADD COLUMN IF NOT EXISTS asset_id TEXT REFERENCES assets(id)`,
 		`CREATE INDEX endpoints_asset_idx ON endpoints(asset_id) WHERE asset_id IS NOT NULL`,
 		`CREATE TABLE agent_module_publishers (
 			key_id TEXT PRIMARY KEY,name TEXT NOT NULL,public_key BYTEA NOT NULL,enabled BOOLEAN NOT NULL,

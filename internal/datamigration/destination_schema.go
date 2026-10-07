@@ -32,6 +32,7 @@ func destinationColumns(ctx context.Context, tx *sql.Tx) (map[string][]destinati
 }
 
 func validateDestination(source SourceReport, destination map[string][]destinationColumn) error {
+	source = mappedSourceColumns(source)
 	names := map[string][]string{}
 	for table, columns := range destination {
 		for _, column := range columns {
@@ -59,6 +60,25 @@ func validateDestination(source SourceReport, destination map[string][]destinati
 		}
 	}
 	return nil
+}
+
+func migrationColumnName(table, column string) string {
+	if table == "scanner_worker_dispatch_settings" && column == "id" {
+		return "singleton"
+	}
+	return column
+}
+
+func mappedSourceColumns(source SourceReport) SourceReport {
+	source.Tables = append([]TableSummary(nil), source.Tables...)
+	for index, table := range source.Tables {
+		columns := make([]string, len(table.Columns))
+		for position, column := range table.Columns {
+			columns[position] = migrationColumnName(table.Name, column)
+		}
+		source.Tables[index].Columns = columns
+	}
+	return source
 }
 
 func findColumn(columns []destinationColumn, name string) destinationColumn {
@@ -115,7 +135,7 @@ func destinationCopyOrder(ctx context.Context, tx *sql.Tx, tables []string) ([]s
 
 func repairSequences(ctx context.Context, tx *sql.Tx) error {
 	rows, err := tx.QueryContext(ctx, `SELECT table_name,column_name,pg_get_serial_sequence(quote_ident(table_schema)||'.'||quote_ident(table_name),column_name)
-	FROM information_schema.columns WHERE table_schema=current_schema() AND column_default LIKE 'nextval%'`)
+	FROM information_schema.columns WHERE table_schema=current_schema() AND (column_default LIKE 'nextval%' OR is_identity='YES')`)
 	if err != nil {
 		return err
 	}

@@ -3,11 +3,14 @@ package datamigration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"mossward/internal/store"
 )
@@ -136,10 +139,11 @@ func copyTable(ctx context.Context, src, dst *sql.Tx, table string, metadata []d
 	}
 	quoted, placeholders := []string{}, []string{}
 	for index, name := range columns {
-		quoted = append(quoted, quoteIdentifier(name))
+		columns[index] = migrationColumnName(table, name)
+		quoted = append(quoted, quoteIdentifier(columns[index]))
 		placeholders = append(placeholders, fmt.Sprintf("$%d", index+1))
 	}
-	statement := "INSERT INTO " + quoteIdentifier(table) + " (" + strings.Join(quoted, ",") + ") VALUES (" + strings.Join(placeholders, ",") + ")"
+	statement := "INSERT INTO " + quoteIdentifier(table) + " (" + strings.Join(quoted, ",") + ") OVERRIDING SYSTEM VALUE VALUES (" + strings.Join(placeholders, ",") + ")"
 	statement += " RETURNING " + strings.Join(quoted, ",")
 	var count int64
 	for rows.Next() {
@@ -152,7 +156,7 @@ func copyTable(ctx context.Context, src, dst *sql.Tx, table string, metadata []d
 		}
 		for index, name := range columns {
 			column := findColumn(metadata, name)
-			values[index], err = ConvertValue(values[index], ColumnType(column.Type))
+			values[index], err = convertMigrationColumn(table, values[index], column)
 			if err != nil {
 				return 0, fmt.Errorf("convert %s.%s: %w", table, name, err)
 			}
@@ -162,6 +166,10 @@ func copyTable(ctx context.Context, src, dst *sql.Tx, table string, metadata []d
 			destinations[index] = &returned[index]
 		}
 		if err := dst.QueryRowContext(ctx, statement, values...).Scan(destinations...); err != nil {
+			var postgresError *pgconn.PgError
+			if errors.As(err, &postgresError) {
+				return 0, fmt.Errorf("insert migration row in %q: PostgreSQL %s, constraint %q, column %q (value details withheld)", table, postgresError.Code, postgresError.ConstraintName, postgresError.ColumnName)
+			}
 			return 0, fmt.Errorf("insert migration row in %q (value details withheld)", table)
 		}
 		for index, name := range columns {
@@ -179,4 +187,16 @@ func copyTable(ctx context.Context, src, dst *sql.Tx, table string, metadata []d
 		return 0, fmt.Errorf("migration row count verification failed for %q", table)
 	}
 	return count, nil
+}
+
+func convertMigrationColumn(table string, value any, column destinationColumn) (any, error) {
+	// SQLite uses empty text for some unset optional timestamps. Preserve absence
+	// as SQL NULL, but never accept an empty required timestamp.
+	if column.Nullable && ColumnType(column.Type) == ColumnTimestamp && value == "" {
+		return nil, nil
+	}
+	if table == "audit_events" && column.Name == "details" && value == "" {
+		return "{}", nil
+	}
+	return ConvertValue(value, ColumnType(column.Type))
 }

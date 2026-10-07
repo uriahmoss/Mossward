@@ -14,7 +14,8 @@ test:
 	GOCACHE=$(GOCACHE) go test -race ./...
 
 test-postgres:
-	GOCACHE=$(GOCACHE) go test -race ./internal/store -run '^TestPostgreSQL(Migrations|Startup|ScanAndAsset|LocalAuth|Audit|SessionAndInvitation|IdentityAdministration|WebAuthn|OIDC|ScopeAndPolicy|EndpointIdentity|EndpointInventory|EndpointIntegrity|EndpointNetwork|Relay|Maintenance|EndpointCoverage|WorkerIdentity|WorkerJobLease|WorkerEvidence|WorkerReassignment|WorkerJobDeadLetter|FindingWorkflow|Notification|AgentUpdate|AgentModule|AssetMerge|AssetLifecycle|IdentityCiphertext|CVEFeed)' -count=1
+	@test -n "$${MOSSWARD_TEST_POSTGRES_DSN:-}" || { echo 'MOSSWARD_TEST_POSTGRES_DSN is required for live PostgreSQL verification'; exit 1; }
+	GOCACHE=$(GOCACHE) go test -race ./internal/store -run '^TestPostgreSQL' -count=1
 	GOCACHE=$(GOCACHE) go test -race ./internal/datamigration -run '^TestPostgreSQL' -count=1
 
 verify:

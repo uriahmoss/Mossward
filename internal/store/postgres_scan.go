@@ -187,9 +187,9 @@ func (s *PostgreSQLStore) ReconcileInterrupted() error {
 	_, err := s.db.Exec(`UPDATE scans SET
 		status=CASE WHEN scan_policy_id<>'' THEN $1 ELSE $2 END,
 		error=CASE WHEN scan_policy_id<>'' THEN 'scheduled scan paused by process shutdown' ELSE 'scan interrupted by a previous process shutdown' END,
-		completed_at=CASE WHEN scan_policy_id<>'' THEN NULL ELSE $3 END,
+		completed_at=CASE WHEN scan_policy_id<>'' THEN NULL ELSE $3::timestamptz END,
 		active_seconds=active_seconds+CASE WHEN scan_policy_id<>'' AND status=$4 AND started_at IS NOT NULL
-			THEN GREATEST(0,EXTRACT(EPOCH FROM ($3-started_at))::BIGINT) ELSE 0 END,
+			THEN GREATEST(0,EXTRACT(EPOCH FROM ($3::timestamptz-started_at))::BIGINT) ELSE 0 END,
 		started_at=CASE WHEN scan_policy_id<>'' THEN NULL ELSE started_at END
 		WHERE status IN ($5,$6)`, model.StatusPaused, model.StatusFailed, time.Now().UTC(), model.StatusRunning,
 		model.StatusQueued, model.StatusRunning)

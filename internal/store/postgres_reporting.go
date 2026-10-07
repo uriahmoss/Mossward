@@ -123,7 +123,7 @@ func (s *PostgreSQLStore) SaveEvidenceRetentionSettings(settings model.EvidenceR
 
 func (s *PostgreSQLStore) PurgeExpiredEvidence(now time.Time) (int64, error) {
 	result, err := s.db.Exec(`DELETE FROM scans WHERE completed_at IS NOT NULL
-		AND completed_at < ($1-(SELECT retention_days FROM evidence_retention_settings WHERE id=1)*INTERVAL '1 day')
+		AND completed_at < ($1::timestamptz-(SELECT retention_days FROM evidence_retention_settings WHERE id=1)*INTERVAL '1 day')
 		AND NOT EXISTS(SELECT 1 FROM findings f JOIN finding_exceptions e ON e.finding_id=f.id
 			WHERE f.scan_id=scans.id AND e.status='approved' AND (e.expires_at IS NULL OR e.expires_at>$1))`, now)
 	if err != nil {

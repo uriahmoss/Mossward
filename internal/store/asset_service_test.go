@@ -89,7 +89,7 @@ func TestRecordAssetEvidenceRejectsInvalidProvenance(t *testing.T) {
 }
 
 func serviceHistoryScan(id, observationID string, at time.Time, observed bool) model.Scan {
-	scan := model.Scan{ID: id, Name: "Exposure", Status: model.StatusCompleted, CreatedAt: at, CompletedAt: &at, Targets: []model.Target{{Name: "host.example.test", Address: "192.0.2.70"}}, Ports: []int{443}}
+	scan := model.Scan{ID: id, Name: "Exposure", MaxConcurrent: 1, Status: model.StatusCompleted, CreatedAt: at, CompletedAt: &at, Targets: []model.Target{{Name: "host.example.test", Address: "192.0.2.70"}}, Ports: []int{443}}
 	if observed {
 		scan.Observations = []model.ServiceObservation{{ID: observationID, Target: "host.example.test", Address: "192.0.2.70", Port: 443, Protocol: "https", Confidence: "high", Evidence: "reachable", ObservedAt: at}}
 	}

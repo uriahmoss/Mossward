@@ -3,6 +3,7 @@ package datamigration
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -31,19 +32,21 @@ func sourceColumns(ctx context.Context, database *sql.DB, table string) ([]strin
 // ValidateCopyColumns checks that every planned source field has a destination.
 // Destination-only fields and value conversion require separate validation.
 func ValidateCopyColumns(source SourceReport, destination map[string][]string) error {
+	var issues []error
 	for _, table := range source.Tables {
 		if containsString(source.Excluded, table.Name) {
 			continue
 		}
 		columns, exists := destination[table.Name]
 		if !exists {
-			return fmt.Errorf("migration destination is missing table %q", table.Name)
+			issues = append(issues, fmt.Errorf("migration destination is missing table %q", table.Name))
+			continue
 		}
 		for _, column := range table.Columns {
 			if !containsString(columns, column) {
-				return fmt.Errorf("migration destination table %q is missing column %q", table.Name, column)
+				issues = append(issues, fmt.Errorf("migration destination table %q is missing column %q", table.Name, column))
 			}
 		}
 	}
-	return nil
+	return errors.Join(issues...)
 }

@@ -344,8 +344,12 @@ This read-only check verifies connectivity, PostgreSQL 14 or newer, the current
 schema, and that the schema contains no tables, views, sequences, or foreign
 tables. It never prints the connection URL and refuses a non-empty target.
 
-The offline copy command is implemented but awaits live PostgreSQL migration
-verification before production use. Stop Mossward, create and verify a complete
+The offline copy command has passed live PostgreSQL 16.15 integration tests on
+macOS, including source-file immutability, mid-copy rollback, ciphertext and
+signed-catalog preservation, identity sequence repair, and occupied-target
+rejection. This is not a substitute for validating a backup and rehearsing with
+your deployment's data; Linux/Windows and other PostgreSQL versions remain to be
+verified. Stop Mossward, create and verify a complete
 backup, and upgrade the SQLite source to the current build's schema. Retain the
 identity encryption keyring, agent PKI, and other application files alongside
 the database; ciphertext cannot be used without its original keyring.
@@ -363,6 +367,11 @@ utility checks column compatibility, orders tables using destination foreign
 keys, removes generated defaults, copies from a consistent read-only source
 snapshot, verifies each inserted value and each table's row count, and repairs
 generated-ID sequences. It preserves the source installation organization.
+Known representation differences are mapped explicitly: the worker-dispatch
+singleton key, unset optional timestamps (empty SQLite text becomes SQL NULL),
+and empty audit details (an empty JSON object). Required empty timestamps and
+malformed non-empty JSON are rejected. Signed check-catalog and intrusive-check
+policy rows are retained alongside all application tables.
 Constraints and audit protections remain installed. A failure rolls back schema
 creation and data together; the SQLite source remains available for retry.
 
@@ -372,6 +381,23 @@ then start Mossward and validate authentication, assets, and scans. Keep the
 SQLite backup until validation is complete. Run `make test-postgres` with
 `MOSSWARD_TEST_POSTGRES_DSN` to exercise the live copy, rollback, identity,
 ciphertext, sequence-repair, and occupied-destination tests.
+
+Use a dedicated test database owned by a login role with `NOSUPERUSER`,
+`NOCREATEDB`, and `NOCREATEROLE`; database ownership allows the role to create
+the isolated test schemas and their tables/functions. Do not point the tests at
+a production database. For an existing test server:
+
+```sh
+export MOSSWARD_TEST_POSTGRES_DSN='postgresql://test_user@db.example/mossward_test?sslmode=verify-full'
+make test-postgres
+make verify
+```
+
+Provide credentials through your normal protected secret mechanism. The
+explicit `test-postgres` target fails if the DSN is missing, rather than allowing
+a skipped suite to appear verified. Local Unix-socket-only temporary clusters
+can use socket authentication without exposing a TCP listener; production
+connections continue to require verified TLS.
 
 The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify

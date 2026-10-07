@@ -2,6 +2,7 @@ package datamigration
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"os"
 	"path/filepath"
@@ -50,7 +51,10 @@ func TestPostgreSQLMigrationCopiesAndRollsBack(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := repository.Save(model.Scan{ID: "migration-scan", Name: "Retained scan", Status: model.StatusCompleted, CreatedAt: now, CompletedAt: &now, MaxConcurrent: 1}); err != nil {
+	scan := model.Scan{ID: "migration-scan", Name: "Retained scan", Status: model.StatusCompleted, CreatedAt: now, CompletedAt: &now, MaxConcurrent: 1,
+		Targets: []model.Target{{Name: "migration.example.test", Address: "192.0.2.20"}}, Ports: []int{443},
+		Observations: []model.ServiceObservation{{ID: "migration-observation", Target: "migration.example.test", Address: "192.0.2.20", Port: 443, Protocol: "https", ObservedAt: now, Metadata: map[string]string{"source": "migration"}}}}
+	if err := repository.Save(scan); err != nil {
 		t.Fatal(err)
 	}
 	if err := repository.Close(); err != nil {
@@ -73,13 +77,37 @@ func TestPostgreSQLMigrationCopiesAndRollsBack(t *testing.T) {
 	if _, err := sourceDB.Exec(`ALTER TABLE users DROP COLUMN unsupported`); err != nil {
 		t.Fatal(err)
 	}
+	if _, err := sourceDB.Exec(`INSERT INTO check_publishers(key_id,name,public_key,status,added_at) VALUES(?,?,?,?,?)`, "migration-publisher", "Retained publisher", []byte{0, 255, 7}, "trusted", now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sourceDB.Exec(`INSERT INTO declarative_check_versions(check_id,version,kind,key_id,envelope_json,status,imported_at) VALUES(?,?,?,?,?,?,?)`, "migration-check", "1.0.0", "tcp", "migration-publisher", []byte(`{"signed":true}`), "staged", now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
+	// A value failure after earlier tables were inserted must remove all partial
+	// data and the initialized schema, not just reject incompatible columns.
+	if _, err := sourceDB.Exec(`UPDATE totp_credentials SET created_at='invalid-private-value'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CopySQLiteToPostgreSQL(ctx, path, isolated); err == nil {
+		t.Fatal("invalid required timestamp accepted")
+	}
+	if _, err := PreflightPostgreSQLDestination(ctx, isolated); err != nil {
+		t.Fatalf("mid-copy failure left destination occupied: %v", err)
+	}
+	if _, err := sourceDB.Exec(`UPDATE totp_credentials SET created_at=?`, now.Format(time.RFC3339Nano)); err != nil {
+		t.Fatal(err)
+	}
 	sourceDB.Close()
+	before := migrationSourceHash(t, path)
 	report, err := CopySQLiteToPostgreSQL(ctx, path, isolated)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !report.Verified || report.Rows == 0 {
 		t.Fatalf("unexpected report: %#v", report)
+	}
+	if after := migrationSourceHash(t, path); before != after {
+		t.Fatal("migration modified the SQLite source")
 	}
 	destination, err := store.OpenPostgreSQL(ctx, isolated)
 	if err != nil {
@@ -94,8 +122,17 @@ func TestPostgreSQLMigrationCopiesAndRollsBack(t *testing.T) {
 	if err != nil || !equivalentValue(secret, mfa.TOTPSecretCiphertext, ColumnBinary) {
 		t.Fatalf("ciphertext changed: %v", err)
 	}
-	if _, err := destination.Get("migration-scan"); err != nil {
+	retained, err := destination.Get("migration-scan")
+	if err != nil || len(retained.Observations) != 1 || retained.Observations[0].Metadata["source"] != "migration" {
 		t.Fatal(err)
+	}
+	assets, err := destination.ListAssets()
+	if err != nil || len(assets) != 1 {
+		t.Fatalf("asset history not migrated: %#v %v", assets, err)
+	}
+	var envelope []byte
+	if err := admin.QueryRow(`SELECT envelope_json FROM ` + schema + `.declarative_check_versions WHERE check_id='migration-check'`).Scan(&envelope); err != nil || string(envelope) != `{"signed":true}` {
+		t.Fatalf("signed catalog evidence changed: %v", err)
 	}
 	if err := destination.AppendAuditEvent(event); err != nil {
 		t.Fatalf("audit sequence was not repaired: %v", err)
@@ -103,6 +140,15 @@ func TestPostgreSQLMigrationCopiesAndRollsBack(t *testing.T) {
 	if _, err := CopySQLiteToPostgreSQL(ctx, path, isolated); err == nil {
 		t.Fatal("occupied destination accepted")
 	}
+}
+
+func migrationSourceHash(t *testing.T, path string) [sha256.Size]byte {
+	t.Helper()
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return sha256.Sum256(contents)
 }
 
 func TestMigrationRequiredFieldsAndValueVerification(t *testing.T) {
@@ -116,5 +162,24 @@ func TestMigrationRequiredFieldsAndValueVerification(t *testing.T) {
 	}
 	if equivalentValue(int64(4), int64(5), "") {
 		t.Fatal("changed row value accepted")
+	}
+}
+
+func TestMigrationOptionalValuesAndColumnMapping(t *testing.T) {
+	optional := destinationColumn{Name: "updated_at", Type: string(ColumnTimestamp), Nullable: true}
+	value, err := convertMigrationColumn("endpoint_coverage_settings", "", optional)
+	if err != nil || value != nil {
+		t.Fatalf("unset optional timestamp: %v %v", value, err)
+	}
+	optional.Nullable = false
+	if _, err := convertMigrationColumn("example", "", optional); err == nil {
+		t.Fatal("empty required timestamp accepted")
+	}
+	value, err = convertMigrationColumn("audit_events", "", destinationColumn{Name: "details", Type: string(ColumnJSON)})
+	if err != nil || value != "{}" {
+		t.Fatalf("unset audit details: %v %v", value, err)
+	}
+	if migrationColumnName("scanner_worker_dispatch_settings", "id") != "singleton" || migrationColumnName("users", "id") != "id" {
+		t.Fatal("singleton mapping affected unrelated identifiers")
 	}
 }

@@ -410,7 +410,7 @@ failure and health states.
 - [x] Per-organization scope policies
 - [ ] PostgreSQL storage option
   - [x] Secure backend configuration, maintained driver, connection checks, and migration foundation
-  - [ ] Full PostgreSQL schema and repository query parity
+  - [x] Core application PostgreSQL schema and repository query parity (live PostgreSQL 16.15 verified)
     - [x] SQL placeholder dialect and organization/scope-policy schema parity
     - [x] User/audit foundation and transactional scope-policy CRUD parity
     - [x] Authentication, MFA, WebAuthn, invitation, and OIDC schema parity
@@ -423,15 +423,15 @@ failure and health states.
     - [x] Authentication policy, audit query, and controlled retention parity
     - [x] Transactional authentication ciphertext rotation parity
     - [x] SMTP settings, recipients, alert deduplication, and credential rotation parity
-    - [ ] Core scan persistence parity
+    - [x] Core scan persistence parity
       - [x] Scan, target, port, observation, finding, and checkpoint schema foundation
-      - [ ] Transactional scan save, load, listing, and interrupted-run reconciliation
+      - [x] Transactional scan save, load, listing, and interrupted-run reconciliation
         - [x] Core scan graph persistence and interrupted-run state handling
-        - [ ] CVE-match persistence and asset inventory projection side effects
+        - [x] CVE-match persistence and asset inventory projection side effects
           - [x] CVE catalog, affected products, references, scan matches, and feed-state schema
           - [x] CVE repository queries, feed state, critical news, and scan-match round trips
           - [x] Endpoint-software CVE relevance refresh
-          - [ ] Asset inventory projection
+          - [x] Asset inventory projection
             - [x] Asset identity, aliases, lifecycle, service history, evidence, and aging schema
             - [x] Transactional scan-to-asset identity and alias correlation
             - [x] Asset inventory reads and audited metadata, lifecycle, eligibility, and aging controls
@@ -445,12 +445,12 @@ failure and health states.
           - [x] Workflow index, approval exceptions, reminders, and retention schema
           - [x] Audited finding workflow updates and active-assignee validation
           - [x] Exception approval, reminders, retention controls, and evidence purge operations
-        - [ ] Endpoint storage parity
+        - [x] Endpoint storage parity
           - [x] Enrollment token, certificate identity, lifecycle, heartbeat, collector, and platform schema
-          - [ ] Audited enrollment, certificate lifecycle, endpoint policy, and check-in operations
+          - [x] Audited enrollment, certificate lifecycle, endpoint policy, and check-in operations
             - [x] Enrollment tokens, endpoint reads, renewal, revocation, seen state, and policy updates
             - [x] Atomic heartbeat and agent-update installation reconciliation
-          - [ ] Endpoint inventory and CVE relevance persistence
+          - [x] Endpoint inventory and CVE relevance persistence
             - [x] OS, patch, installed-software, and endpoint CVE-match schema
             - [x] Atomic inventory replacement and environment-aware CVE matching operations
             - [x] Listening-service and security-posture schema
@@ -520,24 +520,30 @@ failure and health states.
     - [x] Endpoint evidence, group-member removal, target recalculation, and explicit CVE refresh integration contract
     - [x] Database readiness, default-scope idempotence, scan listing, and interrupted-scan recovery integration contract
     - [x] Direct audit append, structured-field persistence, ordering, and query-filter integration contract
-    - [ ] Execute live PostgreSQL migration tests in supported environments
-      - [ ] Provision a dedicated least-privilege PostgreSQL test database and configure `MOSSWARD_TEST_POSTGRES_DSN`
+    - [x] Execute live PostgreSQL repository and migration tests on macOS with PostgreSQL 16.15
+      - [x] Provision an isolated Unix-socket-only test cluster, least-privilege database role, and `MOSSWARD_TEST_POSTGRES_DSN`
+      - [x] Make explicit PostgreSQL verification fail if the test DSN is absent
+    - [ ] Repeat deployment verification on Linux/Windows and other supported PostgreSQL versions
+    - [ ] PostgreSQL-native backup/restore and disaster-recovery rehearsal
+    - [ ] PostgreSQL identity-key rotation maintenance command
     - [x] Remaining repository operation integration coverage
     - [x] PostgreSQL server startup enablement
       - [x] Backend-aware repository opening with bounded startup connection time
       - [x] SQLite-only backup and identity-key maintenance fail closed on PostgreSQL
-  - [ ] Offline SQLite-to-PostgreSQL migration utility
+  - [x] Offline SQLite-to-PostgreSQL migration utility
     - [x] Read-only SQLite integrity, schema-version, and row-inventory preflight
     - [x] PostgreSQL destination preflight and empty-target enforcement
     - [x] Deterministic foreign-key-aware source copy plan with migration-control exclusions
     - [x] Source reference integrity and column manifest with missing-column rejection
-    - [ ] Destination initialization, type conversion, and required-field compatibility
+    - [x] Destination initialization, type conversion, and required-field compatibility
       - [x] Strict boolean, timestamp, JSON, and binary value conversion
-      - [ ] Destination schema initialization and required-field validation
+      - [x] Destination schema initialization and required-field validation
         - [x] Implemented atomic schema initialization and required-field validation
-    - [ ] Transactional ordered data copy with sequence repair and verification
+    - [x] Transactional ordered data copy with sequence repair and verification
       - [x] Implemented offline command, consistent source snapshot, constraint-aware copying, value/count verification, sequence repair, and rollback
-      - [ ] Execute live migration and rollback integration test with `MOSSWARD_TEST_POSTGRES_DSN`
+      - [x] Execute live migration and rollback integration test with `MOSSWARD_TEST_POSTGRES_DSN`
+      - [x] Preserve signed check-catalog tables and intrusive-check opt-in policy
+      - [x] Verify source-file immutability, partial-copy rollback, asset history, ciphertext, and generated identity sequences
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,

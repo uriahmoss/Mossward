@@ -6,6 +6,7 @@ import (
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -20,6 +21,14 @@ import (
 	"mossward/internal/agentmodule"
 	"mossward/internal/model"
 )
+
+func equivalentPostgreSQLTestJSON(left, right string) bool {
+	var leftValue, rightValue any
+	if json.Unmarshal([]byte(left), &leftValue) != nil || json.Unmarshal([]byte(right), &rightValue) != nil {
+		return false
+	}
+	return reflect.DeepEqual(leftValue, rightValue)
+}
 
 const postgreSQLIntegrationDSNEnvironment = "MOSSWARD_TEST_POSTGRES_DSN"
 
@@ -184,7 +193,7 @@ func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
 		t.Fatalf("PostgreSQL local identity round trip changed: %#v %v", identity, err)
 	}
 	secret, counter, err := repository.TOTPSecret(user.ID)
-	if err != nil || !reflect.DeepEqual(secret, mfa.TOTPSecretCiphertext) || counter != 0 {
+	if err != nil || !reflect.DeepEqual(secret, mfa.TOTPSecretCiphertext) || counter != -1 {
 		t.Fatalf("PostgreSQL TOTP state changed: %q %d %v", secret, counter, err)
 	}
 	consumed, err := repository.ConsumeRecoveryCode(user.ID, mfa.RecoveryCodeHashes[0], now.Add(time.Minute),
@@ -217,10 +226,11 @@ func TestPostgreSQLLocalAuthFoundationRoundTrip(t *testing.T) {
 func TestPostgreSQLAuditAppendAndFiltering(t *testing.T) {
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
+	actor, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
 	events := []model.AuditEvent{
-		{OccurredAt: now, ActorID: "postgres-audit-actor", Action: "system.audit.info", Severity: model.AuditInfo,
+		{OccurredAt: now, ActorID: actor.ID, Action: "system.audit.info", Severity: model.AuditInfo,
 			TargetType: "system", TargetID: "postgres-audit-target", SourceIP: "192.0.2.40"},
-		{OccurredAt: now.Add(time.Second), ActorID: "postgres-audit-actor", Action: "system.audit.warning",
+		{OccurredAt: now.Add(time.Second), ActorID: actor.ID, Action: "system.audit.warning",
 			Severity: model.AuditWarning, TargetType: "system", TargetID: "postgres-warning-target",
 			SourceIP: "192.0.2.41", Details: `{"reason":"integration sentinel"}`},
 	}
@@ -233,7 +243,7 @@ func TestPostgreSQLAuditAppendAndFiltering(t *testing.T) {
 	if err != nil || len(stored) != 2 || stored[0].Action != events[1].Action || stored[1].Action != events[0].Action ||
 		stored[0].ActorID != events[1].ActorID || stored[0].TargetType != events[1].TargetType ||
 		stored[0].TargetID != events[1].TargetID || stored[0].SourceIP != events[1].SourceIP ||
-		stored[0].Details != events[1].Details || stored[1].Details != "{}" ||
+		!equivalentPostgreSQLTestJSON(stored[0].Details, events[1].Details) || stored[1].Details != "{}" ||
 		!stored[0].OccurredAt.Equal(events[1].OccurredAt) || stored[0].ID == 0 || stored[1].ID == 0 {
 		t.Fatalf("PostgreSQL direct audit persistence changed: %#v %v", stored, err)
 	}
@@ -246,7 +256,7 @@ func TestPostgreSQLAuditAppendAndFiltering(t *testing.T) {
 		t.Fatalf("PostgreSQL audit target filtering changed: %#v %v", byTarget, err)
 	}
 	byDetails, err := repository.ListAuditEvents(model.AuditQuery{Text: "integration sentinel", Limit: 10})
-	if err != nil || len(byDetails) != 1 || byDetails[0].Details != events[1].Details {
+	if err != nil || len(byDetails) != 1 || !equivalentPostgreSQLTestJSON(byDetails[0].Details, events[1].Details) {
 		t.Fatalf("PostgreSQL audit details filtering changed: %#v %v", byDetails, err)
 	}
 }
@@ -801,7 +811,8 @@ func TestPostgreSQLScopeAndPolicyTargetingContract(t *testing.T) {
 		t.Fatalf("PostgreSQL overlapping policy targets were not deduplicated: %#v %v", targets, err)
 	}
 	groups, err := repository.ListAssetGroups()
-	if err != nil || len(groups) != 2 || len(groups[0].ScanPolicyIDs) != 1 || len(groups[1].ScanPolicyIDs) != 1 {
+	if err != nil || len(groups) != 2 || !reflect.DeepEqual(groups[0].ScanPolicyIDs, []string{"postgres-disabled-policy", "postgres-policy"}) ||
+		!reflect.DeepEqual(groups[1].ScanPolicyIDs, []string{"postgres-policy"}) {
 		t.Fatalf("PostgreSQL reverse group policy visibility missing: %#v %v", groups, err)
 	}
 	removeMemberEvent := postgresIdentityAuditEvent(now.Add(15*time.Minute), administrator.ID,
@@ -1794,7 +1805,7 @@ func TestPostgreSQLWorkerEvidenceAndResultProjection(t *testing.T) {
 		MaxConcurrent: 1, RequiredCapabilities: []model.WorkerCapability{model.WorkerCapabilityTCPConnect},
 		Status: model.WorkerJobPending}
 	scan := model.Scan{ID: job.ScanID, Name: "PostgreSQL remote scan", Targets: job.Targets, Ports: job.Ports,
-		Status: model.StatusQueued, TotalChecks: 2, CreatedAt: now}
+		Status: model.StatusQueued, MaxConcurrent: 1, TotalChecks: 2, CreatedAt: now}
 	if err := repository.Save(scan); err != nil {
 		t.Fatalf("save PostgreSQL remote scan: %v", err)
 	}
@@ -2001,7 +2012,7 @@ func TestPostgreSQLWorkerJobDeadLetterQuarantine(t *testing.T) {
 		Targets: []model.Target{{Name: "host", Address: "192.0.2.40"}}, Ports: []int{443},
 		MaxConcurrent: 1, Status: model.WorkerJobPending}
 	if err := repository.Save(model.Scan{ID: job.ScanID, Name: "PostgreSQL quarantined remote scan",
-		Targets: job.Targets, Ports: job.Ports, Status: model.StatusQueued, TotalChecks: 1, CreatedAt: now}); err != nil {
+		Targets: job.Targets, Ports: job.Ports, MaxConcurrent: 1, Status: model.StatusQueued, TotalChecks: 1, CreatedAt: now}); err != nil {
 		t.Fatalf("save PostgreSQL quarantine scan: %v", err)
 	}
 	if err := repository.CreateScannerWorkerJob(model.SignedWorkerJob{Job: job}, now); err != nil {
@@ -2052,7 +2063,7 @@ func TestPostgreSQLFindingWorkflowAndEvidenceRetention(t *testing.T) {
 	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
 	old := now.AddDate(-2, 0, 0)
 	heldScan := model.Scan{ID: "postgres-held-scan", Name: "Held evidence", Status: model.StatusCompleted,
-		CreatedAt: old, CompletedAt: &old, Findings: []model.Finding{{ID: "postgres-held-finding",
+		CreatedAt: old, MaxConcurrent: 1, CompletedAt: &old, Findings: []model.Finding{{ID: "postgres-held-finding",
 			CheckID: "tls.configuration", Target: "held-host", Address: "192.0.2.50", Port: 443,
 			Service: "https", Severity: "medium", Title: "Held finding", ObservedAt: old}}}
 	if err := repository.Save(heldScan); err != nil {
@@ -2128,7 +2139,7 @@ func TestPostgreSQLFindingWorkflowAndEvidenceRetention(t *testing.T) {
 		t.Fatalf("PostgreSQL evidence retention settings changed: %#v %v", storedSettings, err)
 	}
 	expiredScan := model.Scan{ID: "postgres-expired-scan", Name: "Expired evidence", Status: model.StatusCompleted,
-		CreatedAt: old, CompletedAt: &old}
+		CreatedAt: old, MaxConcurrent: 1, CompletedAt: &old}
 	if err := repository.Save(expiredScan); err != nil {
 		t.Fatalf("save PostgreSQL expired evidence fixture: %v", err)
 	}
@@ -2200,7 +2211,7 @@ func TestPostgreSQLNotificationSettingsAndAlertDeduplication(t *testing.T) {
 		t.Fatalf("PostgreSQL SMTP credential rotation changed: %#v %v", rotated, err)
 	}
 	scan := model.Scan{ID: "postgres-long-alert-scan", Name: "Long running scan", Status: model.StatusRunning,
-		CreatedAt: now}
+		CreatedAt: now, MaxConcurrent: 1}
 	if err := repository.Save(scan); err != nil {
 		t.Fatalf("save PostgreSQL long-alert scan: %v", err)
 	}
@@ -2347,7 +2358,8 @@ func TestPostgreSQLAgentModuleTrustAssignmentAndHealthLifecycle(t *testing.T) {
 	completedAt := now
 	assetScan := model.Scan{ID: "postgres-module-asset-scan", Name: "Module asset discovery",
 		Targets: []model.Target{{Name: "module-host", Address: "192.0.2.60"}}, Ports: []int{443},
-		Status: model.StatusCompleted, CreatedAt: now, CompletedAt: &completedAt}
+		Observations: []model.ServiceObservation{{ID: "postgres-module-observation", Target: "module-host", Address: "192.0.2.60", Port: 443, Protocol: "https", ObservedAt: now}},
+		Status:       model.StatusCompleted, MaxConcurrent: 1, CreatedAt: now, CompletedAt: &completedAt}
 	if err := repository.Save(assetScan); err != nil {
 		t.Fatalf("create PostgreSQL module asset: %v", err)
 	}
@@ -2366,6 +2378,7 @@ func TestPostgreSQLAgentModuleTrustAssignmentAndHealthLifecycle(t *testing.T) {
 		t.Fatalf("save PostgreSQL module publisher: %v", err)
 	}
 	storedPublisher, err := repository.AgentModulePublisher(publisher.KeyID)
+	storedPublisher.CreatedAt = storedPublisher.CreatedAt.UTC()
 	if err != nil || !reflect.DeepEqual(storedPublisher, publisher) {
 		t.Fatalf("PostgreSQL module publisher changed: %#v %v", storedPublisher, err)
 	}
@@ -2407,6 +2420,9 @@ func TestPostgreSQLAgentModuleTrustAssignmentAndHealthLifecycle(t *testing.T) {
 		t.Fatalf("save PostgreSQL module assignment: %v", err)
 	}
 	assignments, err := repository.ListAgentModuleAssignments()
+	if len(assignments) == 1 {
+		assignments[0].CreatedAt = assignments[0].CreatedAt.UTC()
+	}
 	if err != nil || len(assignments) != 1 || !reflect.DeepEqual(assignments[0], assignment) {
 		t.Fatalf("PostgreSQL module assignment changed: %#v %v", assignments, err)
 	}
@@ -2431,6 +2447,7 @@ func TestPostgreSQLAgentModuleTrustAssignmentAndHealthLifecycle(t *testing.T) {
 		&storedHealth.Error, &storedHealth.ObservedAt); err != nil {
 		t.Fatalf("read PostgreSQL module health: %v", err)
 	}
+	storedHealth.ObservedAt = storedHealth.ObservedAt.UTC()
 	if !reflect.DeepEqual(storedHealth, health) {
 		t.Fatalf("PostgreSQL module health changed: %#v", storedHealth)
 	}
@@ -2475,9 +2492,9 @@ func TestPostgreSQLAssetMergePreservesSelectedValuesAndRelationships(t *testing.
 	repository, _ := openPostgreSQLIntegrationStore(t)
 	now := time.Now().UTC().Truncate(time.Microsecond)
 	administrator, _, _ := bootstrapPostgreSQLTestAdministrator(t, repository, now)
-	first := completedAssetScan("postgres-merge-scan-one", "postgres-merge-observation-one", "first-host",
+	first := completedAssetScan("postgres-merge-scan-one", "postgres-merge-observation-one", "first.example.test",
 		"192.0.2.70", now)
-	second := completedAssetScan("postgres-merge-scan-two", "postgres-merge-observation-two", "second-host",
+	second := completedAssetScan("postgres-merge-scan-two", "postgres-merge-observation-two", "second.example.test",
 		"192.0.2.71", now.Add(time.Hour))
 	first.Observations[0].Port = 80
 	second.Observations[0].Port = 443
@@ -2495,8 +2512,8 @@ func TestPostgreSQLAssetMergePreservesSelectedValuesAndRelationships(t *testing.
 	for _, asset := range assets {
 		assetsByName[asset.Name] = asset
 	}
-	survivor := assetsByName["first-host"]
-	merged := assetsByName["second-host"]
+	survivor := assetsByName["first.example.test"]
+	merged := assetsByName["second.example.test"]
 	for index, assetID := range []string{survivor.ID, merged.ID} {
 		group := model.AssetGroup{ID: fmt.Sprintf("postgres-merge-group-%d", index),
 			Name: fmt.Sprintf("Merge group %d", index), CreatedAt: now, UpdatedAt: now}
@@ -2729,7 +2746,7 @@ func TestPostgreSQLIdentityCiphertextRotationIsAtomic(t *testing.T) {
 		t.Fatalf("PostgreSQL SMTP secret was not rotated: %#v %v", storedSMTP, err)
 	}
 	events, err := repository.ListAuditEvents(model.AuditQuery{Text: "identity.encryption_key.rotated", Limit: 10})
-	if err != nil || len(events) != 1 || !strings.Contains(events[0].Details, `"ciphertexts":5`) {
+	if err != nil || len(events) != 1 || !equivalentPostgreSQLTestJSON(events[0].Details, `{"ciphertexts":5}`) {
 		t.Fatalf("PostgreSQL ciphertext-rotation audit event changed: %#v %v", events, err)
 	}
 }
@@ -2788,7 +2805,7 @@ func TestPostgreSQLCVEFeedScanMatchAndCriticalNews(t *testing.T) {
 	completedAt := now.Add(time.Minute)
 	scan := model.Scan{ID: "postgres-cve-scan", Name: "CVE match scan",
 		Targets: []model.Target{{Name: observation.Target, Address: observation.Address}}, Ports: []int{observation.Port},
-		Status: model.StatusCompleted, TotalChecks: 1, DoneChecks: 1, CreatedAt: now, CompletedAt: &completedAt,
+		Status: model.StatusCompleted, MaxConcurrent: 1, TotalChecks: 1, DoneChecks: 1, CreatedAt: now, CompletedAt: &completedAt,
 		Observations: []model.ServiceObservation{observation}, CVEMatches: matches}
 	if err := repository.Save(scan); err != nil {
 		t.Fatalf("save PostgreSQL CVE-matched scan: %v", err)

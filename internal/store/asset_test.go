@@ -88,7 +88,7 @@ func TestAmbiguousLabelsDoNotCorrelateAddresses(t *testing.T) {
 }
 
 func completedAssetScan(scanID, observationID, name, address string, observedAt time.Time) model.Scan {
-	return model.Scan{ID: scanID, Name: "Discovery", Status: model.StatusCompleted, CreatedAt: observedAt,
+	return model.Scan{ID: scanID, Name: "Discovery", MaxConcurrent: 1, Status: model.StatusCompleted, CreatedAt: observedAt,
 		CompletedAt: &observedAt, Observations: []model.ServiceObservation{{ID: observationID, Target: name,
 			Address: address, Port: 443, Protocol: "https", Confidence: "high", Evidence: "reachable", ObservedAt: observedAt}}}
 }

@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	postgresFoundationSchemaVersion = 23
+	postgresFoundationSchemaVersion = 24
 	minimumPostgreSQLMajorVersion   = 14
 	postgresMigrationLockID         = 713_677_281
 )
@@ -227,6 +227,11 @@ func InitializePostgreSQLTransaction(ctx context.Context, tx *sql.Tx) error {
 	}
 	if version < 23 {
 		if err := migratePostgreSQLEndpointHeartbeatSettings(ctx, tx); err != nil {
+			return err
+		}
+	}
+	if version < 24 {
+		if err := migratePostgreSQLCheckCatalog(ctx, tx); err != nil {
 			return err
 		}
 	}
