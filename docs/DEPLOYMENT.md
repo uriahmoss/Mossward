@@ -327,6 +327,9 @@ The JSON report includes the integrity result, schema version, file size,
 per-table row counts, excluded migration-control tables, and a deterministic
 foreign-key-aware copy order. Destination validation and copying are separate
 unfinished slices; this command does not connect to PostgreSQL or move data.
+The source preflight also rejects broken foreign-key references and inventories
+column names for copy compatibility checks. Destination initialization, required
+field checks, and type conversion remain pending.
 
 Validate a dedicated empty PostgreSQL destination schema separately:
 

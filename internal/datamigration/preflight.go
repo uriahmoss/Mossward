@@ -25,8 +25,9 @@ type SourceReport struct {
 }
 
 type TableSummary struct {
-	Name string `json:"name"`
-	Rows int64  `json:"rows"`
+	Name    string   `json:"name"`
+	Rows    int64    `json:"rows"`
+	Columns []string `json:"columns"`
 }
 
 func PreflightSQLiteSource(ctx context.Context, path string) (SourceReport, error) {
@@ -56,6 +57,9 @@ func PreflightSQLiteSource(ctx context.Context, path string) (SourceReport, erro
 	if integrity != "ok" {
 		return SourceReport{}, fmt.Errorf("SQLite migration source integrity check failed: %s", integrity)
 	}
+	if err := checkSourceForeignKeys(ctx, database); err != nil {
+		return SourceReport{}, err
+	}
 	report := SourceReport{Path: path, SizeBytes: info.Size()}
 	if err := database.QueryRowContext(ctx, `SELECT COALESCE(MAX(version),0) FROM schema_migrations`).Scan(&report.SchemaVersion); err != nil {
 		return SourceReport{}, fmt.Errorf("read SQLite migration source schema version: %w", err)
@@ -70,7 +74,11 @@ func PreflightSQLiteSource(ctx context.Context, path string) (SourceReport, erro
 		if err := database.QueryRowContext(ctx, query).Scan(&rows); err != nil {
 			return SourceReport{}, fmt.Errorf("count SQLite migration source table %q: %w", name, err)
 		}
-		report.Tables = append(report.Tables, TableSummary{Name: name, Rows: rows})
+		columns, err := sourceColumns(ctx, database, name)
+		if err != nil {
+			return SourceReport{}, err
+		}
+		report.Tables = append(report.Tables, TableSummary{Name: name, Rows: rows, Columns: columns})
 		report.TotalRows += rows
 	}
 	report.TableCount = len(report.Tables)

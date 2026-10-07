@@ -530,6 +530,8 @@ failure and health states.
     - [x] Read-only SQLite integrity, schema-version, and row-inventory preflight
     - [x] PostgreSQL destination preflight and empty-target enforcement
     - [x] Deterministic foreign-key-aware source copy plan with migration-control exclusions
+    - [x] Source reference integrity and column manifest with missing-column rejection
+    - [ ] Destination initialization, type conversion, and required-field compatibility
     - [ ] Transactional ordered data copy with sequence repair and verification
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
