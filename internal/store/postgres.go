@@ -68,15 +68,30 @@ func (s *PostgreSQLStore) initialize(ctx context.Context) error {
 }
 
 func (s *PostgreSQLStore) migrate(ctx context.Context) error {
-	organizationID, err := newOrganizationID()
-	if err != nil {
-		return err
-	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin PostgreSQL foundation migration: %w", err)
 	}
 	defer tx.Rollback()
+	if err := InitializePostgreSQLTransaction(ctx, tx); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// LockPostgreSQLSchemaTransaction serializes schema startup and offline imports.
+func LockPostgreSQLSchemaTransaction(ctx context.Context, tx *sql.Tx) error {
+	_, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock($1)`, postgresMigrationLockID)
+	return err
+}
+
+// InitializePostgreSQLTransaction allows offline migration to initialize and
+// populate a destination atomically using the same versioned schema as startup.
+func InitializePostgreSQLTransaction(ctx context.Context, tx *sql.Tx) error {
+	organizationID, err := newOrganizationID()
+	if err != nil {
+		return err
+	}
 	statements := []string{
 		`SELECT pg_advisory_xact_lock($1)`,
 		`CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY,applied_at TIMESTAMPTZ NOT NULL)`,
@@ -219,7 +234,7 @@ func (s *PostgreSQLStore) migrate(ctx context.Context) error {
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM installation_organization`).Scan(&organizations); err != nil || organizations != 1 {
 		return errors.New("PostgreSQL installation organization boundary is invalid")
 	}
-	return tx.Commit()
+	return nil
 }
 
 func migratePostgreSQLAgentUpdates(ctx context.Context, tx *sql.Tx) error {

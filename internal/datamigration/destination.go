@@ -24,11 +24,11 @@ func PreflightPostgreSQLDestination(ctx context.Context, dsn string) (Destinatio
 	}
 	database, err := sql.Open("pgx", dsn)
 	if err != nil {
-		return DestinationReport{}, fmt.Errorf("open PostgreSQL migration destination: %w", err)
+		return DestinationReport{}, fmt.Errorf("open PostgreSQL migration destination failed; check connection configuration")
 	}
 	defer database.Close()
 	if err := database.PingContext(ctx); err != nil {
-		return DestinationReport{}, fmt.Errorf("connect to PostgreSQL migration destination: %w", err)
+		return DestinationReport{}, fmt.Errorf("connect to PostgreSQL migration destination failed; check connectivity, TLS, and credentials")
 	}
 	var versionText string
 	report := DestinationReport{}

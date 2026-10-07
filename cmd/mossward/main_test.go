@@ -40,3 +40,12 @@ func TestPostgreSQLMaintenanceRequiresSQLiteRepository(t *testing.T) {
 		t.Fatalf("PostgreSQL maintenance backend error = %v", err)
 	}
 }
+
+func TestDatabaseMigrationRequiresOfflineConfirmation(t *testing.T) {
+	if err := runDatabaseCommand(config.Config{DatabaseBackend: config.DatabaseSQLite}, []string{"migrate-postgresql"}); err == nil {
+		t.Fatal("migration accepted without offline confirmation")
+	}
+	if err := runDatabaseCommand(config.Config{DatabaseBackend: config.DatabasePostgreSQL}, []string{"migrate-postgresql", "--confirm-offline"}); err == nil {
+		t.Fatal("migration accepted without SQLite source backend")
+	}
+}

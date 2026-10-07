@@ -534,7 +534,10 @@ failure and health states.
     - [ ] Destination initialization, type conversion, and required-field compatibility
       - [x] Strict boolean, timestamp, JSON, and binary value conversion
       - [ ] Destination schema initialization and required-field validation
+        - [x] Implemented atomic schema initialization and required-field validation
     - [ ] Transactional ordered data copy with sequence repair and verification
+      - [x] Implemented offline command, consistent source snapshot, constraint-aware copying, value/count verification, sequence repair, and rollback
+      - [ ] Execute live migration and rollback integration test with `MOSSWARD_TEST_POSTGRES_DSN`
 - [ ] Independently deployable control plane and scanner-worker runtime
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,

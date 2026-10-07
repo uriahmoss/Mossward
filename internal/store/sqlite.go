@@ -18,6 +18,9 @@ import (
 
 const schemaVersion = 66
 
+// SQLiteSchemaVersion identifies the schema required by offline data migration.
+func SQLiteSchemaVersion() int { return schemaVersion }
+
 type SQLiteStore struct {
 	db *sql.DB
 }

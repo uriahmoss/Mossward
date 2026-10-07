@@ -325,14 +325,13 @@ MOSSWARD_DATABASE_FILE=/path/to/mossward.db \
 
 The JSON report includes the integrity result, schema version, file size,
 per-table row counts, excluded migration-control tables, and a deterministic
-foreign-key-aware copy order. Destination validation and copying are separate
-unfinished slices; this command does not connect to PostgreSQL or move data.
+foreign-key-aware copy order. This inspection command does not connect to
+PostgreSQL or move data.
 The source preflight also rejects broken foreign-key references and inventories
-column names for copy compatibility checks. Destination initialization and
-required-field checks remain pending.
+column names for copy compatibility checks.
 The copy conversion helpers now preserve NULL, binary data, JSON numeric
-precision, and timestamp offsets while rejecting malformed input. Integration
-of these helpers into destination copying remains pending.
+precision, and timestamp offsets while rejecting malformed input. PostgreSQL
+timestamps are stored at microsecond precision.
 
 Validate a dedicated empty PostgreSQL destination schema separately:
 
@@ -344,6 +343,35 @@ MOSSWARD_MIGRATION_POSTGRES_URL='postgresql://user@db.example/mossward?sslmode=v
 This read-only check verifies connectivity, PostgreSQL 14 or newer, the current
 schema, and that the schema contains no tables, views, sequences, or foreign
 tables. It never prints the connection URL and refuses a non-empty target.
+
+The offline copy command is implemented but awaits live PostgreSQL migration
+verification before production use. Stop Mossward, create and verify a complete
+backup, and upgrade the SQLite source to the current build's schema. Retain the
+identity encryption keyring, agent PKI, and other application files alongside
+the database; ciphertext cannot be used without its original keyring.
+
+```sh
+MOSSWARD_DATABASE_BACKEND=sqlite \
+MOSSWARD_DATABASE_FILE=/path/to/mossward.db \
+MOSSWARD_MIGRATION_POSTGRES_URL='postgresql://user@db.example/mossward?sslmode=verify-full' \
+./bin/mossward database migrate-postgresql --confirm-offline --timeout 1h
+```
+
+Use a dedicated empty schema and a role permitted to create its tables, functions,
+and triggers. Schema initialization and copying occur in one transaction. The
+utility checks column compatibility, orders tables using destination foreign
+keys, removes generated defaults, copies from a consistent read-only source
+snapshot, verifies each inserted value and each table's row count, and repairs
+generated-ID sequences. It preserves the source installation organization.
+Constraints and audit protections remain installed. A failure rolls back schema
+creation and data together; the SQLite source remains available for retry.
+
+After a successful copy, configure `MOSSWARD_DATABASE_BACKEND=postgresql` and
+`MOSSWARD_DATABASE_URL`, retain the original encryption keyring and PKI paths,
+then start Mossward and validate authentication, assets, and scans. Keep the
+SQLite backup until validation is complete. Run `make test-postgres` with
+`MOSSWARD_TEST_POSTGRES_DSN` to exercise the live copy, rollback, identity,
+ciphertext, sequence-repair, and occupied-destination tests.
 
 The tests each create a cryptographically random `mossward_test_*` schema and
 drop only that generated schema afterward. They apply every migration, verify

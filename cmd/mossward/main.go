@@ -236,6 +236,27 @@ func run(stop <-chan string) error {
 }
 
 func runDatabaseCommand(cfg config.Config, args []string) error {
+	if len(args) > 0 && args[0] == "migrate-postgresql" {
+		flags := flag.NewFlagSet("database migrate-postgresql", flag.ContinueOnError)
+		confirmed := flags.Bool("confirm-offline", false, "confirm Mossward is stopped and a source backup exists")
+		timeout := flags.Duration("timeout", time.Hour, "maximum migration duration")
+		if err := flags.Parse(args[1:]); err != nil {
+			return err
+		}
+		if !*confirmed || *timeout <= 0 || flags.NArg() != 0 {
+			return errors.New("migration requires --confirm-offline, a positive --timeout, and no positional arguments")
+		}
+		if cfg.DatabaseBackend != config.DatabaseSQLite {
+			return errors.New("migration requires the SQLite source backend")
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), *timeout)
+		defer cancel()
+		report, err := datamigration.CopySQLiteToPostgreSQL(ctx, cfg.DatabaseFile, cfg.MigrationDatabaseURL)
+		if err != nil {
+			return err
+		}
+		return json.NewEncoder(os.Stdout).Encode(report)
+	}
 	if len(args) != 1 {
 		return errors.New("usage: mossward database migration-preflight|migration-destination-preflight")
 	}

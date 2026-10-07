@@ -32,7 +32,7 @@ func TestPostgreSQLDestinationPreflightRequiresEmptySchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer admin.Close()
+	t.Cleanup(func() { admin.Close() })
 	schema := migrationTestSchemaName(t)
 	if _, err := admin.ExecContext(ctx, `CREATE SCHEMA `+schema); err != nil {
 		t.Fatalf("create migration destination test schema: %v", err)
