@@ -162,3 +162,33 @@ from durable receipts without relaunching work. Controls do not disable
 long-lived services or cancel other jobs. Removing wake/disabling an already
 started request alone does not stop it. Cancellation diagnostics appear in
 mailbox-monitor-state.json; current live request use remains a follow-up.
+
+## Separate lifecycle acknowledgements
+
+The two-minute poller maintains `ops/server-lab/acknowledgements.json` in each
+configured mailbox. This file is independent of `results.json`: receipt of a
+request and worker execution are observations, while results are reviewed
+outcomes. Existing accepted/running results remain supported; lifecycle updates
+cannot replace a final result with accepted/running. Removing wake metadata
+changes neither request identity nor its result.
+
+Each acknowledgement preserves repository/id/digest/source revision and a
+sanitized `ack-DIGEST` receipt identifier. `received_at` is the first successful
+local observation after this feature was installed; it is not a historical
+arrival time. `queued_at`, `started_at` and `finished_at` appear only when
+supported by durable acceptance/tracker receipts. A scheduled worker has no
+finished time. States include actual tracker failures/cancellation, blocked
+identity/legacy links and ambiguous launches. `result_status`, when present,
+shows the separate reviewed outcome. Legacy tracker jobs without mailbox
+identity remain lifecycle-blocked even when a reviewed result succeeded;
+their launch history is not retrospectively certified. No completion time is
+invented from a poll time or remote result timestamp.
+
+Only identifiers, enumerated states and UTC times are uploaded; commands,
+paths, descriptions, raw errors and logs stay local. Updates validate current
+immutable requests, preserve unrelated rows, and use blob-SHA concurrency.
+Durable private observations/errors live in `acknowledgement-receipts/`;
+publication failures retry on the next poll without launching work. The monitor
+records sanitized publication diagnostics under `lifecycle_acknowledgements`.
+No extra model review or maintenance worker is added. A first new live request
+still needs operational follow-up for the acceptance-to-completion sequence.
