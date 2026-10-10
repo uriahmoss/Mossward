@@ -34,7 +34,6 @@
       "enabled": true,
       "action": "test",
       "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
-      "wake": "lantern-on",
       "description": "Uriah requests the final reviewed report for completed installation retry ubuntu-lab-install-retry-20261010-002, digest 4ea67265ccb4757f0e3986dcb6bbff74c514a7f4edc8b6d40ddd461b5057cbd1, tracked job 20261010T145540Z-87e922c3. Its lifecycle acknowledgement says succeeded but results still say running. Review existing immutable execution evidence and receipts, plus safe read-only checks if needed. Reconcile the retry's actual terminal result and publish its build/test outcomes, whether Mossward is installed and currently running, service identity and loopback-only exposure, retained-state uninstall/reinstall results, existing AI-service health, failures or caveats, and pending user setup/actions. Do not infer all acceptance checks passed solely from tracker exit success. Publish a separate outcome for this reporting request. Request user admin/MFA initialization where needed; do not create credentials. Do not reinstall, rerun the installation job, update binaries, restart/change services, delete files, change product code or access another PC under this report-only request. Preserve prior request identities and evidence. Only sanitized summaries/check outcomes belong in this public mailbox; keep host addresses, private paths, secrets, raw logs and connection details private. Clear wake metadata on acceptance per mailbox protocol."
     }
   ]
