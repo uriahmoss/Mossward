@@ -46,6 +46,9 @@ type Config struct {
 
 func LoadConfig(path string) (Config, error) {
 	var config Config
+	if !filepath.IsAbs(strings.TrimSpace(path)) {
+		return config, errors.New("scanner-worker configuration path must be absolute")
+	}
 	file, err := os.Open(strings.TrimSpace(path))
 	if err != nil {
 		return config, fmt.Errorf("open scanner-worker configuration: %w", err)

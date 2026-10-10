@@ -6,6 +6,7 @@ build:
 	mkdir -p bin
 	GOCACHE=$(GOCACHE) go build -o bin/mossward ./cmd/mossward
 	GOCACHE=$(GOCACHE) go build -o bin/mossward-agent ./cmd/mossward-agent
+	GOCACHE=$(GOCACHE) go build -o bin/mossward-worker ./cmd/mossward-worker
 
 run:
 	GOCACHE=$(GOCACHE) go run ./cmd/mossward

@@ -157,6 +157,17 @@ func loadWorkerTLSIdentity(config Config) (tls.Certificate, crypto.Signer, *x509
 	if !roots.AppendCertsFromPEM(caPEM) {
 		return certificate, nil, nil, errors.New("scanner-worker CA file contains no certificates")
 	}
+	intermediates := x509.NewCertPool()
+	for _, raw := range certificate.Certificate[1:] {
+		issuer, err := x509.ParseCertificate(raw)
+		if err != nil {
+			return certificate, nil, nil, errors.New("invalid scanner-worker certificate chain")
+		}
+		intermediates.AddCert(issuer)
+	}
+	if _, err := certificate.Leaf.Verify(x509.VerifyOptions{Roots: roots, Intermediates: intermediates, KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}}); err != nil {
+		return certificate, nil, nil, errors.New("scanner-worker certificate is not trusted for client authentication")
+	}
 	return certificate, signer, roots, nil
 }
 

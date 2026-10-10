@@ -47,6 +47,9 @@ private keys with group or world permissions on Unix systems.
 
 ## Run
 
+See `WORKER_DEPLOYMENT.md` for independent Linux/Windows service deployment,
+read-only configuration checks, permissions, manual updates and recovery.
+
 ```sh
 mossward-worker --config /etc/mossward-worker/worker.json
 ```

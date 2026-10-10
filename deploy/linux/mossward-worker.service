@@ -1,0 +1,36 @@
+[Unit]
+Description=Mossward Authorized Scanner Worker
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=mossward-worker
+Group=mossward-worker
+ExecStartPre=/usr/local/bin/mossward-worker --config /etc/mossward-worker/worker.json --check-config
+ExecStart=/usr/local/bin/mossward-worker --config /etc/mossward-worker/worker.json
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=30s
+UMask=0077
+StateDirectory=mossward-worker
+StateDirectoryMode=0700
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+CapabilityBoundingSet=
+ReadWritePaths=/var/lib/mossward-worker
+ReadOnlyPaths=/etc/mossward-worker
+
+[Install]
+WantedBy=multi-user.target

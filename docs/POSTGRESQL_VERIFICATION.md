@@ -31,7 +31,7 @@ and injects only its own four dedicated test-database connections.
 The test role cannot create roles/databases and is not a superuser. The suite
 runs every test with race detection and without cached results, including live
 repository parity, SQLite migration, native backup/recovery and key rotation.
-It then runs Go vet and builds the server and endpoint agent.
+It then runs Go vet and builds the server, endpoint agent and scanner worker.
 
 The cluster uses non-TLS localhost connections solely for disposable synthetic
 test data; production TLS requirements remain unchanged. Passwords, database
@@ -56,9 +56,16 @@ setup actions, no production secrets, and preinstalled native PostgreSQL tools:
 
 | Runner | PostgreSQL major | Status |
 | --- | --- | --- |
-| Ubuntu 24.04 | 16 | Awaiting hosted execution |
-| Windows Server 2022 | 14 | Awaiting hosted execution |
-| Windows Server 2025 | 17 | Awaiting hosted execution |
+| Ubuntu 24.04 | 16 | Passed first hosted run |
+| Windows Server 2022 | 14 | Failed; portability follow-up required |
+| Windows Server 2025 | 17 | Failed; portability follow-up required |
+
+First run: https://github.com/uriahmoss/Mossward/actions/runs/38052420468
+Windows failures include unescaped JSON fixture paths, SQLite migration file-URI
+handling, and Unix-mode-only permission assertions in identity, backup, database
+and ACME tests. Fixing these must preserve actual Windows ACL security rather than
+simply treating Unix-mode assertions as proof of Windows protection. The worker
+JSON fixture is now generated with JSON encoding; remaining fixes are backlogged.
 
 Runner images can change. A missing installation or unexpected major fails the
 job rather than silently skipping live tests. Inspect all three job results

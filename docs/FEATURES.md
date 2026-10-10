@@ -526,7 +526,9 @@ failure and health states.
     - [ ] Repeat deployment verification on Linux/Windows and other supported PostgreSQL versions
       - [x] Shared disposable native-cluster verifier with Linux shell and PowerShell entry points
       - [x] Least-privilege, secret-free GitHub Actions matrix for Linux/PostgreSQL 16 and Windows/PostgreSQL 14/17
-      - [ ] Confirm successful hosted Linux and Windows workflow runs (pending first push/run)
+      - [x] Confirm successful hosted Linux/PostgreSQL 16 workflow run
+      - [ ] Correct Windows path/SQLite file-URI handling and platform-specific permission verification
+      - [ ] Confirm successful hosted Windows/PostgreSQL 14/17 workflow runs (first runs failed; see verification guide)
     - [x] PostgreSQL-native backup/restore and disaster-recovery rehearsal (PostgreSQL 16.15/macOS)
       - [x] Offline native custom-format dump, complete keyring/PKI archive, and verified versioned manifest
       - [x] Empty-database/non-superuser guard, no-overwrite file destinations, and transactional native restore
@@ -555,6 +557,12 @@ failure and health states.
       - [x] Preserve signed check-catalog tables and intrusive-check opt-in policy
       - [x] Verify source-file immutability, partial-copy rollback, asset history, ciphertext, and generated identity sequences
 - [ ] Independently deployable control plane and scanner-worker runtime
+  - [x] Separate worker build with local server scanning retained
+  - [x] Read-only configuration/identity preflight and graceful worker shutdown
+  - [x] Hardened systemd worker unit and no-overwrite installation script
+  - [x] Native low-privilege Windows worker service, ACL installer, bounded recovery and event logging
+  - [x] Enrollment, network access, manual upgrade and recovery deployment guide
+  - [ ] Linux/Windows service installation and remote-scan acceptance rehearsal
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,
       peer-to-peer control, and automatic scope expansion

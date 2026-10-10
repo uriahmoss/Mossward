@@ -41,6 +41,7 @@ func Run(ctx context.Context, tools string, expectedMajor int) (result error) {
 		{"vet", "./..."},
 		{"build", "-o", filepath.Join(instance.directory, "mossward"), "./cmd/mossward"},
 		{"build", "-o", filepath.Join(instance.directory, "mossward-agent"), "./cmd/mossward-agent"},
+		{"build", "-o", filepath.Join(instance.directory, "mossward-worker"), "./cmd/mossward-worker"},
 	}
 	for _, arguments := range steps {
 		slog.Info("Running PostgreSQL verification step", "step", arguments[0])
