@@ -2,6 +2,7 @@ package transport
 
 import (
 	"crypto/tls"
+	"mossward/internal/privatefs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -56,12 +57,8 @@ func TestACMECacheUsesOwnerOnlyPermissions(t *testing.T) {
 	if err := manager.manager.Cache.Put(t.Context(), "test", []byte("value")); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(filepath.Join(directory, "test"))
-	if err != nil {
+	if err := privatefs.Check(filepath.Join(directory, "test")); err != nil {
 		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("expected 0600 cache file, got %o", info.Mode().Perm())
 	}
 }
 

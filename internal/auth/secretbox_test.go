@@ -2,11 +2,11 @@ package auth
 
 import (
 	"bytes"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"mossward/internal/privatefs"
 	"mossward/internal/store"
 )
 
@@ -35,12 +35,8 @@ func TestSecretBoxPersistsKeyAndAuthenticatesCiphertext(t *testing.T) {
 	if _, err := reloaded.Decrypt(ciphertext); err == nil {
 		t.Fatal("tampered ciphertext was accepted")
 	}
-	info, err := os.Stat(path)
-	if err != nil {
+	if err := privatefs.Check(path); err != nil {
 		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("identity key permissions = %o, want 600", info.Mode().Perm())
 	}
 }
 

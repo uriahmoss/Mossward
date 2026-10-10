@@ -199,7 +199,11 @@ func sqliteTableNames(ctx context.Context, database *sql.DB) ([]string, error) {
 }
 
 func readOnlySQLiteDSN(path string) string {
-	value := &url.URL{Scheme: "file", Path: path}
+	slashPath := filepath.ToSlash(path)
+	if filepath.VolumeName(path) != "" && !strings.HasPrefix(slashPath, "/") {
+		slashPath = "/" + slashPath
+	}
+	value := &url.URL{Scheme: "file", Path: slashPath}
 	query := value.Query()
 	query.Set("mode", "ro")
 	value.RawQuery = query.Encode()

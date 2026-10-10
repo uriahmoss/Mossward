@@ -11,9 +11,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"mossward/internal/privatefs"
 	"os"
 	"path/filepath"
-	"runtime"
 )
 
 const identityKeyBytes = 32
@@ -85,17 +85,7 @@ func BeginIdentityKeyRotation(path string) (*SecretBox, error) {
 }
 
 func validateIdentityKeyPermissions(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return errors.New("identity key must not grant group or other access")
-	}
-	return nil
+	return privatefs.Check(path)
 }
 
 func (box *SecretBox) FinalizeIdentityKeyRotation(path string) error {
@@ -223,7 +213,7 @@ func loadOrCreateIdentityKey(path string) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generate identity key: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	file, err := privatefs.Create(path)
 	if errors.Is(err, os.ErrExist) {
 		return loadOrCreateIdentityKey(path)
 	}
@@ -251,11 +241,11 @@ func writeKeyring(path string, ring keyringFile, preserveCurrent bool) error {
 			return err
 		}
 		recovery := path + ".pre-rotation-" + ring.ActiveID
-		if err := os.WriteFile(recovery, current, 0o600); err != nil && !errors.Is(err, os.ErrExist) {
+		if err := privatefs.WriteFile(recovery, current); err != nil && !errors.Is(err, os.ErrExist) {
 			return fmt.Errorf("preserve pre-rotation identity key: %w", err)
 		}
 	}
-	temporary, err := os.CreateTemp(filepath.Dir(path), ".identity-key-rotation-")
+	temporary, err := privatefs.CreateTemp(filepath.Dir(path), ".identity-key-rotation-")
 	if err != nil {
 		return err
 	}

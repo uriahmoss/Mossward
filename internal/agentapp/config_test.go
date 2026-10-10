@@ -3,6 +3,7 @@ package agentapp
 import (
 	"crypto/ed25519"
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -11,8 +12,11 @@ import (
 func TestLoadConfigAppliesSafeDefaults(t *testing.T) {
 	directory := t.TempDir()
 	path := filepath.Join(directory, "agent.json")
-	contents := `{"server_url":"https://mossward.example.test","endpoint_url":"https://agents.example.test:9443","state_directory":"` + directory + `"}`
-	if err := os.WriteFile(path, []byte(contents), 0o600); err != nil {
+	contents, err := json.Marshal(map[string]string{"server_url": "https://mossward.example.test", "endpoint_url": "https://agents.example.test:9443", "state_directory": directory})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, contents, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	config, err := LoadConfig(path)

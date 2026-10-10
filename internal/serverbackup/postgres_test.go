@@ -3,6 +3,7 @@ package serverbackup
 import (
 	"context"
 	"database/sql"
+	"mossward/internal/privatefs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -261,9 +262,8 @@ func TestPostgreSQLToolCredentialsArePrivateAndEnvironmentIsolated(t *testing.T)
 	if !strings.Contains(string(data), "sslrootcert=/test/tls/root.crt") || !strings.Contains(string(data), "host=db.example") {
 		t.Fatal("TLS material or explicit connection destination was lost")
 	}
-	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatal("service credentials are not owner-only")
+	if err := privatefs.Check(path); err != nil {
+		t.Fatal(err)
 	}
 	for _, connection := range []string{"not a connection", "postgresql://user:p%0Ainjected@host/db", "postgresql://host/db?service=other"} {
 		if _, err := postgresToolEnvironment(connection, directory); err == nil {

@@ -7,10 +7,10 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log/slog"
+	"mossward/internal/privatefs"
 	"net/http"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -56,13 +56,10 @@ type ACMEManager struct {
 }
 
 func PrepareACMECache(path string) error {
-	if err := os.MkdirAll(path, 0o700); err != nil {
+	if err := privatefs.MkdirAll(path); err != nil {
 		return fmt.Errorf("create ACME cache: %w", err)
 	}
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	if err := os.Chmod(path, 0o700); err != nil {
+	if err := privatefs.Restrict(path); err != nil {
 		return fmt.Errorf("secure ACME cache directory: %w", err)
 	}
 	return filepath.WalkDir(path, func(filePath string, entry os.DirEntry, err error) error {
@@ -72,14 +69,7 @@ func PrepareACMECache(path string) error {
 		if entry.IsDir() {
 			return nil
 		}
-		info, err := entry.Info()
-		if err != nil {
-			return err
-		}
-		if info.Mode().Perm()&0o077 != 0 {
-			return fmt.Errorf("ACME cache file %q grants group or other access", filePath)
-		}
-		return nil
+		return privatefs.Check(filePath)
 	})
 }
 
@@ -108,6 +98,11 @@ type observingCache struct {
 }
 
 func (c *observingCache) Put(ctx context.Context, key string, data []byte) error {
+	if directory, ok := c.Cache.(autocert.DirCache); ok {
+		if err := PrepareACMECache(string(directory)); err != nil {
+			return err
+		}
+	}
 	if err := c.Cache.Put(ctx, key, data); err != nil {
 		return err
 	}

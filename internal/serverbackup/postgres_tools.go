@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"mossward/internal/privatefs"
 	"net/url"
 	"os"
 	"os/exec"
@@ -78,7 +79,7 @@ func postgresToolEnvironment(connection, directory string) ([]string, error) {
 		}
 	}
 	servicefile := filepath.Join(directory, "pg-service.conf")
-	if err := os.WriteFile(servicefile, []byte(service.String()), 0o600); err != nil {
+	if err := privatefs.WriteFile(servicefile, []byte(service.String())); err != nil {
 		return nil, err
 	}
 	environment := []string{}

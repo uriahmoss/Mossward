@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mossward/internal/privatefs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -108,7 +109,7 @@ func writeManifestArchive(output string, files map[string]string, manifest Manif
 	if err := os.MkdirAll(filepath.Dir(output), 0o750); err != nil {
 		return err
 	}
-	file, err := os.OpenFile(output, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	file, err := privatefs.Create(output)
 	if err != nil {
 		return fmt.Errorf("create backup archive: %w", err)
 	}

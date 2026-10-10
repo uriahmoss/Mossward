@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mossward/internal/model"
+	"mossward/internal/privatefs"
 
 	_ "modernc.org/sqlite"
 )
@@ -26,12 +27,28 @@ type SQLiteStore struct {
 }
 
 func NewSQLiteStore(path, legacyJSONPath string) (*SQLiteStore, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+	if err := privatefs.MkdirAll(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("create database directory: %w", err)
+	}
+	if err := privatefs.RequirePrivateDirectory(filepath.Dir(path)); err != nil {
+		return nil, fmt.Errorf("database directory must restrict Windows sidecar access: %w", err)
 	}
 	absolutePath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve database path: %w", err)
+	}
+	// Protect a new database before SQLite can write application data to it.
+	file, err := privatefs.Create(absolutePath)
+	if err != nil && !os.IsExist(err) {
+		return nil, fmt.Errorf("prepare private database: %w", err)
+	}
+	if file != nil {
+		if err := file.Close(); err != nil {
+			return nil, err
+		}
+	}
+	if err := privatefs.Restrict(absolutePath); err != nil {
+		return nil, err
 	}
 	slashPath := filepath.ToSlash(absolutePath)
 	if filepath.VolumeName(absolutePath) != "" && !strings.HasPrefix(slashPath, "/") {
@@ -52,7 +69,7 @@ func NewSQLiteStore(path, legacyJSONPath string) (*SQLiteStore, error) {
 		_ = db.Close()
 		return nil, err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := privatefs.Restrict(path); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("secure database permissions: %w", err)
 	}
@@ -68,6 +85,9 @@ func (s *SQLiteStore) Close() error {
 }
 
 func (s *SQLiteStore) BackupSQLite(destination string) error {
+	if err := privatefs.RequirePrivateDirectory(filepath.Dir(destination)); err != nil {
+		return fmt.Errorf("SQLite backup directory must restrict Windows access: %w", err)
+	}
 	if _, err := os.Stat(destination); err == nil {
 		return fmt.Errorf("backup destination already exists: %s", destination)
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -77,7 +97,7 @@ func (s *SQLiteStore) BackupSQLite(destination string) error {
 	if _, err := s.db.Exec("VACUUM INTO '" + escaped + "'"); err != nil {
 		return fmt.Errorf("create consistent SQLite backup: %w", err)
 	}
-	if err := os.Chmod(destination, 0o600); err != nil {
+	if err := privatefs.Restrict(destination); err != nil {
 		return fmt.Errorf("secure SQLite backup: %w", err)
 	}
 	return nil

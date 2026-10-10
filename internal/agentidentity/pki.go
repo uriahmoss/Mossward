@@ -12,11 +12,11 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"mossward/internal/privatefs"
 	"net"
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"time"
 )
 
@@ -39,13 +39,11 @@ type PKI struct {
 }
 
 func LoadOrCreatePKI(directory string, serverNames []string, now time.Time) (*PKI, error) {
-	if err := os.MkdirAll(directory, 0o700); err != nil {
+	if err := privatefs.MkdirAll(directory); err != nil {
 		return nil, fmt.Errorf("create agent PKI directory: %w", err)
 	}
-	if runtime.GOOS != "windows" {
-		if err := os.Chmod(directory, 0o700); err != nil {
-			return nil, fmt.Errorf("secure agent PKI directory: %w", err)
-		}
+	if err := privatefs.Restrict(directory); err != nil {
+		return nil, fmt.Errorf("secure agent PKI directory: %w", err)
 	}
 	rootCertificate, rootKey, rootPEM, err := loadOrCreateCA(directory, "root", nil, nil, now)
 	if err != nil {
@@ -235,7 +233,7 @@ func (p *PKI) loadOrCreateServerCertificate(directory string, names []string, no
 	if err := os.WriteFile(certificatePath, certificatePEM, 0o644); err != nil {
 		return tls.Certificate{}, err
 	}
-	if err := os.WriteFile(keyPath, keyPEM, 0o600); err != nil {
+	if err := privatefs.WriteFile(keyPath, keyPEM); err != nil {
 		return tls.Certificate{}, err
 	}
 	if err := os.Chmod(keyPath, 0o600); err != nil {
@@ -261,17 +259,7 @@ func validateCAHierarchy(root, intermediate *x509.Certificate, now time.Time) er
 }
 
 func validatePrivateFile(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return err
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("private key %q grants group or other access", path)
-	}
-	return nil
+	return privatefs.Check(path)
 }
 
 func parseCSR(value []byte) (*x509.CertificateRequest, error) {

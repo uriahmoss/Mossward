@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"mossward/internal/privatefs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -113,12 +114,8 @@ func TestSQLiteDatabaseUsesOwnerOnlyPermissions(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer repository.Close()
-	info, err := os.Stat(path)
-	if err != nil {
+	if err := privatefs.Check(path); err != nil {
 		t.Fatal(err)
-	}
-	if info.Mode().Perm() != 0o600 {
-		t.Fatalf("expected 0600 permissions, got %o", info.Mode().Perm())
 	}
 }
 

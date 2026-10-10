@@ -7,8 +7,8 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"mossward/internal/privatefs"
 	"net/url"
-	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -47,12 +47,8 @@ func TestPKIIssuesBoundEndpointCertificate(t *testing.T) {
 		t.Fatalf("server certificate hostname: %v", err)
 	}
 	for _, name := range []string{"root-ca-key.pem", "intermediate-ca-key.pem", "agent-server-key.pem"} {
-		info, err := os.Stat(filepath.Join(directory, name))
-		if err != nil {
+		if err := privatefs.Check(filepath.Join(directory, name)); err != nil {
 			t.Fatal(err)
-		}
-		if info.Mode().Perm() != 0o600 {
-			t.Fatalf("%s is not owner-only: %o", name, info.Mode().Perm())
 		}
 	}
 }

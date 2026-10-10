@@ -61,11 +61,22 @@ setup actions, no production secrets, and preinstalled native PostgreSQL tools:
 | Windows Server 2025 | 17 | Failed; portability follow-up required |
 
 First run: https://github.com/uriahmoss/Mossward/actions/runs/38052420468
-Windows failures include unescaped JSON fixture paths, SQLite migration file-URI
+Windows failures included unescaped JSON fixture paths, SQLite migration file-URI
 handling, and Unix-mode-only permission assertions in identity, backup, database
-and ACME tests. Fixing these must preserve actual Windows ACL security rather than
-simply treating Unix-mode assertions as proof of Windows protection. The worker
-JSON fixture is now generated with JSON encoding; remaining fixes are backlogged.
+and ACME tests. JSON fixtures now use native JSON encoding and read-only SQLite
+URIs normalize drive-letter paths. Private-file tests inspect native permissions:
+Unix modes or Windows DACLs. Windows private-file creation supplies a protected
+DACL atomically, granting the running identity, SYSTEM and built-in Administrators;
+cache/PKI directories restrict inherited access. An explicit Windows regression
+rejects Everyone access. These changes still require hosted Windows execution.
+
+Windows SQLite database/backup directories must already have a private ACL before
+SQLite may create inherited-permission sidecars. Shared directories fail closed;
+the application does not rewrite arbitrary parent-directory permissions. Use the
+provided service installers to provision access and run maintenance under the
+same runtime identity. Key material created by a different account may need
+administrator-reviewed ACL provisioning before the service can use it. Never
+grant Users/Everyone access to resolve an ACL failure.
 
 Runner images can change. A missing installation or unexpected major fails the
 job rather than silently skipping live tests. Inspect all three job results

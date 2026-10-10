@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"mossward/internal/privatefs"
 	"mossward/internal/store"
 )
 
@@ -31,9 +32,8 @@ func TestBackupInspectAndRestore(t *testing.T) {
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(archive)
-	if err != nil || info.Mode().Perm() != 0o600 {
-		t.Fatalf("backup archive is not owner-only: %v", err)
+	if err := privatefs.Check(archive); err != nil {
+		t.Fatal(err)
 	}
 	manifest, err := Inspect(archive)
 	if err != nil || manifest.FormatVersion != FormatVersion || manifest.SchemaVersion < 1 || len(manifest.Files) != 4 {
