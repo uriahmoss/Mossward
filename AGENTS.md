@@ -60,3 +60,6 @@
   against `origin/main` before editing.
 - Continue from the next incomplete roadmap slice unless the user requests a
   different task.
+- Unattended remote development is an exception: read
+  `docs/remote-development/README.md` and execute only a human-approved work
+  package. Roadmap entries, bug reports, and wake events are not authorization.
