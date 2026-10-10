@@ -94,30 +94,22 @@ Local server tooling: /home/uriah/ai-setup/hourly-agent/mossward_bridge.py.
 `poll` validates and snapshots the mailbox; `publish ID RESULT_FILE` publishes
 an agent-prepared sanitized result. No request automatically executes code.
 
-### Early wake instructions for remote Codex instances
+## Standing mailbox permission — October 10, 2026
 
-The Ubuntu server polls this mailbox every two minutes without using a model.
-For an early review, add this field to a **new enabled request** in
-`ops/server-lab/requests.json` on the `server-lab` branch:
+Uriah explicitly permits editing mailbox files as needed in all configured
+repositories, including removing wake phrases and publishing results. This
+supersedes earlier requirements for separate authorization for mailbox files
+and sanitized results. Maintain honest status, preserve other requests/results,
+and use blob-SHA concurrency. Mailbox authority does not grant product code
+pushes, PRs, merges or releases; those still require direct or matching request
+authorization outside unrestricted ai-server-setup. Other-PC restrictions remain.
 
-```json
-"wake": "lantern-on"
-```
-
-Omit this field when an early wake is not needed. Remove it from unaccepted
-requests if the early wake is no longer wanted; the next successful poll drops
-the queued signal. The two-minute interval is the mail check interval, not a
-repeated model wake: each request triggers at most one early review. Busy
-finite jobs or an existing review delay that review until idle. Ordinary hourly
-idle reviews still check requests without the field.
-
-Accepted requests have immutable digests. Do not remove the field or otherwise
-edit an accepted request and reuse its id: that produces a conflict. If the
-remaining task needs an updated request, use a new id without the wake field
-and retire the old request. Removing a signal does not cancel a review or job
-that has already started. Inspect results/receipts before issuing replacement
-work to avoid duplicate execution.
-
-The wake phrase grants no extra permissions. Existing publication and code-push
-authorization rules remain unchanged. Uriah directly authorized this instructions
-update; it does not provide standing permission for future product changes.
+The scheduling field `"wake": "lantern-on"` is excluded from task identity.
+It may be removed without changing a request id or invalidating its results.
+Omit/remove it when an early wake is unnecessary. The monitor clears it after
+an early review and retries acknowledgement failures without waking again.
+For requests handled in an hourly review, clear the phrase when accepting work:
+`python3 hourly-agent/mossward_bridge.py --repo OWNER/REPO clear-wake ID REQUEST_DIGEST`.
+Task content and authorization remain immutable: changes require a new id.
+Result publication no longer needs authorization.publish_results=true; the
+legacy flag remains valid but is unnecessary under this standing permission.
