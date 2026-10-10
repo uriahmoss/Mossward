@@ -416,6 +416,36 @@
       ],
       "job_id": "20261010T161356Z-20ce4aef",
       "updated_at": "2026-10-10T16:14:29.300213+00:00"
+    },
+    "ubuntu-lab-development-handoff-20261010-007": {
+      "request_digest": "508807e9d454fbea304dc2a2bec3de05ccdeea24e1d86e010d2a25a18cc9a81b",
+      "source_revision": "52d3571e96a8e1093f76d5ef3cca82b93e65df03",
+      "status": "accepted",
+      "summary": "Pinned handoff reviewed and isolated preparation completed. Development remains disabled; approval gate installation is incomplete. Neither trial package has started.",
+      "checks": [
+        {
+          "name": "isolated_preparation",
+          "status": "PASS",
+          "detail": "Separate clean detached development checkout matches the exact handoff revision; pinned rules, tracker and handoff documents preserved."
+        },
+        {
+          "name": "existing_controls",
+          "status": "PASS",
+          "detail": "62 mailbox tests and 7 finite-job tracker tests passed. Existing schedule and polling unchanged."
+        },
+        {
+          "name": "development_gate",
+          "status": "NOT_TESTED",
+          "detail": "Hourly prompt now prohibits product development until verified gate success. Trusted approval verifier, package selection and concurrency/stop-condition tests remain to implement."
+        },
+        {
+          "name": "recovery",
+          "status": "PASS",
+          "detail": "Pre-change configuration retained locally; source recovery commit ec359c3. Gate changes are not yet committed or published."
+        }
+      ],
+      "job_id": "20261010T170851Z-15c2464a",
+      "updated_at": "2026-10-10T17:09:44.373331+00:00"
     }
   }
 }
