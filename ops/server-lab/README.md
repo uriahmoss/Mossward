@@ -93,3 +93,31 @@ push to the mailbox branch; do not expand trust to unmerged fork/PR content.
 Local server tooling: /home/uriah/ai-setup/hourly-agent/mossward_bridge.py.
 `poll` validates and snapshots the mailbox; `publish ID RESULT_FILE` publishes
 an agent-prepared sanitized result. No request automatically executes code.
+
+### Early wake instructions for remote Codex instances
+
+The Ubuntu server polls this mailbox every two minutes without using a model.
+For an early review, add this field to a **new enabled request** in
+`ops/server-lab/requests.json` on the `server-lab` branch:
+
+```json
+"wake": "lantern-on"
+```
+
+Omit this field when an early wake is not needed. Remove it from unaccepted
+requests if the early wake is no longer wanted; the next successful poll drops
+the queued signal. The two-minute interval is the mail check interval, not a
+repeated model wake: each request triggers at most one early review. Busy
+finite jobs or an existing review delay that review until idle. Ordinary hourly
+idle reviews still check requests without the field.
+
+Accepted requests have immutable digests. Do not remove the field or otherwise
+edit an accepted request and reuse its id: that produces a conflict. If the
+remaining task needs an updated request, use a new id without the wake field
+and retire the old request. Removing a signal does not cancel a review or job
+that has already started. Inspect results/receipts before issuing replacement
+work to avoid duplicate execution.
+
+The wake phrase grants no extra permissions. Existing publication and code-push
+authorization rules remain unchanged. Uriah directly authorized this instructions
+update; it does not provide standing permission for future product changes.
