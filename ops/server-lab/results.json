@@ -226,6 +226,46 @@
         }
       ],
       "updated_at": "2026-10-10T15:16:37.824468+00:00"
+    },
+    "ubuntu-lab-lan-tls-20261010-002": {
+      "request_digest": "6ef6de5cb61f7972989c24edd67a583fad47d33b1ce5dd3e384bc5b03b6ce713",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "failed",
+      "summary": "Temporary TLS certificate generated and verified, but preparation failed on service key readability: restrictive process umask masked certificate-directory traversal permissions. Live configuration and loopback HTTP port 8080 unchanged; no hosted activation. Original failure preserved without retry.",
+      "job_id": "20261010T152409Z-b113de33",
+      "checks": [
+        {
+          "name": "certificate",
+          "status": "PASS",
+          "detail": "Separate temporary 90-day self-signed web certificate passed canonical DNS hostname, current LAN IP and server-auth verification. Private key owned by service identity with mode 0600; no endpoint PKI reused."
+        },
+        {
+          "name": "service_readability",
+          "status": "FAIL",
+          "detail": "Dedicated certificate directory was created as 0700 under umask 077 despite requested 0750. Service cannot traverse it. Explicit directory-mode correction is prepared for a separately reviewed new repair request; original terminal job was not retried."
+        },
+        {
+          "name": "retained_backup",
+          "status": "PASS",
+          "detail": "Private configuration, installation marker, identity key and SQLite online backup retained; database integrity check passed."
+        },
+        {
+          "name": "transport",
+          "status": "NOT_TESTED",
+          "detail": "443 selected as currently unused; 8443 also inspected. No staged environment was completed, no LAN TLS listener enabled, no restart or firewall changes. Existing service remains active on loopback HTTP 8080 with setup_required."
+        },
+        {
+          "name": "user_actions",
+          "status": "NOT_TESTED",
+          "detail": "Complete localhost administrator/MFA bootstrap before hosted activation. Canonical hostname required; pinned middleware rejects direct IP Host with HTTP 421. Private tunnel, future DNS mapping, certificate fingerprint/trust guidance and repair notes retained on server. No client trust installed or other PC contacted."
+        },
+        {
+          "name": "existing_ai_stack",
+          "status": "PASS",
+          "detail": "Independent terminal health job passed fresh full-GPU 4096-context inference, Ollama CLI and WebUI/backend health after preparation failure."
+        }
+      ],
+      "updated_at": "2026-10-10T15:25:24.729445+00:00"
     }
   }
 }
