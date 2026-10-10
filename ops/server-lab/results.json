@@ -421,7 +421,7 @@
       "request_digest": "508807e9d454fbea304dc2a2bec3de05ccdeea24e1d86e010d2a25a18cc9a81b",
       "source_revision": "52d3571e96a8e1093f76d5ef3cca82b93e65df03",
       "status": "accepted",
-      "summary": "Development gate policy, whole-run guard and disabled hourly snapshot implemented and published to the authorized server repository. Setup remains incomplete; neither UI trial started.",
+      "summary": "Development remains disabled; setup incomplete. Isolation hardened and missing main reference safely prepared. Trusted approval and foreground execution adapters still required; no UI trials launched.",
       "checks": [
         {
           "name": "preparation_reconciliation",
@@ -447,10 +447,15 @@
           "name": "approval_provenance_question",
           "status": "NOT_TESTED",
           "detail": "Before activation, identify independent evidence anchoring direct human approval to exact package content/base/specification. Agent-editable queue or request-description assertions alone are insufficient. Both UI trials remain pending behind verified setup."
+        },
+        {
+          "name": "isolation_and_reference_followup",
+          "status": "PASS",
+          "detail": "Tracked worker succeeded with 61 tests including nested protected paths and shared Git storage rejection. Missing main reference prepared with pinned detached HEAD and clean working files preserved. Server source published at 3a261b3; recovery 58cd71f. Approval/execution adapters remain incomplete."
         }
       ],
       "job_id": "20261010T170851Z-15c2464a",
-      "updated_at": "2026-10-10T18:10:33.057868+00:00"
+      "updated_at": "2026-10-10T19:08:50.336798+00:00"
     }
   }
 }
