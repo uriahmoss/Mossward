@@ -2,7 +2,6 @@ package datamigration
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -72,15 +71,14 @@ func TestPreflightSQLiteSourceAcceptsRelativePath(t *testing.T) {
 	if err := repository.Close(); err != nil {
 		t.Fatal(err)
 	}
-	workingDirectory, err := os.Getwd()
+	// Windows runners can place the checkout and temporary directory on
+	// different drives. Resolve the relative input from its own directory.
+	t.Chdir(directory)
+	report, err := PreflightSQLiteSource(context.Background(), "relative.db")
 	if err != nil {
-		t.Fatal(err)
-	}
-	relativePath, err := filepath.Rel(workingDirectory, path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := PreflightSQLiteSource(context.Background(), relativePath); err != nil {
 		t.Fatalf("preflight relative SQLite migration source: %v", err)
+	}
+	if report.Path != "relative.db" || report.SizeBytes == 0 {
+		t.Fatalf("unexpected relative source report: %#v", report)
 	}
 }

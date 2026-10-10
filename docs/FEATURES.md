@@ -530,6 +530,7 @@ failure and health states.
       - [ ] Correct Windows path/SQLite file-URI handling and platform-specific permission verification
         - [x] Native-path JSON fixture encoding and read-only SQLite file URI normalization
         - [x] Native private-file permission helper, atomic Windows private-file creation and explicit DACL assertions
+        - [x] Keep relative-path migration fixtures on the same Windows drive using an isolated test working directory
         - [ ] Execute Windows ACL regressions and complete hosted PostgreSQL 14/17 reruns
       - [ ] Confirm successful hosted Windows/PostgreSQL 14/17 workflow runs (first runs failed; see verification guide)
     - [x] PostgreSQL-native backup/restore and disaster-recovery rehearsal (PostgreSQL 16.15/macOS)
