@@ -341,6 +341,46 @@
         }
       ],
       "updated_at": "2026-10-10T15:46:02.756683+00:00"
+    },
+    "ubuntu-lab-lan-activation-retry-20261010-005": {
+      "request_digest": "33043e80f9f4a85d86527969af4f6aeb96035823fd653732e700f6a999eeb5fc",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "succeeded",
+      "summary": "New reviewed HTTPS activation passed and remains active on port 443. Prior failed attempt preserved. Client hostname mapping and public certificate trust provisioning remain required.",
+      "job_id": "20261010T155329Z-f80d6668",
+      "checks": [
+        {
+          "name": "https_acceptance",
+          "status": "PASS",
+          "detail": "Existing certificate verified for hostname, server-auth purpose, matching key, service readability and expiry. Trusted local HTTPS readiness and health passed; unauthenticated sessions rejected."
+        },
+        {
+          "name": "retained_identity",
+          "status": "PASS",
+          "detail": "Initialized administrator/MFA, user and authenticator row hashes, identity key and installation marker preserved."
+        },
+        {
+          "name": "fresh_recovery",
+          "status": "PASS",
+          "detail": "Fresh native backup creation/inspection and finalized stopped-copy SQLite integrity passed; private recovery hashes retained."
+        },
+        {
+          "name": "firewall_and_listener",
+          "status": "PASS",
+          "detail": "Only volatile packet/byte counters normalized; all remaining rule structure equal. Specific approved LAN interface listener on 443; no firewall rules changed."
+        },
+        {
+          "name": "ai_stack",
+          "status": "PASS",
+          "detail": "Before/after CLI, WebUI/backend and fresh inference passed: context 4096, model size equals GPU allocation."
+        },
+        {
+          "name": "client_and_coverage_limits",
+          "status": "NOT_TESTED",
+          "detail": "No client DNS/trust configured and no other PC accessed. Authenticated browser session, full restore, PostgreSQL parity and Windows coverage not established. Private connection/trust/rollback guidance retained."
+        }
+      ],
+      "updated_at": "2026-10-10T15:54:07.052581+00:00"
     }
   }
 }
