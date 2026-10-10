@@ -31,6 +31,9 @@ type Transport struct {
 	client  *http.Client
 }
 
+// CloseIdleConnections releases reusable outbound connections on worker stop.
+func (t *Transport) CloseIdleConnections() { t.client.CloseIdleConnections() }
+
 func (t *Transport) CheckIn(ctx context.Context, heartbeat model.WorkerHeartbeat) error {
 	payload, err := json.Marshal(heartbeat)
 	if err != nil {

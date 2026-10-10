@@ -16,6 +16,7 @@ to the operating-system account running the worker.
 {
   "server_url": "https://mossward.example.com:8443",
   "worker_id": "replace-with-enrolled-worker-id",
+  "site_id": "chicago-hq",
   "certificate_file": "/etc/mossward-worker/worker.crt",
   "private_key_file": "/etc/mossward-worker/worker.key",
   "ca_file": "/etc/mossward-worker/mossward-agent-ca.crt",
@@ -44,6 +45,13 @@ pass both sets of restrictions before execution. The worker refuses HTTP URLs,
 relative security-sensitive paths, invalid network or port scopes, unsupported
 capabilities, mismatched or expired certificates, invalid signing keys, and
 private keys with group or world permissions on Unix systems.
+
+`site_id` must match the canonical site chosen at enrollment (lowercase letters,
+digits and hyphens, at most 64 characters). Leave it absent only for a worker
+enrolled without a site. A site-targeted signed job cannot run on a different
+locally configured site. Execution validity is bound to the authenticated client
+certificate's expiration; configuration cannot extend it. Windows private keys
+and worker state are checked using native ACLs, not Unix mode bits.
 
 ## Run
 

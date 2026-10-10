@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"errors"
 	"fmt"
+	"mossward/internal/privatefs"
 	"os"
 )
 
@@ -22,7 +23,7 @@ func loadOrCreateOutboxKey(path string) ([]byte, error) {
 	if _, err := rand.Read(key); err != nil {
 		return nil, fmt.Errorf("generate scanner-worker outbox key: %w", err)
 	}
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, privateWorkerFileMode)
+	file, err := privatefs.Create(path)
 	if err != nil {
 		return nil, fmt.Errorf("create scanner-worker outbox key: %w", err)
 	}

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"mossward/internal/model"
+	"mossward/internal/privatefs"
 	"mossward/internal/probe"
 	"mossward/internal/workerclient"
 	"mossward/internal/workerevidence"
@@ -65,7 +66,11 @@ func New(config Config) (*App, error) {
 		return nil, err
 	}
 	publicKey, _ := config.JobPublicKey()
-	workerRuntime, err := workerclient.NewRuntime(transport, outbox, executor, config.Worker(), publicKey, ledger,
+	worker := config.Worker()
+	// The local execution identity must expire with its authenticated certificate.
+	// A zero expiry makes every otherwise valid signed job fail closed.
+	worker.ExpiresAt = certificate.Leaf.NotAfter
+	workerRuntime, err := workerclient.NewRuntime(transport, outbox, executor, worker, publicKey, ledger,
 		workerclient.DefaultBackpressurePolicy())
 	if err != nil {
 		_ = ledger.Close()
@@ -73,7 +78,7 @@ func New(config Config) (*App, error) {
 		return nil, err
 	}
 	retry, _ := workerclient.NewRetryScheduler(workerclient.DefaultRetryPolicy())
-	return &App{runtime: workerRuntime, transport: transport, outbox: outbox, ledger: ledger, worker: config.Worker(),
+	return &App{runtime: workerRuntime, transport: transport, outbox: outbox, ledger: ledger, worker: worker,
 		retry: retry, pollInterval: config.PollInterval()}, nil
 }
 
@@ -124,6 +129,7 @@ func waitForWorkerCycle(ctx context.Context, delay time.Duration) bool {
 }
 
 func (a *App) Close() error {
+	a.transport.CloseIdleConnections()
 	return errors.Join(a.ledger.Close(), a.outbox.Close())
 }
 
@@ -188,15 +194,5 @@ func validateWorkerCertificate(certificate *x509.Certificate, workerID string, n
 }
 
 func requirePrivateKeyPermissions(path string) error {
-	if runtime.GOOS == "windows" {
-		return nil
-	}
-	info, err := os.Stat(path)
-	if err != nil {
-		return fmt.Errorf("inspect scanner-worker private key: %w", err)
-	}
-	if info.Mode().Perm()&0o077 != 0 {
-		return errors.New("scanner-worker private key permissions are too broad")
-	}
-	return nil
+	return privatefs.Check(path)
 }

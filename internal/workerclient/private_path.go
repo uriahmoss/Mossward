@@ -3,10 +3,10 @@ package workerclient
 import (
 	"errors"
 	"fmt"
+	"mossward/internal/privatefs"
 	"net/url"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -20,22 +20,13 @@ func preparePrivateWorkerPath(path, label string) error {
 		return fmt.Errorf("scanner-worker %s path is required", label)
 	}
 	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, privateWorkerDirectoryMode); err != nil {
+	if err := privatefs.MkdirAll(directory); err != nil {
 		return fmt.Errorf("create scanner-worker %s directory: %w", label, err)
 	}
-	if runtime.GOOS == "windows" {
-		return nil
+	if err := privatefs.Check(directory); err != nil {
+		return fmt.Errorf("scanner-worker %s directory permissions are too broad: %w", label, err)
 	}
-	directoryInfo, err := os.Stat(directory)
-	if err != nil {
-		return fmt.Errorf("inspect scanner-worker %s directory: %w", label, err)
-	}
-	if directoryInfo.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("scanner-worker %s directory permissions are too broad", label)
-	}
-	if info, err := os.Stat(path); err == nil && info.Mode().Perm()&0o077 != 0 {
-		return fmt.Errorf("scanner-worker %s permissions are too broad", label)
-	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := privatefs.Check(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("inspect scanner-worker %s: %w", label, err)
 	}
 	return nil

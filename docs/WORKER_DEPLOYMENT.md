@@ -120,6 +120,14 @@ tests.
 
 ## Verification boundary
 
+The application runtime rehearsal uses real TLS 1.3 client/server identities,
+a signed site-scoped job and an owned loopback TCP scan listener. It verifies
+signed evidence, retained evidence/completion after failed delivery and restart,
+delivery ordering, persistent replay rejection, mismatched-site rejection and
+clean cancellation. It runs in the ordinary test suite without touching host
+services. This tests the application runtime against a minimal test controller,
+not the full control plane or native service manager.
+
 Unit tests, full project verification, PowerShell/shell syntax and native-target
 cross-builds cover this slice locally. Installing/starting these new services on
 real Linux/Windows hosts remains an operator acceptance check; cross-compilation

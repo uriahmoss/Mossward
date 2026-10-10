@@ -565,6 +565,8 @@ failure and health states.
   - [x] Hardened systemd worker unit and no-overwrite installation script
   - [x] Native low-privilege Windows worker service, ACL installer, bounded recovery and event logging
   - [x] Enrollment, network access, manual upgrade and recovery deployment guide
+  - [x] TLS 1.3 application-runtime rehearsal with signed site-scoped loopback scan, delivery failure/restart, ordered evidence and persistent replay rejection
+  - [x] Certificate-bound execution validity, local enrollment-site affinity and native worker key/state permission checks
   - [ ] Linux/Windows service installation and remote-scan acceptance rehearsal
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,

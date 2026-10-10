@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,16 +19,20 @@ import (
 )
 
 const (
-	defaultPollInterval = 15 * time.Second
-	defaultProbeTimeout = 5 * time.Second
-	defaultOutboxItems  = 10000
-	defaultOutboxBytes  = 100 << 20
-	maximumConfigBytes  = 1 << 20
+	defaultPollInterval       = 15 * time.Second
+	defaultProbeTimeout       = 5 * time.Second
+	defaultOutboxItems        = 10000
+	defaultOutboxBytes        = 100 << 20
+	maximumConfigBytes        = 1 << 20
+	maximumWorkerSiteIDLength = 64
 )
+
+var workerConfigSitePattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 
 type Config struct {
 	ServerURL           string                   `json:"server_url"`
 	WorkerID            string                   `json:"worker_id"`
+	SiteID              string                   `json:"site_id,omitempty"`
 	CertificateFile     string                   `json:"certificate_file"`
 	PrivateKeyFile      string                   `json:"private_key_file"`
 	CAFile              string                   `json:"ca_file"`
@@ -85,6 +90,9 @@ func (c *Config) applyDefaults() {
 }
 
 func (c Config) Validate() error {
+	if len(c.SiteID) > maximumWorkerSiteIDLength || (c.SiteID != "" && !workerConfigSitePattern.MatchString(c.SiteID)) {
+		return errors.New("scanner-worker site ID must match its canonical enrollment site")
+	}
 	if strings.TrimSpace(c.ServerURL) == "" || strings.TrimSpace(c.WorkerID) == "" {
 		return errors.New("scanner-worker server URL and worker ID are required")
 	}
@@ -146,7 +154,7 @@ func (c Config) ProbeTimeout() time.Duration {
 }
 
 func (c Config) Worker() model.ScannerWorker {
-	return model.ScannerWorker{ID: c.WorkerID, Status: model.EndpointActive, AllowedCIDRs: c.AllowedCIDRs,
+	return model.ScannerWorker{ID: c.WorkerID, SiteID: c.SiteID, Status: model.EndpointActive, AllowedCIDRs: c.AllowedCIDRs,
 		AllowedPorts: c.AllowedPorts, MaxConcurrent: c.MaxConcurrent, RateLimitPerSecond: c.RateLimitPerSecond,
 		Capabilities: c.Capabilities}
 }

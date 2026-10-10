@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"mossward/internal/model"
@@ -57,6 +58,16 @@ func TestConfigRejectsUnsafeOrInvalidScope(t *testing.T) {
 	config.AllowedCIDRs = []string{"192.0.2.0/24"}
 	if err := config.Validate(); err != nil {
 		t.Fatalf("valid configuration rejected: %v", err)
+	}
+	for _, site := range []string{"Uppercase", "site/name", strings.Repeat("a", maximumWorkerSiteIDLength+1)} {
+		config.SiteID = site
+		if err := config.Validate(); err == nil {
+			t.Fatalf("invalid site accepted: %q", site)
+		}
+	}
+	config.SiteID = "chicago-hq"
+	if err := config.Validate(); err != nil || config.Worker().SiteID != config.SiteID {
+		t.Fatal("canonical site identity not preserved")
 	}
 	config.ServerURL = "http://mossward.example.test"
 	if err := config.Validate(); err == nil {
