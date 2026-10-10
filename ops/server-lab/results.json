@@ -66,6 +66,41 @@
       ],
       "job_id": "20261010T143053Z-f0f9ac5c",
       "updated_at": "2026-10-10T14:50:24.613692+00:00"
+    },
+    "ubuntu-lab-install-diagnose-20261010-001": {
+      "request_digest": "ce3c8e5dfd2c3c27e4132ccae60ef8694d0408d938ab98317230849d6630fc39",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "succeeded",
+      "summary": "Read-only diagnosis completed. Product verification passed; installation failed in the lab orchestration shell before any installation. No product defect demonstrated. No retry or service changes performed.",
+      "checks": [
+        {
+          "name": "terminal_receipt",
+          "status": "PASS",
+          "detail": "Original tracked worker failed with exit 2 after successful pinned race tests, vet and builds using Go 1.26.9."
+        },
+        {
+          "name": "error_cause",
+          "status": "PASS",
+          "detail": "Shell reported unexpected EOF while seeking a single quote. Script modification occurred during the running build; current syntax check passes. Likely edit/read-offset disruption in lab harness; exact executed bytes were not retained, so precise mechanism remains unproven."
+        },
+        {
+          "name": "installed_resources",
+          "status": "PASS",
+          "detail": "No application unit, service account/group, installed binary, configuration, retained state or application listener found; finite build container removed."
+        },
+        {
+          "name": "existing_ai_services",
+          "status": "PASS",
+          "detail": "Ollama CLI and WebUI/backend health passed; AI listeners remain loopback-only. Backup timer active with prior successful service result. No new GPU inference performed by this read-only diagnosis."
+        },
+        {
+          "name": "recommended_next_action",
+          "status": "NOT_TESTED",
+          "detail": "Preserve failed receipt. Before any retry, review a new uniquely identified installation request and use a syntax-checked immutable script copy with recorded hash; do not edit scripts during execution. No credentials or other-PC access needed. Authenticated acceptance awaits future installation and user initialization."
+        }
+      ],
+      "job_id": "20261010T144953Z-4873e6a4",
+      "updated_at": "2026-10-10T14:50:26.370522+00:00"
     }
   }
 }
