@@ -524,6 +524,9 @@ failure and health states.
       - [x] Provision an isolated Unix-socket-only test cluster, least-privilege database role, and `MOSSWARD_TEST_POSTGRES_DSN`
       - [x] Make explicit PostgreSQL verification fail if the test DSN is absent
     - [ ] Repeat deployment verification on Linux/Windows and other supported PostgreSQL versions
+      - [x] Shared disposable native-cluster verifier with Linux shell and PowerShell entry points
+      - [x] Least-privilege, secret-free GitHub Actions matrix for Linux/PostgreSQL 16 and Windows/PostgreSQL 14/17
+      - [ ] Confirm successful hosted Linux and Windows workflow runs (pending first push/run)
     - [x] PostgreSQL-native backup/restore and disaster-recovery rehearsal (PostgreSQL 16.15/macOS)
       - [x] Offline native custom-format dump, complete keyring/PKI archive, and verified versioned manifest
       - [x] Empty-database/non-superuser guard, no-overwrite file destinations, and transactional native restore
