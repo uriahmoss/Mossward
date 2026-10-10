@@ -57,10 +57,15 @@
           "name": "cause",
           "status": "NOT_TESTED",
           "detail": "Current script passes syntax checking but was modified while the worker was running. This supports a lab harness edit/read-offset failure; exact executed bytes were not retained. No product defect demonstrated."
+        },
+        {
+          "name": "post_failure_state",
+          "status": "PASS",
+          "detail": "Read-only diagnosis confirms no installed application service, binary, configuration, state or service account; build container absent. Existing AI backend and WebUI health passed."
         }
       ],
       "job_id": "20261010T143053Z-f0f9ac5c",
-      "updated_at": "2026-10-10T14:49:49.419739+00:00"
+      "updated_at": "2026-10-10T14:50:24.613692+00:00"
     }
   }
 }
