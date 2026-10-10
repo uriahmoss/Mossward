@@ -129,3 +129,36 @@ change task identity. This is launch protection, not remote cancellation.
 Concurrent acceptance and simulated interruption tests passed. The first new
 live mailbox launch will provide further operational evidence. Product-code
 publication permissions and other-PC access restrictions are unchanged.
+
+## Exact-target remote cancellation
+
+Append a new enabled request with action `cancel`, the target's same pinned
+source_revision, a normal description, and a `target` object:
+
+```json
+"target": {
+  "id": "original-request-id",
+  "request_digest": "FULL_64_CHARACTER_TARGET_DIGEST",
+  "job_id": "20261010T071041Z-b4bf179f"
+}
+```
+
+The containing mailbox supplies the repository; cross-repository targets are
+rejected. job_id is optional before launch and must match when supplied.
+Read request_digest/job_id from results or the sanitized acceptance receipt.
+A target must still exist with unchanged task identity. Cancellation uses the
+same repository/id lock as acceptance: a queued tombstone prevents launch,
+and running/scheduled work stops only its matching tracked systemd group.
+The two-minute poller processes these fixed controls even while finite work
+suppresses model reviews. Descriptions never become commands; no product
+source or external PC is accessed by cancellation.
+
+Repeated cancellation is safe, completed outcomes are preserved, and an
+uncertain/missing/legacy/conflicting tracker needs local diagnosis. A remote
+final result cannot conceal active local work. The cancellation request gets
+its own succeeded result describing the actual terminal target; the target
+gets cancelled only after confirmation. Publication failures retry reporting
+from durable receipts without relaunching work. Controls do not disable
+long-lived services or cancel other jobs. Removing wake/disabling an already
+started request alone does not stop it. Cancellation diagnostics appear in
+mailbox-monitor-state.json; current live request use remains a follow-up.
