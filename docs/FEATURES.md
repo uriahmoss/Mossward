@@ -305,6 +305,108 @@ failure and health states.
       readability, and responsive use
 - [x] Add findings-specific sorting and filtering controls
 
+#### Follow-up: basic scan-list usability — queued
+
+Recorded from the LAN installation review on 2026-10-10. Existing scan UX
+foundations above remain delivered; these refinements are not yet implemented.
+
+- [ ] Replace the expanded-address wall in recent scans with a compact summary
+      of the submitted CIDRs, ranges, hostnames, or individual targets and the
+      unique target count; do not repeat the original CIDR for every address
+- [ ] Make complete target details available on demand in an expandable,
+      searchable, paginated view while retaining resolved-address provenance
+- [ ] Use compact, consistently aligned scan rows with name, scope summary,
+      status/progress, start time, duration, and a clear results action
+- [ ] Surface concise host/service/finding counts when available, with explicit
+      labels for incomplete or partial results
+- [ ] Align and theme search, status, and sort controls consistently; improve
+      spacing, contrast, keyboard focus, and small-screen layout
+- [ ] Verify large-range, mixed-target, long-name, empty, running, failed, and
+      cancelled scan presentation without changing scan scope or execution
+
+#### Follow-up: scan-detail loading and results layout — queued
+
+- [ ] Investigate and fix the reported persistent "Loading scan details"
+      indicator after results appear; distinguish initial loading, active scan
+      progress, loaded results, and request failures
+- [ ] Remove the oversized loading placeholder and blank space once data loads;
+      show the compact scan summary and results near the top of the page
+- [ ] Keep background refresh unobtrusive without hiding existing results or
+      resetting scroll position; provide clear retry feedback on refresh failure
+- [ ] Verify initial load, completed scans, live updates, empty results, slow or
+      failed requests, and narrow-screen layouts without stale loading states
+
+#### Follow-up: scan-overview layout and drill-down — queued
+
+- [ ] Fix overlapping status badges and action buttons, with responsive spacing
+      and wrapping; hide or disable cancellation for terminal scan states
+- [ ] Make severity counters and the review recommendation open the matching
+      scan findings, filtered by the selected severity where applicable
+- [ ] Make actionable service, finding, CVE, and target summary cards open their
+      corresponding details; clearly distinguish non-interactive metrics
+- [ ] Support a focused detail page or dismissible accessible dialog/drawer for
+      alert and finding evidence, affected host/service, severity, and guidance
+- [ ] Preserve scan context, filters, and scroll position when closing details
+      or returning from a detail page; provide clear back/close controls
+- [ ] Verify keyboard navigation, focus restoration, empty drill-down results,
+      browser zoom, and narrow-screen layouts without overlapping controls
+
+#### Follow-up: finding identity and visual hierarchy — queued
+
+- [ ] Place a clearly labeled affected IP/hostname and port beside or directly
+      above each finding title, prominent enough to identify the host at a glance
+- [ ] Distinguish the affected resolved host from the original submitted scan
+      scope; label CIDR/range provenance as "Scan scope", not the affected target
+- [ ] Show known asset names alongside addresses without replacing the exact
+      observed address; link to authorized asset/service details when available
+- [ ] Rework finding cards into a compact identity, severity, and issue summary
+      with readable evidence/recommendation sections and consistent workflow
+      controls; avoid visually detached address badges and oversized actions
+- [ ] Offer host-based grouping/filtering so repeated findings across different
+      machines remain easy to distinguish
+- [ ] Verify IPv4, IPv6, hostname, unknown-asset, long-title, and responsive
+      presentation while preserving evidence provenance and access controls
+
+#### Follow-up: asset inventory organization and bulk editing — queued
+
+- [ ] Add an asset metadata/settings tab for reusable owner, environment, and
+      classification values; use searchable dropdowns in individual and bulk
+      editors, preserving existing values during any transition
+- [ ] Support entering multiple reusable values at once rather than creating
+      each option individually; review validation, duplicates, and value
+      rename/removal behavior before implementation
+- [ ] Add asset search and filters for address/hostname, group, lifecycle, and
+      metadata, including missing-field filters, with pagination for large fleets
+- [ ] Allow explicit row selection, select-current-page, and explicitly confirmed
+      select-all-filtered-assets with a visible selection count
+- [ ] Apply selected metadata fields to many assets using dropdowns, from either
+      the inventory or metadata-management view; leave unselected fields unchanged
+- [ ] Preview affected assets and old/new values before applying changes; offer
+      fill-empty-only versus overwrite behavior and an explicit clear-field action
+- [ ] Enforce existing edit permissions and audit bulk changes; report success,
+      skipped/conflicting records, and failures without silently losing edits
+- [ ] Make actual asset IP/hostname the primary row identity rather than the
+      original scan CIDR; retain scan scope as secondary provenance
+- [ ] Review whether additional multi-value tags are wanted separately from the
+      existing metadata fields and groups before changing the data model
+- [ ] Verify 500+ asset selection, filtering, pagination, validation, concurrent
+      edits, authorization, and responsive/keyboard interaction
+
+#### Follow-up: worker navigation and later homepage redesign — queued
+
+- [ ] Move scanner-worker setup and management out of the Users section into a
+      dedicated Workers destination with its own homepage entry; retain existing
+      role restrictions and provide updated navigation from related settings
+- [ ] After functional UI issues are addressed, redesign the homepage with a
+      more compact layout and clearer feature organization
+- [ ] Review customizable homepage feature visibility and ordering so users need
+      not display every feature; confirm personal-versus-installation-wide
+      preferences and defaults before implementation
+- [ ] Keep hidden homepage features discoverable through navigation/settings;
+      customization must not enable features or change authorization
+- [ ] Verify worker navigation, role-appropriate visibility, and responsive
+      homepage layouts; backlog customization until core workflows work reliably
+
 ### 3. Declarative checks
 
 - [x] Signed declarative check format
@@ -323,6 +425,25 @@ failure and health states.
 - [x] Executive summaries
 - [x] CSV and structured-data exports
 - [x] Printable reports
+
+#### Follow-up: report availability, portal viewing, and downloads — queued
+
+- [ ] Investigate the reported "Reports are unavailable" message despite visible
+      trend data; distinguish request/render failures from genuinely empty data
+      and provide useful retry feedback without exposing sensitive diagnostics
+- [ ] Make available reports discoverable in the Reports section, with clear
+      scope, reporting period, and generation time; review saved-versus-on-demand
+      report behavior before changing persistence or retention
+- [ ] Provide an in-portal report viewer for summaries, findings, affected assets,
+      and supporting evidence, with navigation back to the reports/results context
+- [ ] Provide clearly labeled downloads for CSV, JSON, and PDF; distinguish a
+      downloadable PDF from browser print/save-as-PDF, and review any additional
+      requested formats before implementation
+- [ ] Keep portal and downloaded report scope/filters consistent, indicate partial
+      or unavailable evidence, and disable exports when report generation fails
+- [ ] Preserve authorization and evidence-retention controls for report viewing
+      and downloads; verify empty, populated, partial-failure, large-report, and
+      format-specific rendering/export behavior
 
 ### 5. Endpoint-agent core
 
