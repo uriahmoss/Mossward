@@ -381,6 +381,41 @@
         }
       ],
       "updated_at": "2026-10-10T15:54:07.052581+00:00"
+    },
+    "ubuntu-lab-cert-fingerprint-20261010-006": {
+      "request_digest": "ed5f4b99eeb14fe8296a5ab788f6f0f127e618249ba6e8ac5a157ca436e188f0",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "succeeded",
+      "summary": "Installed and currently served public leaf certificate match. SHA-256 fingerprint: AF:7C:FB:FF:1D:12:29:97:D8:31:CB:DA:9C:F1:FD:56:B5:B4:95:1A:FD:45:14:84:88:2A:C9:8B:EA:77:E2:D7",
+      "checks": [
+        {
+          "name": "certificate_fingerprint",
+          "status": "PASS",
+          "detail": "SHA-256: AF:7C:FB:FF:1D:12:29:97:D8:31:CB:DA:9C:F1:FD:56:B5:B4:95:1A:FD:45:14:84:88:2A:C9:8B:EA:77:E2:D7"
+        },
+        {
+          "name": "validity",
+          "status": "PASS",
+          "detail": "notBefore=Oct 10 15:24:11 2026 GMT; notAfter=Jan  8 15:24:11 2027 GMT"
+        },
+        {
+          "name": "live_tls",
+          "status": "PASS",
+          "detail": "Certificate-verified connection to this server with canonical SNI succeeded; installed and served DER certificates match exactly."
+        },
+        {
+          "name": "certificate_properties",
+          "status": "PASS",
+          "detail": "Canonical DNS name and TLS server-auth purpose verified. Self-signed signature verified; basicConstraints CA:FALSE (server leaf, not a CA)."
+        },
+        {
+          "name": "scope",
+          "status": "PASS",
+          "detail": "Read-only verification. No trust, configuration, firewall or service changes; no other PC accessed."
+        }
+      ],
+      "job_id": "20261010T161356Z-20ce4aef",
+      "updated_at": "2026-10-10T16:14:29.300213+00:00"
     }
   }
 }
