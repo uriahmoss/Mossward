@@ -5,16 +5,37 @@
     "ubuntu-lab-verify-001": {
       "request_digest": "9f4aa0f7ffab986050df9320c03fd006452df3e55ae9dbc1c3653e2440fd059a",
       "source_revision": "e7f2cdb119e82f794d3a0c8b2e255a11108f2be7",
-      "status": "accepted",
-      "summary": "Request received by the Ubuntu lab bridge. Pinned source verification is queued for an idle hourly agent review; no product installation or test success is claimed.",
+      "status": "succeeded",
+      "summary": "Pinned-source make verify succeeded. No application installed; PostgreSQL parity and full product assessment are not established.",
       "checks": [
         {
-          "name": "request_schema",
+          "name": "go_toolchain",
           "status": "PASS",
-          "detail": "Unique request id, explicit action and full source revision validated."
+          "detail": "Go 1.26.9 linux/amd64 in an isolated container."
+        },
+        {
+          "name": "race_tests",
+          "status": "PASS",
+          "detail": "go test -race ./... completed successfully."
+        },
+        {
+          "name": "vet",
+          "status": "PASS",
+          "detail": "go vet ./... completed successfully."
+        },
+        {
+          "name": "build",
+          "status": "PASS",
+          "detail": "Both required binaries built with normal VCS stamping."
+        },
+        {
+          "name": "postgresql_parity",
+          "status": "NOT_TESTED",
+          "detail": "This request did not exercise live PostgreSQL integration or establish full product assessment."
         }
       ],
-      "updated_at": "2026-10-10T03:45:13.770855+00:00"
+      "job_id": "20261010T040814Z-a12b9ba9",
+      "updated_at": "2026-10-10T05:07:58.956587+00:00"
     }
   }
 }
