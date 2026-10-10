@@ -1,5 +1,20 @@
 {
   "version": 1,
   "host_id": "ubuntu-lab-01",
-  "results": {}
+  "results": {
+    "ubuntu-lab-verify-001": {
+      "request_digest": "9f4aa0f7ffab986050df9320c03fd006452df3e55ae9dbc1c3653e2440fd059a",
+      "source_revision": "e7f2cdb119e82f794d3a0c8b2e255a11108f2be7",
+      "status": "accepted",
+      "summary": "Request received by the Ubuntu lab bridge. Pinned source verification is queued for an idle hourly agent review; no product installation or test success is claimed.",
+      "checks": [
+        {
+          "name": "request_schema",
+          "status": "PASS",
+          "detail": "Unique request id, explicit action and full source revision validated."
+        }
+      ],
+      "updated_at": "2026-10-10T03:45:13.770855+00:00"
+    }
+  }
 }
