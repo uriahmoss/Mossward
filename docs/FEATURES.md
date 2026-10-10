@@ -568,3 +568,10 @@ failure and health states.
   is ambiguous.
 - Automatic remediation, arbitrary remote commands, stealth, credential attacks,
   and adversarial self-defense are outside the current product scope.
+
+## Ubuntu lab coordination
+
+- [ ] Dedicated server-lab request/results mailbox and hourly server bridge:
+  protocol and implementation prepared; end-to-end validation in progress.
+  See ops/server-lab/README.md on the server-lab branch. Product verification,
+  server installation and PostgreSQL parity are separate outcomes.

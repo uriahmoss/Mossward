@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "requests": [
+    {
+      "id": "ubuntu-lab-verify-001",
+      "enabled": true,
+      "action": "verify",
+      "source_revision": "e7f2cdb119e82f794d3a0c8b2e255a11108f2be7",
+      "description": "Run the repository-required make verify on the Ubuntu lab server; report build, race-test and vet results, actual toolchain, and any failures. This does not establish PostgreSQL parity or a complete product/security assessment."
+    }
+  ]
+}

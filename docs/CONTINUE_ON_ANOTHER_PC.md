@@ -141,3 +141,10 @@ git push origin main
 Do not use destructive Git commands to resolve divergence. Inspect the local
 and remote histories first, then merge or rebase only after reviewing the
 changes that would be affected.
+
+## Request tests on the Ubuntu lab server
+
+The `server-lab` branch contains `ops/server-lab/requests.json` and
+`ops/server-lab/results.json`. Read its adjacent README for submitting pinned
+verification/deployment tasks and receiving sanitized outcomes during hourly
+server reviews. Keep mailbox changes separate from product source changes.
