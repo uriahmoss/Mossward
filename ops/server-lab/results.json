@@ -191,6 +191,41 @@
       ],
       "job_id": "20261010T150819Z-8ccbc8fb",
       "updated_at": "2026-10-10T15:08:49.390843+00:00"
+    },
+    "ubuntu-lab-lan-access-20261010-001": {
+      "request_digest": "2fb94922f7439aff6df0c47f2f5c2a56acf2b3114590299b03f29d3d158f6778",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "needs_input",
+      "summary": "Read-only discovery completed successfully. Web interface is local HTTP on port 8080; LAN exposure was not changed because approved hostname, certificate trust provisioning and intended LAN scope are not established.",
+      "job_id": "20261010T151601Z-acc32283",
+      "checks": [
+        {
+          "name": "current_ports",
+          "status": "PASS",
+          "detail": "Mossward owns one loopback HTTP listener on port 8080. No separate Mossward agent/worker listener observed or configured; no database listener exposed."
+        },
+        {
+          "name": "https_prerequisites",
+          "status": "NOT_TESTED",
+          "detail": "No TLS certificate configured and no existing HTTPS proxy/listener established. Choose the intended LAN hostname and HTTPS port; provide a matching trusted certificate/key or authorize a private-CA/client-trust plan; confirm intended LAN interface/subnet. Do not send private keys in this public mailbox."
+        },
+        {
+          "name": "local_health",
+          "status": "PASS",
+          "detail": "Service is active with successful health and local-mode HTTP 200 setup_required readiness. User administrator/MFA initialization remains required; pinned deployment documentation calls for localhost initialization before hosted mode."
+        },
+        {
+          "name": "existing_ai_stack",
+          "status": "PASS",
+          "detail": "Fresh generation completed with full GPU allocation at context 4096; Ollama CLI and WebUI/backend health passed."
+        },
+        {
+          "name": "changes_and_rollback",
+          "status": "PASS",
+          "detail": "Read-only discovery changed no transport, firewall, certificate, authentication, proxy or service configuration. No rollback required. No other PC accessed. Private connection notes retained on the server."
+        }
+      ],
+      "updated_at": "2026-10-10T15:16:37.824468+00:00"
     }
   }
 }
