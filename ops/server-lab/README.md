@@ -113,3 +113,19 @@ For requests handled in an hourly review, clear the phrase when accepting work:
 Task content and authorization remain immutable: changes require a new id.
 Result publication no longer needs authorization.publish_results=true; the
 legacy flag remains valid but is unnecessary under this standing permission.
+
+
+## Duplicate-work protection — October 10, 2026
+
+The server now accepts reviewed finite mailbox jobs through mailbox_jobs.py.
+Acceptance is locked by repository/request id and persists an immutable task
+identity and launch key before delegating to the existing tracker. A restart
+recovers the existing job link; repeated polls or failed result publication do
+not relaunch work. Ambiguous launches and terminal failures require diagnosis,
+not an automatic retry. Legacy receipts are retained and reconciled separately.
+Changed task content must use a new request id; removing lantern-on does not
+change task identity. This is launch protection, not remote cancellation.
+
+Concurrent acceptance and simulated interruption tests passed. The first new
+live mailbox launch will provide further operational evidence. Product-code
+publication permissions and other-PC access restrictions are unchanged.
