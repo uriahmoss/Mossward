@@ -301,6 +301,46 @@
         }
       ],
       "updated_at": "2026-10-10T15:31:32.354693+00:00"
+    },
+    "ubuntu-lab-lan-activate-post-setup-20261010-004": {
+      "request_digest": "258c3ad0ed05dc388a20842e70b898a9217c7ce29a059bf098d4dbdabfc12f1a",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "failed",
+      "summary": "Initialized administrator/MFA verified. HTTPS activation reached passing readiness and unauthenticated-access rejection on port 443, then failed a raw firewall equality assertion because packet counters changed. Prior loopback HTTP configuration restored exactly and service ready; HTTPS is inactive. No activation retry. Fresh inspected native recovery archive and private stopped-state backup retained. Client DNS/trust and final activation remain pending.",
+      "job_id": "20261010T154447Z-8856f75c",
+      "checks": [
+        {
+          "name": "administrator_mfa",
+          "status": "PASS",
+          "detail": "Initialized status and verified administrator TOTP presence confirmed without credentials."
+        },
+        {
+          "name": "certificate_and_https",
+          "status": "PASS",
+          "detail": "Existing service-readable certificate/key match, hostname/IP/server-auth and expiry passed; temporary HTTPS readiness/health and authentication-required response verified on port 443."
+        },
+        {
+          "name": "retained_state_and_backup",
+          "status": "PASS",
+          "detail": "Native backup inspection and finalized stopped-copy integrity passed; identity/MFA row hashes, identity key and installation marker retained."
+        },
+        {
+          "name": "final_firewall_assertion",
+          "status": "FAIL",
+          "detail": "Raw ruleset equality included changing packet/byte counters. Independent diagnosis confirmed identical rule structure; no firewall rules were changed."
+        },
+        {
+          "name": "rollback",
+          "status": "PASS",
+          "detail": "Prior config restored byte-for-byte; initialized loopback HTTP readiness and recovery archive hashes verified."
+        },
+        {
+          "name": "ai_health",
+          "status": "PASS",
+          "detail": "Independent terminal-success worker verified CLI, WebUI/backend connectivity and fresh full-GPU inference at 4096 context."
+        }
+      ],
+      "updated_at": "2026-10-10T15:46:02.756683+00:00"
     }
   }
 }
