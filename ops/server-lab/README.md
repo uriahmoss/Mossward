@@ -207,6 +207,9 @@ Optional `depends_on` is a list of at most twenty same-mailbox objects:
 Dependencies pin task identity, not wake metadata. A dependency must exist with
 that digest and have a matching source revision and reviewed `succeeded`
 result. Received/accepted/running acknowledgements do not establish success.
+When local dependency receipts exist, matching tracker identity and actual
+success are also required; a remote result cannot hide running, failed or
+unverified local work. Legacy receipts need identity reconciliation.
 Missing dependencies, changed identities, unsuccessful results and graph cycles
 block launch; poll output exposes `scheduling.blocked` reasons and ordered
 `scheduling.eligible` ids. Blocked requests remain pending for review, without
@@ -219,7 +222,8 @@ priority or dependencies.
 The acceptance CLI rereads eligibility under a global scheduling lock, checks
 tracked and registered maintenance workers, and accepts the first eligible
 task in that mailbox. Mailbox work is conservatively serialized on this small
-server; priority does not preempt running work. Cross-mailbox selection remains
+server; priority does not preempt running work. A worker holds a shared
+nonblocking execution lock for the lifetime of its reviewed command. Cross-mailbox selection remains
 a reviewed agent choice, not an automatic launcher. Existing receipt recovery
 still returns the same job and never retries terminal failures. Every new CLI
 job rechecks enabled identity, reviewed outcome, dependencies and maintenance
