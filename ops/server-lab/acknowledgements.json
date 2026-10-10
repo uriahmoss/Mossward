@@ -9,7 +9,7 @@
       "received_at": "2026-10-10T08:10:37.790417+00:00",
       "receipt_id": "ack-9f4aa0f7ffab986050df9320c03fd006452df3e55ae9dbc1c3653e2440fd059a",
       "state": "blocked",
-      "observed_at": "2026-10-10T15:06:02.423845+00:00",
+      "observed_at": "2026-10-10T15:08:02.443531+00:00",
       "result_status": "succeeded"
     },
     "ubuntu-lab-install-20261010-240ea3c": {
@@ -20,7 +20,7 @@
       "received_at": "2026-10-10T14:28:02.179080+00:00",
       "receipt_id": "ack-9ed50db2e8b02976763fa92c457d9da04c39ef6cb1aa798e4d018ff65d13ffe3",
       "state": "failed",
-      "observed_at": "2026-10-10T15:06:02.424481+00:00",
+      "observed_at": "2026-10-10T15:08:02.444125+00:00",
       "queued_at": "2026-10-10T14:30:53.148584+00:00",
       "job_id": "20261010T143053Z-f0f9ac5c",
       "started_at": "2026-10-10T14:30:53.214447+00:00",
@@ -35,7 +35,7 @@
       "received_at": "2026-10-10T14:48:02.256877+00:00",
       "receipt_id": "ack-ce3c8e5dfd2c3c27e4132ccae60ef8694d0408d938ab98317230849d6630fc39",
       "state": "succeeded",
-      "observed_at": "2026-10-10T15:06:02.425048+00:00",
+      "observed_at": "2026-10-10T15:08:02.444625+00:00",
       "queued_at": "2026-10-10T14:49:53.550636+00:00",
       "job_id": "20261010T144953Z-4873e6a4",
       "started_at": "2026-10-10T14:49:53.628645+00:00",
@@ -50,12 +50,22 @@
       "received_at": "2026-10-10T14:54:02.325290+00:00",
       "receipt_id": "ack-4ea67265ccb4757f0e3986dcb6bbff74c514a7f4edc8b6d40ddd461b5057cbd1",
       "state": "succeeded",
-      "observed_at": "2026-10-10T15:06:02.425567+00:00",
+      "observed_at": "2026-10-10T15:08:02.445106+00:00",
       "queued_at": "2026-10-10T14:55:40.843634+00:00",
       "job_id": "20261010T145540Z-87e922c3",
       "started_at": "2026-10-10T14:55:40.916835+00:00",
       "finished_at": "2026-10-10T15:00:40.376172+00:00",
       "result_status": "running"
+    },
+    "ubuntu-lab-install-final-report-20261010-001": {
+      "repository": "uriahmoss/Mossward",
+      "id": "ubuntu-lab-install-final-report-20261010-001",
+      "request_digest": "b9cbd24b788fc15b283eadc923c7b0b82b89d0d4dacb7705873e11c87ae93b96",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "received_at": "2026-10-10T15:08:02.445169+00:00",
+      "receipt_id": "ack-b9cbd24b788fc15b283eadc923c7b0b82b89d0d4dacb7705873e11c87ae93b96",
+      "state": "received",
+      "observed_at": "2026-10-10T15:08:02.445270+00:00"
     }
   }
 }
