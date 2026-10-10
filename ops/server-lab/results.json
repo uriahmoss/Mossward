@@ -101,6 +101,41 @@
       ],
       "job_id": "20261010T144953Z-4873e6a4",
       "updated_at": "2026-10-10T14:50:26.370522+00:00"
+    },
+    "ubuntu-lab-install-retry-20261010-002": {
+      "request_digest": "4ea67265ccb4757f0e3986dcb6bbff74c514a7f4edc8b6d40ddd461b5057cbd1",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "running",
+      "summary": "New explicitly authorized attempt is running pinned build verification. Installation and lifecycle success remain unverified; original failed receipt preserved.",
+      "checks": [
+        {
+          "name": "execution_snapshot",
+          "status": "PASS",
+          "detail": "Unique shell and helper copies were syntax checked, hash recorded, preserved read-only under root ownership, and hashes verified at worker start. Running files will not be edited."
+        },
+        {
+          "name": "resource_preflight",
+          "status": "PASS",
+          "detail": "No conflicting application paths, account, unit or listener; tracker and registered maintenance workers idle before acceptance."
+        },
+        {
+          "name": "existing_ai_stack",
+          "status": "PASS",
+          "detail": "Fresh inference completed with full GPU allocation at context 4096; CLI, WebUI/backend health and loopback bindings passed."
+        },
+        {
+          "name": "installation_lifecycle",
+          "status": "NOT_TESTED",
+          "detail": "Worker is rebuilding the exact pinned revision. Installation, retained-state lifecycle and final health still pending."
+        },
+        {
+          "name": "authenticated_acceptance",
+          "status": "NOT_TESTED",
+          "detail": "User admin/MFA initialization must precede authenticated scans and initialized backup/update tests. No credentials selected or authentication bypassed."
+        }
+      ],
+      "job_id": "20261010T145540Z-87e922c3",
+      "updated_at": "2026-10-10T14:56:23.509303+00:00"
     }
   }
 }
