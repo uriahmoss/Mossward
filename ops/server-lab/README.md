@@ -234,3 +234,27 @@ GitHub check as uriah, without copying authentication files. Existing finite
 scripts still need their own appropriate resource locks for application data;
 these checks are not a reservation against an unrelated timer starting later.
 First new live dependent request remains an operational follow-up.
+
+## Queued request expiry
+
+Optional `expires_at` is an exact UTC deadline, for example
+`"expires_at": "2026-10-11T04:00:00Z"`. Invalid dates, offsets and other formats
+are rejected. Omission preserves existing request behavior. Changing the
+deadline changes task identity and requires a new id. Cancellation controls
+cannot carry expiry.
+
+At the deadline (inclusive), acceptance refuses new work. The two-minute
+poller writes a durable expired tombstone and a sanitized `expired` result for
+unlaunched requests, even after downtime. Publication failures retry without
+launching work. Changed identities, legacy receipts and ambiguous launches
+require diagnosis. Expired requests do not cause an early mailbox wake.
+
+Delayed tracked workers check the current request immediately before their
+reviewed command; an elapsed deadline prevents that command, records an expiry
+receipt and reports `expired`. The worker itself exits failed because execution
+was refused; this is distinct from a task command failing. If reporting fails,
+the poller retries from the durable expiry evidence. Scheduled workers are not
+cancelled by expiry: they reach their own start-time check. Existing running
+commands continue, and prior terminal outcomes are preserved. Expiry is a
+start deadline, not a runtime timeout. Time comparisons use the server UTC
+clock. First live expired/delayed requests remain operational follow-ups.
