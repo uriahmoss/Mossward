@@ -9,7 +9,7 @@
       "received_at": "2026-10-10T08:10:37.790417+00:00",
       "receipt_id": "ack-9f4aa0f7ffab986050df9320c03fd006452df3e55ae9dbc1c3653e2440fd059a",
       "state": "blocked",
-      "observed_at": "2026-10-10T14:38:02.723404+00:00",
+      "observed_at": "2026-10-10T14:40:03.012332+00:00",
       "result_status": "succeeded"
     },
     "ubuntu-lab-install-20261010-240ea3c": {
@@ -20,7 +20,7 @@
       "received_at": "2026-10-10T14:28:02.179080+00:00",
       "receipt_id": "ack-9ed50db2e8b02976763fa92c457d9da04c39ef6cb1aa798e4d018ff65d13ffe3",
       "state": "failed",
-      "observed_at": "2026-10-10T14:38:02.724028+00:00",
+      "observed_at": "2026-10-10T14:40:03.012944+00:00",
       "queued_at": "2026-10-10T14:30:53.148584+00:00",
       "job_id": "20261010T143053Z-f0f9ac5c",
       "started_at": "2026-10-10T14:30:53.214447+00:00",
