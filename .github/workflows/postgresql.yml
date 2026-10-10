@@ -10,6 +10,21 @@ concurrency:
   group: postgresql-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  worker-systemd:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+          cache: false
+      - name: Rehearse native low-privilege systemd worker
+        env:
+          MOSSWARD_TEST_WORKER_SYSTEMD: '1'
+        run: go test -race -count=1 -timeout=10m ./internal/workerapp -run '^TestNativeSystemdWorkerAcceptance$'
   verify:
     timeout-minutes: 25
     strategy:

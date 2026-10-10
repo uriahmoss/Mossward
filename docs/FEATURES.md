@@ -569,6 +569,9 @@ failure and health states.
   - [x] TLS 1.3 application-runtime rehearsal with signed site-scoped loopback scan, delivery failure/restart, ordered evidence and persistent replay rejection
   - [x] Certificate-bound execution validity, local enrollment-site affinity and native worker key/state permission checks
   - [ ] Linux/Windows service installation and remote-scan acceptance rehearsal
+    - [x] Opt-in disposable-host Linux systemd installer, service-identity preflight, mTLS scan and stop/restart replay rehearsal
+    - [ ] Confirm hosted Linux systemd rehearsal passes
+    - [ ] Native Windows service installer and runtime acceptance
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,
       peer-to-peer control, and automatic scope expansion

@@ -134,3 +134,15 @@ real Linux/Windows hosts remains an operator acceptance check; cross-compilation
 is not service-runtime verification. Container orchestration and HA deployment
 remain separate work. Validate graceful stop, queue preservation, low-privilege
 file access, restart recovery and a scoped remote scan before production use.
+
+The hosted `worker-systemd` job now explicitly opts into
+`TestNativeSystemdWorkerAcceptance` on a disposable Ubuntu runner. It builds the
+real worker, installs the production unit, provisions a synthetic identity,
+preflights as the service account, and starts/stops/restarts through systemd.
+The scan targets only the test's owned loopback listener, against the minimal
+mTLS test controller—not a full production control plane. Existing installation
+paths or accounts cause rejection. Cleanup stops the service and removes only
+the exact installed files; protected diagnostic state and the account remain
+until the disposable host is discarded. Never enable
+`MOSSWARD_TEST_WORKER_SYSTEMD=1` on a production or shared host. Successful hosted
+execution and native Windows service acceptance remain pending.
