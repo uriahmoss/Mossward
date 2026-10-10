@@ -266,6 +266,41 @@
         }
       ],
       "updated_at": "2026-10-10T15:25:24.729445+00:00"
+    },
+    "ubuntu-lab-tls-permission-repair-20261010-003": {
+      "request_digest": "97737283ec8f277557e08e9f160ef319e3f45b50f82a67e97d55466b00894c26",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "status": "failed",
+      "job_id": "20261010T152951Z-a9db1d89",
+      "summary": "Directory access correction applied and independently verified; worker failed its backup inventory assertion because SQLite read-only integrity checking created WAL/SHM sidecars. Original and repair failures preserved; no retry. Independent immutable-read backup diagnosis and AI health passed. No staged TLS configuration or activation; live loopback HTTP 8080 remains available for user administrator/MFA setup.",
+      "checks": [
+        {
+          "name": "certificate-directory-repair",
+          "status": "PASS",
+          "detail": "Only managed directory mode changed from 0700 to 0750, root/service-group ownership preserved; service-owned key remains 0600. Service identity actually reads certificate and key; matching public keys and hostname/server-auth validation passed."
+        },
+        {
+          "name": "repair-worker",
+          "status": "FAIL",
+          "detail": "Exit 1 on backup directory inventory assertion after read-only SQLite access created sidecars; no automatic retry and no staged configuration completed."
+        },
+        {
+          "name": "independent-backup-diagnosis",
+          "status": "PASS",
+          "detail": "Immutable read integrity check passed without inventory changes; WAL empty, backed-up configuration/identity/installation marker match live. Pre-repair database hash was not durably recorded, so historical whole-backup hash equality is not claimed."
+        },
+        {
+          "name": "existing-services",
+          "status": "PASS",
+          "detail": "Mossward active, health ok, setup_required unchanged. Fresh Ollama GPU generation and WebUI/backend connectivity passed at 4096 context."
+        },
+        {
+          "name": "activation",
+          "status": "NOT_TESTED",
+          "detail": "No live transport/firewall change, restart, new certificate or other-PC access. HTTPS remains inactive. User must complete localhost administrator/MFA setup and provision canonical hostname mapping and explicit certificate trust. Private connection instructions retained locally; preparation rollback is restoring only the directory mode to 0700, which removes service access."
+        }
+      ],
+      "updated_at": "2026-10-10T15:31:32.354693+00:00"
     }
   }
 }
