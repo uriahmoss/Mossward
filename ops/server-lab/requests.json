@@ -76,7 +76,6 @@
       "enabled": true,
       "action": "test",
       "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
-      "wake": "lantern-on",
       "description": "Uriah requests trusting the generated Mossward web certificate on his Mac. Before that local trust change, provide independent read-only verification of the exact currently configured and served public leaf certificate: compute its SHA-256 certificate fingerprint from the locally installed certificate, compare with the live localhost TLS service using canonical SNI mossward.uriahmoss.com, and publish the exact fingerprint with validity dates and confirmation of matching DNS name, server-auth purpose and self-signed leaf/CA status. Only the public certificate SHA-256 fingerprint and sanitized check status may be published here; do not publish the full certificate with private IP SAN, private keys, host paths or raw logs. Do not regenerate certificates, modify trust/settings/firewalls, restart services, contact the Mac or other PCs, or perform installation retries. This is read-only certificate identification through the authenticated repository mailbox, not authorization to change remote client trust. Report any mismatch as needs_input/failed. Clear wake metadata on acceptance."
     }
   ]
