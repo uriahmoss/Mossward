@@ -192,3 +192,41 @@ publication failures retry on the next poll without launching work. The monitor
 records sanitized publication diagnostics under `lifecycle_acknowledgements`.
 No extra model review or maintenance worker is added. A first new live request
 still needs operational follow-up for the acceptance-to-completion sequence.
+
+## Priority and dependencies
+
+Optional `priority` is an integer from -10 through 10 (default 0); larger
+values go first, with request id ascending as a deterministic tie breaker.
+Optional `depends_on` is a list of at most twenty same-mailbox objects:
+
+```json
+"priority": 5,
+"depends_on": [{"id": "earlier-task", "request_digest": "FULL_64_CHARACTER_DIGEST"}]
+```
+
+Dependencies pin task identity, not wake metadata. A dependency must exist with
+that digest and have a matching source revision and reviewed `succeeded`
+result. Received/accepted/running acknowledgements do not establish success.
+Missing dependencies, changed identities, unsuccessful results and graph cycles
+block launch; poll output exposes `scheduling.blocked` reasons and ordered
+`scheduling.eligible` ids. Blocked requests remain pending for review, without
+publishing a terminal blocked result that would hide them from future checks.
+Changing priority/dependencies changes task identity and requires a new id.
+A disabled dependency can satisfy the requirement if its exact task succeeded.
+Cancellation remains an immediate fixed control and cannot carry scheduling
+priority or dependencies.
+
+The acceptance CLI rereads eligibility under a global scheduling lock, checks
+tracked and registered maintenance workers, and accepts the first eligible
+task in that mailbox. Mailbox work is conservatively serialized on this small
+server; priority does not preempt running work. Cross-mailbox selection remains
+a reviewed agent choice, not an automatic launcher. Existing receipt recovery
+still returns the same job and never retries terminal failures. Every new CLI
+job rechecks enabled identity, reviewed outcome, dependencies and maintenance
+state immediately before executing its reviewed argv, including delayed jobs.
+A failed start-time check produces a failed tracker receipt and requires review;
+it never waits or retries automatically. Root work performs the read-only
+GitHub check as uriah, without copying authentication files. Existing finite
+scripts still need their own appropriate resource locks for application data;
+these checks are not a reservation against an unrelated timer starting later.
+First new live dependent request remains an operational follow-up.
