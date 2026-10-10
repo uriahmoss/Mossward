@@ -7,6 +7,14 @@
       "action": "verify",
       "source_revision": "e7f2cdb119e82f794d3a0c8b2e255a11108f2be7",
       "description": "Run the repository-required make verify on the Ubuntu lab server; report build, race-test and vet results, actual toolchain, and any failures. This does not establish PostgreSQL parity or a complete product/security assessment."
+    },
+    {
+      "id": "ubuntu-lab-install-20261010-240ea3c",
+      "enabled": true,
+      "action": "install-server",
+      "source_revision": "240ea3cdfe8be772cced681a5708a56cf1fa8030",
+      "wake": "lantern-on",
+      "description": "Uriah explicitly authorizes installing Mossward on this existing Linux lab host, which currently has no Mossward installation. Build and verify this exact pinned product revision, then follow docs/LINUX_LAB_ACCEPTANCE.md and docs/SERVICE_INSTALLATION.md. Use the new managed Linux lifecycle tooling, SQLite, private retained state and an unused loopback port. Preserve the existing AI services and all unrelated data; do not change firewalls/proxies or expose public HTTP. Check health, service identity, listener and logs; perform one data-preserving uninstall/reinstall while stopped and confirm state/configuration continuity. Leave Mossward running locally for Uriah's first-time admin/MFA setup; do not choose his credentials or disable authentication. Setup-required readiness HTTP 503 is expected before user initialization. Authenticated scan and backup/update acceptance remain pending until initialization; scans are localhost-only and no other PC is authorized. Do not run disposable worker service tests on this shared host. Report actual sanitized check outcomes and pending user actions in the mailbox; retain private evidence locally, never publish secrets, raw logs, addresses or host paths. Reject conflicting existing Mossward resources and ask rather than overwrite. Clear wake metadata on acceptance per mailbox protocol. User authorization covers this installation and its scoped lifecycle checks, not unrelated product changes or publication."
     }
   ]
 }
