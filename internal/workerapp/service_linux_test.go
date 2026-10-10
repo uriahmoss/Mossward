@@ -11,7 +11,6 @@ import (
 	"testing"
 	"time"
 
-	"mossward/internal/model"
 	"mossward/internal/privatefs"
 )
 
@@ -82,55 +81,18 @@ func TestNativeSystemdWorkerAcceptance(t *testing.T) {
 	controller.lease = lease
 	controller.mu.Unlock()
 	nativeCommand(t, root, "sudo", "-n", "systemctl", "start", "mossward-worker.service")
-	deadline := time.Now().Add(30 * time.Second)
+	deadline := time.Now().Add(nativeServiceAcceptanceTimeout)
 	for time.Now().Before(deadline) {
 		controller.mu.Lock()
 		consumed := controller.lease.Envelope.Job.ID == ""
-		evidence, results := len(controller.evidence), len(controller.results)
 		controller.mu.Unlock()
-		if evidence != 1 || results != 1 {
-			t.Fatal("service restart repeated evidence or completion for a replayed job")
-		}
+		assertNativeReplayRejected(t, controller)
 		if consumed {
 			nativeCommand(t, root, "sudo", "-n", "systemctl", "stop", "mossward-worker.service")
-			controller.mu.Lock()
-			defer controller.mu.Unlock()
-			if len(controller.evidence) != 1 || len(controller.results) != 1 {
-				t.Fatal("replayed job produced duplicate delivery before shutdown")
-			}
+			assertNativeReplayRejected(t, controller)
 			return
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
 	t.Fatal("restarted service did not poll the replayed job")
-}
-
-func nativeCommand(t *testing.T, directory, name string, args ...string) {
-	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
-	defer cancel()
-	command := exec.CommandContext(ctx, name, args...)
-	command.Dir = directory
-	if output, err := command.CombinedOutput(); err != nil {
-		t.Fatalf("native service command %s failed: %v: %s", name, err, output)
-	}
-}
-
-func waitNativeCompletion(t *testing.T, controller *deploymentController) {
-	t.Helper()
-	deadline := time.Now().Add(30 * time.Second)
-	for time.Now().Before(deadline) {
-		controller.mu.Lock()
-		complete := len(controller.evidence) == 1 && len(controller.results) == 1
-		if complete && controller.results[0].Outcome != model.WorkerJobResultSucceeded {
-			controller.mu.Unlock()
-			t.Fatal("native service scan did not succeed")
-		}
-		controller.mu.Unlock()
-		if complete {
-			return
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	t.Fatal("native worker did not deliver signed scan evidence and completion")
 }

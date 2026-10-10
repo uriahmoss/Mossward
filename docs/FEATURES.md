@@ -189,6 +189,8 @@ implemented and verified; an unchecked item is not yet complete.
 - [x] Secure proxy-aware cookies, HSTS, and sensitive-response cache controls
 - [x] Reverse-proxy deployment guidance
 - [x] Hardened Linux systemd service definition and installation guidance
+- [x] Managed Linux server install, data-preserving uninstall/reinstall, and verified-offline-backup update with readiness guard
+- [ ] Confirm native Linux server install/uninstall/reinstall/update acceptance on the lab host
 - [x] Native Windows Service installation, lifecycle, recovery, and event logging
 - [x] Identity-key backup and restore procedure
 - [x] Versioned identity-key keyring with legacy raw-key compatibility
@@ -533,6 +535,7 @@ failure and health states.
         - [x] Keep relative-path migration fixtures on the same Windows drive using an isolated test working directory
         - [ ] Execute Windows ACL regressions and complete hosted PostgreSQL 14/17 reruns
       - [ ] Confirm successful hosted Windows/PostgreSQL 14/17 workflow runs (first runs failed; see verification guide)
+        - [ ] Resolve PostgreSQL 14 public-schema ownership in disposable recovery fixtures and Windows scan-pacing timing regression
     - [x] PostgreSQL-native backup/restore and disaster-recovery rehearsal (PostgreSQL 16.15/macOS)
       - [x] Offline native custom-format dump, complete keyring/PKI archive, and verified versioned manifest
       - [x] Empty-database/non-superuser guard, no-overwrite file destinations, and transactional native restore
@@ -571,7 +574,8 @@ failure and health states.
   - [ ] Linux/Windows service installation and remote-scan acceptance rehearsal
     - [x] Opt-in disposable-host Linux systemd installer, service-identity preflight, mTLS scan and stop/restart replay rehearsal
     - [ ] Confirm hosted Linux systemd rehearsal passes
-    - [ ] Native Windows service installer and runtime acceptance
+    - [x] Opt-in disposable-host Windows signed installer, service identity, mTLS scan and stop/restart replay rehearsal
+    - [ ] Confirm hosted Windows 2022/2025 service acceptance passes
 - [ ] Signed staged worker updates with deployment rings and rollback
 - [ ] Prohibit arbitrary payload execution, self-propagation, covert persistence,
       peer-to-peer control, and automatic scope expansion

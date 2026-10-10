@@ -115,8 +115,8 @@ After a failure check service logs, certificate expiration and chain, filesystem
 permissions, DNS, outbound firewall rules, server fleet health and dispatch
 switches. Do not delete replay state or re-enable revoked identities to bypass a
 failure. Re-enroll explicitly after identity compromise. No installers open
-firewalls, modify server scopes or install/start services automatically during
-tests.
+firewalls or modify server scopes. Ordinary tests never install/start services;
+the explicitly opted-in disposable-host acceptance jobs do.
 
 ## Verification boundary
 
@@ -146,3 +146,15 @@ the exact installed files; protected diagnostic state and the account remain
 until the disposable host is discarded. Never enable
 `MOSSWARD_TEST_WORKER_SYSTEMD=1` on a production or shared host. Successful hosted
 execution and native Windows service acceptance remain pending.
+
+The `worker-windows` matrix similarly exercises the production signed installer
+and native Service Control Manager on Windows 2022/2025. Its test-signing wrapper
+requires both `MOSSWARD_TEST_WORKER_WINDOWS_SERVICE=1` and a GitHub-hosted runner.
+It creates a one-day, non-exportable test-only Authenticode certificate, temporarily
+trusts that exact certificate, signs the freshly built test binary, and removes
+the temporary trust entries and signer in a `finally` block. It does not weaken
+the production installer or provide a production signing identity. Services are
+stopped/uninstalled at cleanup; secured files remain until runner disposal.
+The test verifies the configured virtual service account, real signed mTLS scan
+delivery, and persistent replay rejection after stop/start. Hosted execution
+must pass before marking Windows acceptance complete.
